@@ -1,0 +1,8 @@
+{
+  "name": "Fibu.de - Smart Accounting",
+  "description": "Professional German/Turkish accounting system integrated with Gemini AI for intelligent analysis, document processing, and report generation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
