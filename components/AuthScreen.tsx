@@ -339,14 +339,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
                   <label className="c-label">{t.email}</label>
                   <div className="glow-wrap">
                     <input type="email" className="c-input" placeholder="name@firma.de"
-                      value={email} onChange={e => setEmail(e.target.value)} />
+                      autoComplete="off" value={email} onChange={e => setEmail(e.target.value)} />
                   </div>
                 </div>
                 <div>
                   <label className="c-label">{t.password}</label>
                   <div className="glow-wrap">
                     <input type="password" className="c-input" placeholder="••••••••"
-                      value={password} onChange={e => setPassword(e.target.value)}
+                      autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleLoginSubmit()} />
                   </div>
                 </div>
