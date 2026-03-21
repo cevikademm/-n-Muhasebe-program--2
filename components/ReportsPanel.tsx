@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { useLang } from "../LanguageContext";
-import { Invoice, InvoiceItem } from "../types";
+import { InvoiceItem } from "../types";
 import { SuSaReport } from "./SuSaReport";
 import { LayoutDashboard, Tags, Truck, Percent, FileText, Printer, Download } from "lucide-react";
 import {
@@ -12,16 +12,17 @@ import { ReportsCategoriesTab } from "./reports/ReportsCategoriesTab";
 import { ReportsSuppliersTab } from "./reports/ReportsSuppliersTab";
 import { ReportsVATTab } from "./reports/ReportsVATTab";
 import { ReportsExportTab } from "./reports/ReportsExportTab";
+import { ReportsSKR03Tab } from "./reports/ReportsSKR03Tab";
+import { BookOpen } from "lucide-react";
 
 interface ReportsPanelProps {
-  invoices: Invoice[];
-  invoiceItems: InvoiceItem[];
-  loading?: boolean;
 }
 
-type Tab = "overview" | "categories" | "suppliers" | "vat" | "susa" | "export";
+type Tab = "overview" | "categories" | "skr03" | "suppliers" | "vat" | "susa" | "export";
 
-export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices, invoiceItems }) => {
+export const ReportsPanel: React.FC<ReportsPanelProps> = () => {
+  const invoices: any[] = [];
+  const invoiceItems: any[] = [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const MONTHS = lang === "tr" ? MONTHS_TR : MONTHS_DE;
@@ -83,7 +84,7 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices, invoiceIte
 
   /** Manuel tarih değişince hızlı sekmeyi iptal et */
   const onManualDateFrom = (v: string) => { setDateFrom(v); setQuickMonth(undefined); };
-  const onManualDateTo   = (v: string) => { setDateTo(v);   setQuickMonth(undefined); };
+  const onManualDateTo = (v: string) => { setDateTo(v); setQuickMonth(undefined); };
 
   /** Ay için fatura sayısı */
   const monthCount = (m: number) =>
@@ -259,6 +260,25 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices, invoiceIte
     setTimeout(() => { window.print(); setPrintMode(false); }, 100);
   };
 
+  // ── Susa Report için hedeflenen dönemin takvim filtresinden türetilmesi ──
+  const susaTargetYear = useMemo(() => {
+    if (dateFrom) {
+      const d = new Date(dateFrom);
+      if (!isNaN(d.getTime())) return d.getFullYear();
+    }
+    return yearA;
+  }, [dateFrom, yearA]);
+
+  const susaTargetMonth = useMemo(() => {
+    if (typeof quickMonth === "number") return quickMonth + 1;
+    if (dateFrom) {
+      const d = new Date(dateFrom);
+      if (!isNaN(d.getTime())) return d.getMonth() + 1;
+    }
+    // "Tüm Yıl" modu ya da belirsiz (Tümü) durumunda yıl sonu 12 (Aralık) döndürüyoruz
+    return 12;
+  }, [quickMonth, dateFrom]);
+
   // ── Shared filter bar (2 satır) ───────────────────────────────────────────
   const FilterBar = () => (
     <div className="shrink-0" style={{ background: "#0d0f15", borderBottom: "1px solid #1c1f27" }}>
@@ -395,12 +415,13 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices, invoiceIte
   );
 
   const tabs: { key: Tab; icon: React.ReactNode; label: string; sublabel: string }[] = [
-    { key: "overview",   icon: <LayoutDashboard size={15} />, label: tr("Genel Bakış",  "Übersicht"),        sublabel: tr("KPI & aylık trend", "KPI & Monatstrend") },
-    { key: "categories", icon: <Tags size={15} />,            label: tr("Kategoriler",  "Kategorien"),       sublabel: tr("SKR03/04 gider dağılımı", "Kostenverteilung") },
-    { key: "suppliers",  icon: <Truck size={15} />,           label: tr("Tedarikçiler", "Lieferanten"),      sublabel: tr("Tedarikçi bazlı analiz", "Lieferantenanalyse") },
-    { key: "vat",        icon: <Percent size={15} />,         label: tr("Vergi / KDV",  "USt / Vorsteuer"),  sublabel: tr("Vorsteuer & KDV özeti", "Vorsteuerzusammenfassung") },
-    { key: "susa",       icon: <FileText size={15} />,        label: tr("SuSa Raporu",  "Summen & Salden"),  sublabel: tr("Summen & Salden listesi", "Summen-Salden-Liste") },
-    { key: "export",     icon: <Download size={15} />,        label: tr("Dışa Aktar",   "Export"),           sublabel: tr("CSV / Excel export", "CSV / Excel Export") },
+    { key: "overview", icon: <LayoutDashboard size={15} />, label: tr("Genel Bakış", "Übersicht"), sublabel: tr("KPI & aylık trend", "KPI & Monatstrend") },
+    { key: "categories", icon: <Tags size={15} />, label: tr("Kategoriler", "Kategorien"), sublabel: tr("SKR03/04 gider dağılımı", "Kostenverteilung") },
+    { key: "skr03", icon: <BookOpen size={15} />, label: tr("SKR03 Analiz", "SKR03 Analyse"), sublabel: tr("Klasse bazlı DATEV raporu", "Kontenklassen-Bericht") },
+    { key: "suppliers", icon: <Truck size={15} />, label: tr("Tedarikçiler", "Lieferanten"), sublabel: tr("Tedarikçi bazlı analiz", "Lieferantenanalyse") },
+    { key: "vat", icon: <Percent size={15} />, label: tr("Vergi / KDV", "USt / Vorsteuer"), sublabel: tr("Vorsteuer & KDV özeti", "Vorsteuerzusammenfassung") },
+    { key: "susa", icon: <FileText size={15} />, label: tr("SuSa Raporu", "Summen & Salden"), sublabel: tr("Summen & Salden listesi", "Summen-Salden-Liste") },
+    { key: "export", icon: <Download size={15} />, label: tr("Dışa Aktar", "Export"), sublabel: tr("CSV / Excel export", "CSV / Excel Export") },
   ];
 
   return (
@@ -505,70 +526,84 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices, invoiceIte
         {/* ── Tab content ── */}
         <div className="flex-1 overflow-y-auto px-6 py-5 pb-5 space-y-5">
 
-        {tab === "overview" && (
-          <ReportsOverviewTab
-            stats={stats}
-            monthlyData={monthlyData}
-            categoryData={categoryData}
-            supplierData={supplierData}
-            yearA={yearA}
-            yearB={yearB}
-            compare={compare}
-            lang={lang}
-            tr={tr}
-          />
-        )}
-
-        {tab === "categories" && (
-          <ReportsCategoriesTab
-            filteredInvoices={filteredInvoices}
-            categoryData={categoryData}
-            categoryCompare={categoryCompare}
-            yearA={yearA}
-            yearB={yearB}
-            compare={compare}
-            lang={lang}
-            tr={tr}
-          />
-        )}
-
-        {tab === "suppliers" && (
-          <ReportsSuppliersTab
-            supplierData={supplierData}
-            yearA={yearA}
-            lang={lang}
-            tr={tr}
-          />
-        )}
-
-        {tab === "vat" && (
-          <ReportsVATTab
-            vatData={vatData}
-            yearA={yearA}
-            lang={lang}
-            tr={tr}
-          />
-        )}
-
-        {tab === "susa" && (
-          <div style={{ position: "relative" }}>
-            <SuSaReport
-              invoices={filteredInvoices}
-              invoiceItems={invoiceItems}
+          {tab === "overview" && (
+            <ReportsOverviewTab
+              stats={stats}
+              monthlyData={monthlyData}
+              categoryData={categoryData}
+              supplierData={supplierData}
+              yearA={yearA}
+              yearB={yearB}
+              compare={compare}
+              lang={lang}
+              tr={tr}
             />
-          </div>
-        )}
+          )}
 
-        {tab === "export" && (
-          <ReportsExportTab
-            invoices={invoices}
-            invoiceItems={invoiceItems}
-            yearA={yearA}
-            years={years}
-            lang={lang}
-            tr={tr}
-          />
-        )}
+          {tab === "categories" && (
+            <ReportsCategoriesTab
+              filteredInvoices={filteredInvoices}
+              categoryData={categoryData}
+              categoryCompare={categoryCompare}
+              yearA={yearA}
+              yearB={yearB}
+              compare={compare}
+              lang={lang}
+              tr={tr}
+            />
+          )}
+
+          {tab === "skr03" && (
+            <ReportsSKR03Tab
+              invoices={invoices}
+              invoiceItems={invoiceItems}
+              filteredInvoices={filteredInvoices}
+              yearA={yearA}
+              lang={lang}
+              tr={tr}
+            />
+          )}
+
+          {tab === "suppliers" && (
+            <ReportsSuppliersTab
+              supplierData={supplierData}
+              yearA={yearA}
+              lang={lang}
+              tr={tr}
+            />
+          )}
+
+          {tab === "vat" && (
+            <ReportsVATTab
+              vatData={vatData}
+              yearA={yearA}
+              lang={lang}
+              tr={tr}
+            />
+          )}
+
+          {tab === "susa" && (
+            <div style={{ position: "relative" }}>
+              <SuSaReport
+                invoices={invoices}
+                invoiceItems={invoiceItems}
+                initialYear={susaTargetYear}
+                initialMonth={susaTargetMonth}
+                hideControls={true}
+              />
+            </div>
+          )}
+
+          {tab === "export" && (
+            <ReportsExportTab
+              invoices={invoices}
+              invoiceItems={invoiceItems}
+              yearA={yearA}
+              years={years}
+              lang={lang}
+              tr={tr}
+            />
+          )}
 
 
         </div>

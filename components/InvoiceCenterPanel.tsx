@@ -1,421 +1,423 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import { useLang } from "../LanguageContext";
 import { Invoice, InvoiceItem } from "../types";
 import {
-  Calendar, Clock, Upload, Search,
-  Loader2, ChevronDown, FileText, ImageIcon,
-  TrendingUp, Receipt, AlertCircle, BarChart2,
+  Upload, Search, Loader2, FileText, Calendar, Clock,
+  AlertCircle, ChevronDown, ChevronUp, Building2,
+  AlertTriangle, Package, TrendingUp,
 } from "lucide-react";
 
 interface InvoiceCenterPanelProps {
   invoices: Invoice[];
-  invoiceItems: InvoiceItem[];
   loading: boolean;
+  uploading: boolean;
   selectedInvoice: Invoice | null;
   onSelectInvoice: (invoice: Invoice | null) => void;
-  searchTerm: string;
-  setSearchTerm: (term: string) => void;
-  onUpload: (file: File) => void;
-  uploading: boolean;
-  selectedItem: InvoiceItem | null;
-  onSelectItem: (item: InvoiceItem | null) => void;
+  onUpload: (files: File[]) => void;
+  fetchItems: (invoiceId: string) => Promise<InvoiceItem[]>;
+  onAccountClick?: (item: any) => void;
 }
 
-const safeRender = (value: any) => {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "object") { try { return JSON.stringify(value); } catch { return "Error"; } }
-  return String(value);
-};
-
 const fmtEur = (n: number) =>
-  new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " €";
+  new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " \u20AC";
 
-const fmtShort = (n: number) => {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M €";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K €";
-  return fmtEur(n);
+const STATUS_MAP: Record<string, { label: [string, string]; color: string; bg: string }> = {
+  analyzed: { label: ["Analiz Edildi", "Analysiert"], color: "#10b981", bg: "rgba(16,185,129,.12)" },
+  check: { label: ["Kontrol Gerekli", "Pr\u00fcfung"], color: "#f59e0b", bg: "rgba(245,158,11,.12)" },
+  error: { label: ["Hata", "Fehler"], color: "#ef4444", bg: "rgba(239,68,68,.12)" },
 };
 
 export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
-  invoices, invoiceItems, loading,
-  selectedInvoice, onSelectInvoice,
-  searchTerm, setSearchTerm,
-  onUpload, uploading,
-  selectedItem, onSelectItem,
+  invoices, loading, uploading, selectedInvoice, onSelectInvoice, onUpload, fetchItems, onAccountClick,
 }) => {
-  const { t } = useLang();
+  const { lang } = useLang();
+  const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const fileRef = useRef<HTMLInputElement>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [viewMode, setViewMode] = useState<"recent" | "calendar">("recent");
+  const [items, setItems] = useState<InvoiceItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
 
-  const currentYear  = new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
-
-  const [viewMode, setViewMode]       = useState<"calendar" | "recent">("calendar");
-  const [selectedYear, setSelectedYear]   = useState(currentYear);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+  const months = lang === "tr"
+    ? ["Oca", "Sub", "Mar", "Nis", "May", "Haz", "Tem", "Agu", "Eyl", "Eki", "Kas", "Ara"]
+    : ["Jan", "Feb", "M\u00E4r", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+
+  useEffect(() => {
+    if (!selectedInvoice) { setItems([]); return; }
+    setItemsLoading(true);
+    fetchItems(selectedInvoice.id).then(setItems).finally(() => setItemsLoading(false));
+  }, [selectedInvoice?.id, fetchItems]);
 
   const filteredInvoices = useMemo(() => {
     let filtered = invoices;
-    if (viewMode === "recent") {
-      filtered = [...filtered]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 50);
-    } else {
+    if (viewMode === "calendar") {
       filtered = filtered.filter(inv => {
-        if (!inv.invoice_date) return false;
-        const d = new Date(inv.invoice_date);
+        if (!inv.tarih) return false;
+        const d = new Date(inv.tarih);
         return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
       });
-      filtered.sort((a, b) => new Date(b.invoice_date || 0).getTime() - new Date(a.invoice_date || 0).getTime());
     }
+    filtered = [...filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(inv =>
-        (inv.supplier_name || "").toLowerCase().includes(term) ||
-        (inv.invoice_number || "").toLowerCase().includes(term)
+        (inv.fatura_no || "").toLowerCase().includes(term) ||
+        (inv.satici_vkn || "").toLowerCase().includes(term) ||
+        (inv.alici_vkn || "").toLowerCase().includes(term)
       );
     }
     return filtered;
   }, [invoices, searchTerm, viewMode, selectedYear, selectedMonth]);
 
-  const stats = useMemo(() => {
-    const totalCount  = filteredInvoices.length;
-    const totalVolume = filteredInvoices.reduce((s, inv) => s + Number(inv.total_gross || 0), 0);
-    const pendingCount = filteredInvoices.filter(inv => inv.status !== "analyzed").length;
-    const avgAmount   = totalCount > 0 ? totalVolume / totalCount : 0;
-    return { totalCount, totalVolume, pendingCount, avgAmount };
-  }, [filteredInvoices]);
+  const totalAmount = useMemo(() =>
+    filteredInvoices.reduce((sum, inv) => sum + (inv.genel_toplam || 0), 0),
+    [filteredInvoices]
+  );
 
-  const currentItems = selectedInvoice
-    ? invoiceItems.filter(item => item.invoice_id === selectedInvoice.id)
-    : [];
+  // Count invoices per month for the selected year (for badge display)
+  const monthCounts = useMemo(() => {
+    const counts = new Array(12).fill(0);
+    invoices.forEach(inv => {
+      if (!inv.tarih) return;
+      const d = new Date(inv.tarih);
+      if (d.getFullYear() === selectedYear) {
+        counts[d.getMonth()]++;
+      }
+    });
+    return counts;
+  }, [invoices, selectedYear]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) { setViewMode("recent"); onUpload(file); e.target.value = ""; }
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      onUpload(Array.from(files));
+      e.target.value = "";
+    }
   };
-
-  const handleRowClick = (inv: Invoice) => {
-    if (selectedInvoice?.id === inv.id) { onSelectInvoice(null); }
-    else { onSelectInvoice(inv); onSelectItem(null); }
-  };
-
-  // Status badge helper
-  const statusBadge = (status: string) => {
-    const map: Record<string, { cls: string; label: string }> = {
-      analyzed:  { cls: "badge-analyzed",  label: t.analyzed },
-      pending:   { cls: "badge-pending",   label: t.pending },
-      duplicate: { cls: "badge-duplicate", label: "Mükerrer" },
-      error:     { cls: "badge-error",     label: "Hata" },
-      check:     { cls: "badge-check",     label: "Kontrol" },
-    };
-    const m = map[status] || map.pending;
-    return <span className={m.cls}>{m.label}</span>;
-  };
-
-  // Score badge
-  const scoreBadge = (score: any) => {
-    if (!score) return <span style={{ color: "var(--text-dim)" }}>—</span>;
-    const n = Number(score);
-    const color = n >= 90 ? "#10b981" : n >= 70 ? "#f59e0b" : "#f43f5e";
-    return (
-      <span style={{
-        padding: "2px 8px", borderRadius: "20px", fontSize: "10px", fontWeight: 700,
-        background: `${color}15`, color, border: `1px solid ${color}30`,
-      }}>
-        %{score}
-      </span>
-    );
-  };
-
-  // KPI cards config
-  const kpiCards = [
-    { icon: <Receipt size={16} />, label: t.totalRows, val: stats.totalCount.toString(), accent: "#06b6d4" },
-    { icon: <TrendingUp size={16} />, label: t.totalVolume, val: fmtShort(stats.totalVolume), accent: "#10b981" },
-    { icon: <BarChart2 size={16} />, label: t.averageAmount, val: fmtShort(stats.avgAmount), accent: "#8b5cf6" },
-    {
-      icon: <AlertCircle size={16} />, label: t.waitingAnalysis,
-      val: stats.pendingCount.toString(),
-      accent: stats.pendingCount > 0 ? "#f59e0b" : "#10b981",
-      pulse: stats.pendingCount > 0,
-    },
-  ];
 
   return (
-    <div style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      height: "100%", overflow: "hidden",
-      background: "var(--bg)",
-      borderRight: "1px solid rgba(255,255,255,.06)",
-    }}>
-
-      {/* ── KPI Stats Row ── */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "12px",
-        padding: "16px 20px",
-        background: "var(--panel)",
-        borderBottom: "1px solid rgba(255,255,255,.06)",
-        flexShrink: 0,
-      }}>
-        {kpiCards.map((c, i) => (
-          <div key={i} style={{
-            padding: "12px 14px", borderRadius: "12px",
-            background: `linear-gradient(135deg, ${c.accent}0e 0%, transparent 100%)`,
-            border: `1px solid ${c.accent}22`,
-            position: "relative", overflow: "hidden",
-            transition: "transform .18s",
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)"; }}
+    <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ background: "#111318" }}>
+      {/* Header */}
+      <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,.06)", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+          <div>
+            <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'Space Grotesk', sans-serif", margin: 0 }}>
+              {tr("Faturalar", "Rechnungen")}
+            </h2>
+            <p style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>
+              {filteredInvoices.length} {tr("fatura", "Rechnung")} &middot; {fmtEur(totalAmount)}
+            </p>
+          </div>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "10px 18px", borderRadius: "10px",
+              background: uploading ? "rgba(6,182,212,.08)" : "linear-gradient(135deg, #06b6d4, #0891b2)",
+              border: "none", cursor: uploading ? "wait" : "pointer",
+              color: "#fff", fontSize: "13px", fontWeight: 600,
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              boxShadow: uploading ? "none" : "0 4px 16px rgba(6,182,212,.3)",
+              transition: "all .2s",
+            }}
           >
-            {/* Top line */}
-            <div style={{ position: "absolute", top: 0, left: "20%", right: "20%", height: "1px", background: `linear-gradient(90deg,transparent,${c.accent}44,transparent)` }} />
-            {c.pulse && (
-              <div style={{ position: "absolute", top: "10px", right: "10px", width: "7px", height: "7px", borderRadius: "50%", background: c.accent, boxShadow: `0 0 8px ${c.accent}`, animation: "pulse-dot 1.5s infinite" }} />
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-              <span style={{ color: c.accent, opacity: .8 }}>{c.icon}</span>
-              <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--text-3)" }}>
-                {c.label}
-              </span>
-            </div>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: "18px", color: c.accent, lineHeight: 1, letterSpacing: "-.3px" }}>
-              {c.val}
-            </div>
+            {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+            {uploading ? tr("Analiz ediliyor...", "Wird analysiert...") : tr("Fatura Yukle", "Rechnung hochladen")}
+          </button>
+          <input ref={fileRef} type="file" multiple accept="image/*,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
+        </div>
+
+        {/* Search & View Toggle */}
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div style={{
+            flex: 1, display: "flex", alignItems: "center", gap: "8px",
+            padding: "8px 12px", borderRadius: "10px",
+            background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)",
+          }}>
+            <Search size={14} style={{ color: "var(--text-dim)", flexShrink: 0 }} />
+            <input
+              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+              placeholder={tr("Fatura no, VKN ile ara...", "Suche nach Rechnungsnr., USt-ID...")}
+              style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "#e2e8f0", fontSize: "13px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+            />
           </div>
-        ))}
-      </div>
-
-      {/* ── Toolbar ── */}
-      <div style={{
-        background: "var(--panel-2)",
-        borderBottom: "1px solid rgba(255,255,255,.06)",
-        flexShrink: 0,
-      }}>
-        {/* Top row */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "10px 20px", gap: "12px",
-          flexWrap: "wrap",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {/* View mode toggle */}
-            <div style={{
-              display: "flex", background: "rgba(255,255,255,.04)", borderRadius: "9px",
-              padding: "3px", border: "1px solid rgba(255,255,255,.07)",
-            }}>
-              {([
-                { mode: "calendar", Icon: Calendar, label: t.calendarMode },
-                { mode: "recent",   Icon: Clock,    label: t.recentUploads },
-              ] as const).map(({ mode, Icon, label }) => (
-                <button key={mode}
-                  onClick={() => setViewMode(mode)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "6px",
-                    padding: "6px 12px", borderRadius: "7px", border: "none", cursor: "pointer",
-                    fontSize: "12px", fontWeight: 600, fontFamily: "'Plus Jakarta Sans', sans-serif",
-                    transition: "all .18s",
-                    background: viewMode === mode ? "linear-gradient(135deg,#06b6d4,#0891b2)" : "transparent",
-                    color: viewMode === mode ? "#fff" : "var(--text-3)",
-                    boxShadow: viewMode === mode ? "0 2px 10px rgba(6,182,212,.3)" : "none",
-                  }}>
-                  <Icon size={13} /> {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Year selector */}
-            {viewMode === "calendar" && (
-              <div style={{ position: "relative" }}>
-                <select
-                  value={selectedYear}
-                  onChange={e => setSelectedYear(Number(e.target.value))}
-                  className="c-input"
-                  style={{ padding: "7px 32px 7px 12px", width: "86px", fontSize: "12px", fontWeight: 700, fontFamily: "'Space Mono', monospace" }}
-                >
-                  {years.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <ChevronDown size={13} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", pointerEvents: "none" }} />
-              </div>
-            )}
-          </div>
-
-          {/* Search + Upload */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div className="glow-wrap" style={{ position: "relative" }}>
-              <input
-                type="text"
-                placeholder={t.search}
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="c-input"
-                style={{ paddingLeft: "34px", width: "180px", fontSize: "12px" }}
-              />
-              <Search size={13} className="glow-icon" style={{ position: "absolute", left: "11px", top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", pointerEvents: "none" }} />
-            </div>
-
-            <input type="file" ref={fileRef} onChange={handleFileChange} accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }} />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="c-btn-primary"
-              style={{
-                padding: "8px 16px", fontSize: "12px",
-                display: "flex", alignItems: "center", gap: "7px", whiteSpace: "nowrap",
-              }}
-            >
-              {uploading ? (
-                <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> {t.analyzing}</>
-              ) : (
-                <><Upload size={14} /> <span className="hidden xs:inline">{t.uploadInvoice}</span><span style={{ display: "none" }}>Yükle</span></>
-              )}
-            </button>
+          <div style={{ display: "flex", borderRadius: "8px", overflow: "hidden", border: "1px solid rgba(255,255,255,.07)" }}>
+            {(["recent", "calendar"] as const).map(mode => (
+              <button key={mode} onClick={() => setViewMode(mode)} style={{
+                padding: "7px 12px", border: "none", cursor: "pointer",
+                background: viewMode === mode ? "rgba(6,182,212,.15)" : "transparent",
+                color: viewMode === mode ? "#06b6d4" : "var(--text-dim)",
+                fontSize: "11px", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px",
+              }}>
+                {mode === "recent" ? <Clock size={12} /> : <Calendar size={12} />}
+                {mode === "recent" ? tr("Son", "Letzte") : tr("Takvim", "Kalender")}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Month tabs */}
         {viewMode === "calendar" && (
-          <div style={{
-            display: "flex", overflowX: "auto",
-            borderTop: "1px solid rgba(255,255,255,.05)",
-          }} className="no-scrollbar">
-            {t.months.map((m: string, idx: number) => {
-              const isActive = selectedMonth === idx;
-              return (
-                <button key={idx}
-                  onClick={() => setSelectedMonth(idx)}
-                  style={{
-                    flex: "1 0 72px", minWidth: "72px",
-                    padding: "10px 4px",
-                    fontSize: "11px", fontWeight: isActive ? 700 : 500,
-                    fontFamily: "'Plus Jakarta Sans', sans-serif",
-                    border: "none", cursor: "pointer",
-                    borderBottom: `2px solid ${isActive ? "#06b6d4" : "transparent"}`,
-                    background: isActive ? "rgba(6,182,212,.06)" : "transparent",
-                    color: isActive ? "#06b6d4" : "var(--text-3)",
-                    transition: "all .15s",
-                  }}
-                  onMouseEnter={e => { if (!isActive) { e.currentTarget.style.color = "var(--text-2)"; e.currentTarget.style.background = "rgba(255,255,255,.03)"; }}}
-                  onMouseLeave={e => { if (!isActive) { e.currentTarget.style.color = "var(--text-3)"; e.currentTarget.style.background = "transparent"; }}}
-                >
-                  {m}
-                </button>
-              );
-            })}
+          <div style={{ display: "flex", gap: "6px", marginTop: "12px", flexWrap: "wrap" }}>
+            <div style={{ position: "relative" }}>
+              <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}
+                style={{ padding: "5px 24px 5px 10px", borderRadius: "7px", fontSize: "11px", fontWeight: 600, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", color: "#e2e8f0", cursor: "pointer", appearance: "none" as const }}>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <ChevronDown size={10} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)", pointerEvents: "none" as const }} />
+            </div>
+            {months.map((m, i) => (
+              <button key={i} onClick={() => setSelectedMonth(i)} style={{
+                padding: "4px 10px", borderRadius: "6px", fontSize: "10px", fontWeight: 600, border: "none", cursor: "pointer",
+                background: selectedMonth === i ? "rgba(6,182,212,.2)" : "rgba(255,255,255,.03)",
+                color: selectedMonth === i ? "#06b6d4" : "var(--text-dim)", transition: "all .15s",
+                position: "relative",
+              }}>
+                {m}
+                {monthCounts[i] > 0 && (
+                  <span style={{
+                    position: "absolute", top: "-6px", right: "-4px",
+                    minWidth: "16px", height: "16px", borderRadius: "8px",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "9px", fontWeight: 700, lineHeight: 1,
+                    padding: "0 4px",
+                    background: selectedMonth === i ? "#06b6d4" : "rgba(6,182,212,.8)",
+                    color: "#fff",
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    boxShadow: "0 1px 4px rgba(0,0,0,.3)",
+                  }}>
+                    {monthCounts[i]}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── Invoice List ── */}
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
+      {/* Invoice List - scrollable */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
         {loading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "var(--text-3)", fontSize: "13px", gap: "10px" }}>
-            <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> {t.loading}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "200px", gap: "12px" }}>
+            <Loader2 size={24} className="animate-spin" style={{ color: "#06b6d4" }} />
+            <span style={{ fontSize: "12px", color: "var(--text-dim)" }}>{tr("Yukleniyor...", "Laden...")}</span>
           </div>
         ) : filteredInvoices.length === 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "200px", gap: "10px" }}>
-            <FileText size={32} style={{ color: "var(--text-dim)" }} />
-            <span style={{ color: "var(--text-3)", fontSize: "13px" }}>{t.noInvoices}</span>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "200px", gap: "12px" }}>
+            <FileText size={40} style={{ color: "rgba(255,255,255,.08)" }} />
+            <span style={{ fontSize: "13px", color: "var(--text-dim)" }}>
+              {tr("Henuz fatura yok. Yukle butonuna tiklayarak baslayin.", "Noch keine Rechnungen. Laden Sie eine hoch.")}
+            </span>
           </div>
         ) : (
-          <table className="c-table" style={{ minWidth: "700px" }}>
-            <thead>
-              <tr>
-                {[t.invoiceNumber, t.supplier, t.invoiceDate, t.totalNet, t.totalVat, t.totalGross, t.status].map((h, i) => (
-                  <th key={i}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredInvoices.map(inv => (
-                <React.Fragment key={inv.id}>
-                  {/* Invoice row */}
-                  <tr
-                    onClick={() => handleRowClick(inv)}
-                    className={selectedInvoice?.id === inv.id ? "selected" : ""}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <td style={{ fontFamily: "'Space Mono', monospace", fontSize: "11px", color: "var(--text-2)" }}>
-                      {safeRender(inv.invoice_number)}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{
-                          width: "26px", height: "26px", borderRadius: "7px",
-                          background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)",
-                          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                        }}>
-                          {inv.file_type?.includes("pdf")
-                            ? <FileText size={12} style={{ color: "var(--text-3)" }} />
-                            : <ImageIcon size={12} style={{ color: "var(--text-3)" }} />}
-                        </div>
-                        <span style={{ color: "var(--text-1)", fontWeight: 500, fontSize: "12px" }}>{safeRender(inv.supplier_name)}</span>
-                      </div>
-                    </td>
-                    <td style={{ fontFamily: "'Space Mono', monospace", fontSize: "11px" }}>
-                      {safeRender(inv.invoice_date)}
-                    </td>
-                    <td style={{ fontFamily: "'Space Mono', monospace", fontSize: "11px" }}>
-                      {inv.total_net ? fmtEur(Number(inv.total_net)) : "—"}
-                    </td>
-                    <td style={{ fontFamily: "'Space Mono', monospace", fontSize: "11px" }}>
-                      {inv.total_vat ? fmtEur(Number(inv.total_vat)) : "—"}
-                    </td>
-                    <td style={{ fontFamily: "'Space Mono', monospace", fontWeight: 700, color: "var(--text-1)", fontSize: "12px" }}>
-                      {inv.total_gross ? fmtEur(Number(inv.total_gross)) : "—"}
-                    </td>
-                    <td>{statusBadge(inv.status)}</td>
-                  </tr>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {filteredInvoices.map(invoice => {
+              const isSelected = selectedInvoice?.id === invoice.id;
+              const status = STATUS_MAP[invoice.status] || STATUS_MAP.analyzed;
+              const statusLabel = status.label[lang === "tr" ? 0 : 1];
+              const hasWarnings = invoice.uyarilar && invoice.uyarilar.length > 0;
+              const h = invoice.raw_ai_response?.header;
+              const fb = invoice.raw_ai_response?.fatura_bilgileri || h;
+              const displayItems = isSelected ? (invoice.raw_ai_response?.items || invoice.raw_ai_response?.kalemler || items) : [];
 
-                  {/* Expanded detail row */}
-                  {selectedInvoice?.id === inv.id && (
-                    <tr>
-                      <td colSpan={7} style={{ padding: 0, background: "rgba(6,182,212,.03)", borderBottom: "1px solid rgba(6,182,212,.12)" }}>
-                        <div style={{ padding: "16px 20px" }}>
-                          {currentItems.length === 0 ? (
-                            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-3)", fontSize: "12px" }}>
-                              Kalem yok
+              return (
+                <div key={invoice.id}>
+                  {/* Invoice Row */}
+                  <button onClick={() => onSelectInvoice(isSelected ? null : invoice)}
+                    style={{
+                      width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: "12px",
+                      padding: "10px 14px",
+                      borderRadius: isSelected ? "10px 10px 0 0" : "10px",
+                      border: `1px solid ${isSelected ? "rgba(6,182,212,.3)" : "rgba(255,255,255,.06)"}`,
+                      borderBottom: isSelected ? "none" : undefined,
+                      background: isSelected ? "rgba(6,182,212,.06)" : "rgba(255,255,255,.02)",
+                      cursor: "pointer", transition: "all .15s",
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,.04)"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,.02)"; }}
+                  >
+                    <div style={{
+                      width: "34px", height: "34px", borderRadius: "9px", flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: isSelected ? "rgba(6,182,212,.15)" : "rgba(255,255,255,.04)",
+                      border: `1px solid ${isSelected ? "rgba(6,182,212,.25)" : "rgba(255,255,255,.06)"}`,
+                    }}>
+                      <FileText size={14} style={{ color: isSelected ? "#06b6d4" : "var(--text-dim)" }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {invoice.fatura_no || tr("Fatura No Yok", "Ohne Nr.")}
+                        </span>
+                        {hasWarnings && <AlertCircle size={11} style={{ color: "#f59e0b", flexShrink: 0 }} />}
+                      </div>
+                      <div style={{ fontSize: "10px", color: "var(--text-dim)", display: "flex", gap: "6px" }}>
+                        <span>{invoice.tarih || fb?.tarih || h?.invoice_date || "---"}</span>
+                        <span style={{ opacity: .3 }}>&middot;</span>
+                        <span>{fb?.satici_adi || h?.supplier_name || invoice.satici_vkn || "---"}</span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'Space Grotesk', sans-serif", marginBottom: "3px" }}>
+                        {fmtEur(invoice.genel_toplam || 0)}
+                      </div>
+                    <div style={{ flex: "0 0 100px", display: "flex", alignItems: "center" }}>
+                      {invoice.status === "analyzed" ? (
+                        <span style={{
+                          fontSize: "10px", padding: "4px 8px", borderRadius: "20px",
+                          background: "rgba(16,185,129,.1)", color: "#10b981", fontWeight: 600
+                        }}>
+                          {tr("Analiz Edildi", "Analysiert")}
+                        </span>
+                      ) : invoice.status === "mükerrer" ? (
+                        <span style={{
+                          fontSize: "10px", padding: "4px 8px", borderRadius: "20px",
+                          background: "rgba(239,68,68,.1)", color: "#ef4444", fontWeight: 600
+                        }}>
+                          Mükerrer
+                        </span>
+                      ) : invoice.status === "error" ? (
+                        <span style={{
+                          fontSize: "10px", padding: "4px 8px", borderRadius: "20px",
+                          background: "rgba(239,68,68,.1)", color: "#ef4444", fontWeight: 600
+                        }}>
+                          {tr("Hata", "Fehler")}
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: "10px", padding: "4px 8px", borderRadius: "20px",
+                          background: "rgba(245,158,11,.1)", color: "#fbbf24", fontWeight: 600
+                        }}>
+                          {tr("Bekliyor", "Ausstehend")}
+                        </span>
+                      )}
+                    </div>
+                    </div>
+                    {isSelected
+                      ? <ChevronUp size={14} style={{ color: "#06b6d4", flexShrink: 0 }} />
+                      : <ChevronDown size={14} style={{ color: "var(--text-dim)", flexShrink: 0, opacity: .4 }} />}
+                  </button>
+
+                  {/* Inline Detail - expands below selected invoice */}
+                  {isSelected && (
+                    <div style={{
+                      border: "1px solid rgba(6,182,212,.3)",
+                      borderTop: "none",
+                      borderRadius: "0 0 10px 10px",
+                      background: "rgba(6,182,212,.02)",
+                      overflow: "hidden",
+                    }}>
+                      {/* Colored accent bar */}
+                      <div style={{ height: "2px", background: "linear-gradient(90deg, #06b6d4, #8b5cf6, #06b6d4)" }} />
+
+                      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
+
+                        {/* --- Satici / Alici Row --- */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                          {/* Satici */}
+                          <div style={{
+                            padding: "10px 12px", borderRadius: "8px",
+                            background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.06)",
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                              <Building2 size={12} style={{ color: "#06b6d4" }} />
+                              <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                                {tr("Satici", "Verkaufer")}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "12px", fontWeight: 600, color: "#e2e8f0", marginBottom: "2px" }}>
+                              {fb?.satici_adi || h?.supplier_name || "---"}
+                            </div>
+                            <div style={{ fontSize: "10px", color: "var(--text-dim)", fontFamily: "'Space Grotesk', sans-serif" }}>
+                              {invoice.satici_vkn || fb?.satici_vkn || h?.supplier_vat_id || "---"}
+                            </div>
+                          </div>
+                          {/* Alici */}
+                          <div style={{
+                            padding: "10px 12px", borderRadius: "8px",
+                            background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.06)",
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                              <Building2 size={12} style={{ color: "#8b5cf6" }} />
+                              <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                                {tr("Alici", "Kaufer")}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "12px", fontWeight: 600, color: "#e2e8f0", marginBottom: "2px" }}>
+                              {fb?.alici_adi || h?.buyer_name || "---"}
+                            </div>
+                            <div style={{ fontSize: "10px", color: "var(--text-dim)", fontFamily: "'Space Grotesk', sans-serif" }}>
+                              {invoice.alici_vkn || fb?.alici_vkn || h?.buyer_vat_id || "---"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* --- Kalemler (Items) --- */}
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
+                            <Package size={12} style={{ color: "#06b6d4" }} />
+                            <span style={{ fontSize: "10px", fontWeight: 700, color: "#06b6d4", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                              {tr("Kalemler", "Positionen")}
+                            </span>
+                            {!itemsLoading && displayItems.length > 0 && (
+                              <span style={{ fontSize: "9px", color: "var(--text-dim)", marginLeft: "2px" }}>({displayItems.length})</span>
+                            )}
+                          </div>
+
+                          {itemsLoading && displayItems.length === 0 ? (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "16px 0" }}>
+                              <Loader2 size={16} className="animate-spin" style={{ color: "#06b6d4" }} />
+                            </div>
+                          ) : displayItems.length === 0 ? (
+                            <div style={{ fontSize: "11px", color: "var(--text-dim)", padding: "8px 0" }}>
+                              {tr("Kalem bulunamadi", "Keine Positionen")}
                             </div>
                           ) : (
-                            <div style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid rgba(255,255,255,.07)" }}>
-                              <table className="c-table" style={{ fontSize: "11px" }}>
+                            <div style={{
+                              borderRadius: "8px", overflow: "hidden",
+                              border: "1px solid rgba(255,255,255,.06)",
+                            }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
                                 <thead>
-                                  <tr>
-                                    {[t.description, t.quantity, t.unitPrice, t.vatRate, t.vatAmount, t.netAmount, t.grossAmount, t.accountCode, t.matchScore].map((h, i) => (
-                                      <th key={i} style={{ fontSize: "9px", background: "rgba(0,0,0,.3)" }}>{h}</th>
-                                    ))}
+                                  <tr style={{ background: "rgba(255,255,255,.03)" }}>
+                                    <th style={thStyle}>{tr("Urun/Hizmet", "Artikel")}</th>
+                                    <th style={thStyle}>{tr("Hesap", "Konto")}</th>
+                                    <th style={{ ...thStyle, textAlign: "right", width: "55px" }}>{tr("Miktar", "Menge")}</th>
+                                    <th style={{ ...thStyle, textAlign: "right", width: "55px" }}>KDV</th>
+                                    <th style={{ ...thStyle, textAlign: "right", width: "90px" }}>{tr("Toplam", "Summe")}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {currentItems.map(item => (
-                                    <tr key={item.id}
-                                      onClick={e => { e.stopPropagation(); onSelectItem(item); }}
-                                      className={selectedItem?.id === item.id ? "selected" : ""}
-                                    >
-                                      <td style={{ maxWidth: "200px" }}>
-                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={item.description || ""}>
-                                          {safeRender(item.description)}
-                                        </span>
+                                  {displayItems.map((item: any, idx: number) => (
+                                    <tr key={item.id || idx} style={{ borderTop: "1px solid rgba(255,255,255,.04)" }}>
+                                      <td style={{ padding: "7px 8px", color: "#e2e8f0", fontSize: "11px" }}>{item.description || item.urun_adi || "---"}</td>
+                                      <td style={{ padding: "7px 8px", color: "#06b6d4", fontSize: "11px", fontWeight: 600 }}>
+                                        {item.account_code || item.hesap_kodu ? (
+                                            <span
+                                              title={item.account_name || item.account_name_tr || ""}
+                                              onClick={(e) => { e.stopPropagation(); onAccountClick?.(item); }}
+                                              style={{
+                                                cursor: onAccountClick ? "pointer" : "default",
+                                                padding: "2px 6px", borderRadius: "4px",
+                                                background: "rgba(6,182,212,.1)", border: "1px solid rgba(6,182,212,.2)",
+                                                transition: "all .15s",
+                                              }}
+                                              onMouseEnter={e => { if (onAccountClick) { e.currentTarget.style.background = "rgba(6,182,212,.2)"; e.currentTarget.style.borderColor = "rgba(6,182,212,.4)"; }}}
+                                              onMouseLeave={e => { e.currentTarget.style.background = "rgba(6,182,212,.1)"; e.currentTarget.style.borderColor = "rgba(6,182,212,.2)"; }}
+                                            >
+                                              {item.account_code || item.hesap_kodu}
+                                            </span>
+                                        ) : "---"}
                                       </td>
-                                      <td style={{ fontFamily: "'Space Mono', monospace" }}>{safeRender(item.quantity)}</td>
-                                      <td style={{ fontFamily: "'Space Mono', monospace" }}>{item.unit_price ? Number(item.unit_price).toFixed(2) : "—"}</td>
-                                      <td>
-                                        {item.vat_rate != null
-                                          ? <span style={{ padding: "1px 7px", borderRadius: "20px", background: "rgba(6,182,212,.1)", color: "#06b6d4", fontFamily: "'Space Mono', monospace", fontSize: "10px", fontWeight: 700 }}>%{item.vat_rate}</span>
-                                          : "—"}
-                                      </td>
-                                      <td style={{ fontFamily: "'Space Mono', monospace" }}>{item.vat_amount ? Number(item.vat_amount).toFixed(2) : "—"}</td>
-                                      <td style={{ fontFamily: "'Space Mono', monospace" }}>{item.net_amount ? Number(item.net_amount).toFixed(2) : "—"}</td>
-                                      <td style={{ fontFamily: "'Space Mono', monospace", fontWeight: 700, color: "var(--text-1)" }}>
-                                        {item.gross_amount ? fmtEur(Number(item.gross_amount)) : "—"}
-                                      </td>
-                                      <td>
-                                        <span style={{ fontFamily: "'Space Mono', monospace", color: "#06b6d4", fontWeight: 700, fontSize: "11px" }}>
-                                          {safeRender(item.account_code)}
-                                        </span>
-                                      </td>
-                                      <td>{scoreBadge(item.match_score)}</td>
+                                      <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11px", color: "#94a3b8" }}>{item.quantity || item.miktar || 1}</td>
+                                      <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11px", color: "#94a3b8" }}>%{item.vat_rate || item.kdv_orani || 0}</td>
+                                      <td style={{ padding: "7px 8px", textAlign: "right", fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: "11px", color: "#e2e8f0" }}>{fmtEur(item.gross_amount || item.satir_toplami || 0)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -423,19 +425,76 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                             </div>
                           )}
                         </div>
-                      </td>
-                    </tr>
+
+                        {/* --- Finansal Ozet --- */}
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: "16px",
+                          padding: "10px 14px", borderRadius: "8px",
+                          background: "rgba(6,182,212,.04)", border: "1px solid rgba(6,182,212,.12)",
+                        }}>
+                          <TrendingUp size={14} style={{ color: "#06b6d4", flexShrink: 0 }} />
+                          <div style={{ display: "flex", gap: "20px", flex: 1, flexWrap: "wrap" }}>
+                            <div>
+                              <div style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: "2px" }}>
+                                {tr("Ara Toplam", "Zwischensumme")}
+                              </div>
+                              <div style={{ fontSize: "13px", fontWeight: 600, color: "#e2e8f0", fontFamily: "'Space Grotesk', sans-serif" }}>
+                                {fmtEur(invoice.ara_toplam || 0)}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: "2px" }}>
+                                {tr("KDV", "MwSt.")}
+                              </div>
+                              <div style={{ fontSize: "13px", fontWeight: 600, color: "#f59e0b", fontFamily: "'Space Grotesk', sans-serif" }}>
+                                {fmtEur(invoice.toplam_kdv || 0)}
+                              </div>
+                            </div>
+                            <div style={{ marginLeft: "auto" }}>
+                              <div style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: "2px" }}>
+                                {tr("Genel Toplam", "Gesamtbetrag")}
+                              </div>
+                              <div style={{ fontSize: "16px", fontWeight: 800, color: "#06b6d4", fontFamily: "'Space Grotesk', sans-serif" }}>
+                                {fmtEur(invoice.genel_toplam || 0)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* --- Uyarilar --- */}
+                        {invoice.uyarilar && invoice.uyarilar.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            {invoice.uyarilar.map((w, i) => (
+                              <div key={i} style={{
+                                display: "flex", alignItems: "center", gap: "8px",
+                                padding: "7px 10px", borderRadius: "8px",
+                                background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.12)",
+                                fontSize: "11px", color: "#fbbf24",
+                              }}>
+                                <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+                                {w}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
-
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
+};
+
+// ─── Helpers ────────────────────────────────────
+
+const thStyle: React.CSSProperties = {
+  padding: "6px 8px", fontSize: "9px", fontWeight: 700,
+  letterSpacing: ".07em", textTransform: "uppercase",
+  color: "var(--text-dim)", fontFamily: "'Space Grotesk', sans-serif",
+  textAlign: "left",
 };

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Invoice, InvoiceItem } from "../types";
+import {} from "../types";
 import { useLang } from "../LanguageContext";
 import { ExportTab } from "./ExportTab";
 import { SettingsCompanyTab } from "./settings/SettingsCompanyTab";
@@ -11,14 +11,12 @@ interface SettingsPanelProps {
   userEmail: string | undefined;
   userRole: string;
   userId: string | undefined;
-  invoices?: Invoice[];
-  invoiceItems?: InvoiceItem[];
 }
 
 type Tab = "company" | "accounting" | "matching" | "export" | "security";
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  userEmail, userRole, userId, invoices = [], invoiceItems = [],
+  userEmail, userRole, userId,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -124,14 +122,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <SettingsMatchingTab
               userId={userId}
               userRole={userRole}
-              invoices={invoices}
-              invoiceItems={invoiceItems}
               flash={flash}
             />
           )}
 
           {tab === "export" && (
-            <ExportTab invoices={invoices} invoiceItems={invoiceItems} tr={tr} lang={lang} />
+            <ExportTab invoices={[]} invoiceItems={[]} tr={tr} lang={lang} />
           )}
 
           {tab === "security" && (

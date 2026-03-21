@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from "react";
 import { useLang } from "../LanguageContext";
 import { MenuKey } from "../types";
 import {
-  LogOut, LayoutDashboard, FileText, BarChart3,
+  LogOut, LayoutDashboard, BarChart3,
   ClipboardList, Building2, Settings2, Crown,
   BookOpen, Building, ShieldCheck, LayoutGrid,
-  Zap, ChevronRight, Globe, Briefcase, Users,
+  Zap, ChevronRight, Globe, Briefcase, Users, Tag, FileText,
 } from "lucide-react";
 import { NotificationBell, NotificationDrawer } from "./NotificationDrawer";
 import { supabase } from "../services/supabaseService";
+import { SubscriptionCountdown } from "./SubscriptionCountdown";
 
 interface CustomerStatus {
   company_name: string;
@@ -18,16 +19,16 @@ interface CustomerStatus {
 }
 
 const PLAN_LABEL: Record<string, [string, string, string]> = {
-  free:      ["Ücretsiz", "#64748b", "#64748b1a"],
-  selected:  ["Aylık",    "#06b6d4", "#06b6d41a"],
-  monthly:   ["Aylık",    "#06b6d4", "#06b6d41a"],
-  quarterly: ["3 Aylık",  "#8b5cf6", "#8b5cf61a"],
-  yearly:    ["Yıllık",   "#10b981", "#10b9811a"],
-  annual:    ["Yıllık",   "#10b981", "#10b9811a"],
+  free: ["Ücretsiz", "#64748b", "#64748b1a"],
+  selected: ["Aylık", "#06b6d4", "#06b6d41a"],
+  monthly: ["Aylık", "#06b6d4", "#06b6d41a"],
+  quarterly: ["3 Aylık", "#8b5cf6", "#8b5cf61a"],
+  yearly: ["Yıllık", "#10b981", "#10b9811a"],
+  annual: ["Yıllık", "#10b981", "#10b9811a"],
 };
 
 const STATUS_DOT: Record<string, [string, string]> = {
-  active:   ["#10b981", "0 0 6px #10b981aa"],
+  active: ["#10b981", "0 0 6px #10b981aa"],
   trialing: ["#3b82f6", "0 0 6px #3b82f6aa"],
   inactive: ["#4b5563", "none"],
   canceled: ["#ef4444", "none"],
@@ -86,24 +87,27 @@ interface LeftPanelProps {
   userRole: string;
   onLogout: () => void;
   onSelectCustomer?: (userId: string) => void;
+  subInfo?: any;
 }
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   dashboard: <LayoutDashboard size={15} />,
-  invoices: <FileText size={15} />,
   reports: <BarChart3 size={15} />,
   forms: <ClipboardList size={15} />,
   bankDocuments: <Building2 size={15} />,
+  invoices: <FileText size={15} />,
   maliMusavir: <Briefcase size={15} />,
   settings: <Settings2 size={15} />,
   subscription: <Crown size={15} />,
+  campaigns: <Tag size={15} />,
   accountPlans: <BookOpen size={15} />,
+  hesapPlanlari2: <BookOpen size={15} />,
   companies: <Building size={15} />,
   adminView: <ShieldCheck size={15} />,
 };
 
 export const LeftPanel: React.FC<LeftPanelProps> = ({
-  activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer,
+  activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer, subInfo,
 }) => {
   const { t, lang, setLang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -170,10 +174,10 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const userItems: { key: MenuKey; label: string; color: string }[] = [
     { key: "dashboard", label: t.dashboard, color: "#06b6d4" },
-    { key: "invoices", label: t.invoices, color: "#8b5cf6" },
     { key: "reports", label: t.reports, color: "#10b981" },
     { key: "forms", label: t.forms, color: "#f59e0b" },
     { key: "bankDocuments", label: t.bankDocuments, color: "#f43f5e" },
+    { key: "invoices", label: t.invoices, color: "#f97316" },
     { key: "maliMusavir", label: t.maliMusavir, color: "#a78bfa" },
     { key: "settings", label: t.settings, color: "#64748b" },
     { key: "subscription", label: t.subscription, color: "#a855f7" },
@@ -181,6 +185,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const adminItems: { key: MenuKey; label: string; color: string }[] = [
     { key: "accountPlans", label: t.accountPlans, color: "#06b6d4" },
+    { key: "hesapPlanlari2", label: tr("Hesap Planları 2", "Kontenrahmen 2"), color: "#8b5cf6" },
+    { key: "campaigns", label: tr("Kampanyalar", "Kampagnen"), color: "#a855f7" },
     { key: "adminView", label: tr("Yönetim", "Admin-Panel"), color: "#f59e0b" },
   ];
 
@@ -418,13 +424,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           {/* ══ BİRLEŞİK ŞİRKETLER / MÜŞTERİLER KARTI ══ */}
           {(() => {
             const isActive = activeMenu === "companies";
-            const activeCount   = customers.filter(c => c.status === "active").length;
-            const trialCount    = customers.filter(c => c.status === "trialing").length;
+            const activeCount = customers.filter(c => c.status === "active").length;
+            const trialCount = customers.filter(c => c.status === "trialing").length;
             const inactiveCount = customers.filter(c => !c.status || c.status === "inactive" || c.status === "canceled").length;
             const stats = [
-              { label: tr("Aktif",   "Aktiv"),   count: activeCount,   color: "#10b981" },
-              { label: tr("Deneme",  "Test"),     count: trialCount,    color: "#3b82f6" },
-              { label: tr("Pasif",   "Inaktiv"), count: inactiveCount,  color: "#64748b" },
+              { label: tr("Aktif", "Aktiv"), count: activeCount, color: "#10b981" },
+              { label: tr("Deneme", "Test"), count: trialCount, color: "#3b82f6" },
+              { label: tr("Pasif", "Inaktiv"), count: inactiveCount, color: "#64748b" },
             ].filter(s => s.count > 0);
 
             return (
@@ -540,9 +546,9 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                     </div>
                     {/* Satırlar */}
                     <div style={{ padding: "0 6px 6px", maxHeight: "160px", overflowY: "auto" }}>
-                      {customers.map(c => (
+                      {customers.map((c, idx) => (
                         <CustomerRow
-                          key={c.user_id}
+                          key={`${c.user_id}-${idx}`}
                           c={c}
                           onClick={onSelectCustomer ? () => { onSelectCustomer(c.user_id); onNavigate?.(); } : undefined}
                         />
@@ -761,6 +767,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           <SidebarContent />
         </div>
 
+        {/* Timer fixed above footer */}
+        {subInfo && subInfo.plan !== 'free' && (
+          <div style={{ paddingBottom: "12px" }}>
+            <SubscriptionCountdown plan={subInfo.plan} expiresAt={subInfo.expiresAt} />
+          </div>
+        )}
+
         {/* Footer */}
         <div style={{
           padding: "14px",
@@ -873,7 +886,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             userId={notifUserId}
             onNavigateToInvoices={() => {
               setNotifOpen(false);
-              setActiveMenu("invoices");
+              setActiveMenu("dashboard");
             }}
           />
         </>

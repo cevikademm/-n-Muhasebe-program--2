@@ -12,13 +12,13 @@ import { SavedTransaction, fetchUserIncomeTransactions } from "../services/bankS
 
 interface Props {
   invoices: Invoice[];
-  invoiceItems: InvoiceItem[];
+  fetchItems: (invoiceId: string) => Promise<InvoiceItem[]>;
 }
 
-const MONTHS_TR = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran",
-  "Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
-const MONTHS_DE = ["Januar","Februar","März","April","Mai","Juni",
-  "Juli","August","September","Oktober","November","Dezember"];
+const MONTHS_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+const MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " €";
@@ -30,7 +30,7 @@ const fmtDate = (d: string | null | undefined) => {
 
 const fmtDateShort = (d: string | null | undefined) => {
   if (!d) return "—";
-  try { return new Date(d).toLocaleDateString("de-DE", { day:"2-digit", month:"2-digit", year:"2-digit" }); }
+  try { return new Date(d).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
   catch { return d; }
 };
 
@@ -232,13 +232,13 @@ const EingangsbuchDoc: React.FC<{
             const account = invItems.find(it => it.account_code)?.account_code ?? "—";
             return (
               <tr key={inv.id} style={{ background: idx % 2 === 0 ? "#fff" : "#f8fafc" }}>
-                <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(inv.invoice_date)}</td>
-                <td style={{ ...TD, fontWeight: 600 }}>{inv.invoice_number || "—"}</td>
-                <td style={TD}>{inv.supplier_name || "—"}</td>
+                <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(inv.tarih || inv.invoice_date)}</td>
+                <td style={{ ...TD, fontWeight: 600 }}>{inv.fatura_no || inv.invoice_number || "—"}</td>
+                <td style={TD}>{inv.satici_adi || inv.supplier_name || "—"}</td>
                 <td style={{ ...TD, textAlign: "right" }}>{vatRate}%</td>
-                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(inv.total_net || 0)}</td>
-                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(inv.total_vat || 0)}</td>
-                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>{fmt(inv.total_gross || 0)}</td>
+                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(inv.ara_toplam || inv.total_net || 0)}</td>
+                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(inv.toplam_kdv || inv.total_vat || 0)}</td>
+                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>{fmt(inv.genel_toplam || inv.total_gross || 0)}</td>
                 <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px", color: "#475569" }}>{account}</td>
               </tr>
             );
@@ -279,11 +279,11 @@ const AusgangsbuchDoc: React.FC<{
   tr: (a: string, b: string) => string;
 }> = ({ bankIncomes, period, companyInfo, tr }) => {
   const totalBankIncome = bankIncomes.reduce((s, tx) => s + (tx.amount || 0), 0);
-  const matchedCount    = bankIncomes.filter(tx => tx.matched_invoice_id).length;
+  const matchedCount = bankIncomes.filter(tx => tx.matched_invoice_id).length;
 
   const hasSteuernummer = !!(companyInfo?.steuernummer?.trim());
-  const hasUstId        = !!(companyInfo?.ust_id?.trim());
-  const taxOk           = hasSteuernummer || hasUstId;
+  const hasUstId = !!(companyInfo?.ust_id?.trim());
+  const taxOk = hasSteuernummer || hasUstId;
 
   return (
     <div style={DOC}>
@@ -317,9 +317,9 @@ const AusgangsbuchDoc: React.FC<{
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
             {[
               { label: tr("Firma Adı", "Firmenname"), val: companyInfo?.company_name, required: false },
-              { label: "Steuernummer",                val: companyInfo?.steuernummer, required: true  },
-              { label: "USt-IdNr",                    val: companyInfo?.ust_id,       required: false },
-              { label: "Finanzamt",                   val: companyInfo?.finanzamt,    required: false },
+              { label: "Steuernummer", val: companyInfo?.steuernummer, required: true },
+              { label: "USt-IdNr", val: companyInfo?.ust_id, required: false },
+              { label: "Finanzamt", val: companyInfo?.finanzamt, required: false },
             ].map(field => {
               const missing = field.required && !field.val?.trim();
               return (
@@ -958,8 +958,8 @@ const TeslimRaporuDoc: React.FC<{
   period: string;
   tr: (a: string, b: string) => string;
 }> = ({ invoices, items, bankIncomes, companyInfo, period, tr }) => {
-  const totalNet   = invoices.reduce((s, i) => s + (i.total_net   || 0), 0);
-  const totalVat   = invoices.reduce((s, i) => s + (i.total_vat   || 0), 0);
+  const totalNet = invoices.reduce((s, i) => s + (i.total_net || 0), 0);
+  const totalVat = invoices.reduce((s, i) => s + (i.total_vat || 0), 0);
   const totalGross = invoices.reduce((s, i) => s + (i.total_gross || 0), 0);
   const totalBankIncome = bankIncomes.reduce((s, tx) => s + (tx.amount || 0), 0);
 
@@ -1033,7 +1033,7 @@ const TeslimRaporuDoc: React.FC<{
             <span style={{ fontSize: "10px", color: "#475569" }}>
               <strong>{companyInfo.company_name}</strong>
               {companyInfo.steuernummer ? ` · StNr: ${companyInfo.steuernummer}` : ""}
-              {companyInfo.finanzamt    ? ` · FA: ${companyInfo.finanzamt}`    : ""}
+              {companyInfo.finanzamt ? ` · FA: ${companyInfo.finanzamt}` : ""}
             </span>
           </div>
         )}
@@ -1042,10 +1042,10 @@ const TeslimRaporuDoc: React.FC<{
       {/* KPI Özet */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "22px" }}>
         {[
-          { label: tr("Gelen Faturalar",      "Eingangsrechnungen"),   val: String(invoices.length),  sub: tr("adet",              "Stück"),                      color: "#06b6d4" },
-          { label: tr("Toplam Gider (Brüt)",  "Gesamtaufwand Brutto"), val: fmt(totalGross),           sub: `Net: ${fmt(totalNet)}`,                               color: "#8b5cf6" },
-          { label: tr("Banka Geliri",         "Bankgutschriften"),     val: fmt(totalBankIncome),      sub: `${bankIncomes.length} ${tr("işlem","Buchungen")}`,    color: "#10b981" },
-          { label: tr("KDV / Vorsteuer",      "Umsatzsteuer"),         val: fmt(totalVat),             sub: tr("İndirilecek KDV",   "Abzugsfähig"),                color: "#f59e0b" },
+          { label: tr("Gelen Faturalar", "Eingangsrechnungen"), val: String(invoices.length), sub: tr("adet", "Stück"), color: "#06b6d4" },
+          { label: tr("Toplam Gider (Brüt)", "Gesamtaufwand Brutto"), val: fmt(totalGross), sub: `Net: ${fmt(totalNet)}`, color: "#8b5cf6" },
+          { label: tr("Banka Geliri", "Bankgutschriften"), val: fmt(totalBankIncome), sub: `${bankIncomes.length} ${tr("işlem", "Buchungen")}`, color: "#10b981" },
+          { label: tr("KDV / Vorsteuer", "Umsatzsteuer"), val: fmt(totalVat), sub: tr("İndirilecek KDV", "Abzugsfähig"), color: "#f59e0b" },
         ].map(kpi => (
           <div key={kpi.label} style={{ padding: "12px", borderRadius: "8px", background: `${kpi.color}0e`, border: `1px solid ${kpi.color}30` }}>
             <div style={{ fontSize: "8px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "4px" }}>{kpi.label}</div>
@@ -1060,10 +1060,10 @@ const TeslimRaporuDoc: React.FC<{
         <STitle title={tr("Gelen Faturalar — Eingangsbuch Özeti", "Eingangsrechnungen — Übersicht")} color="#06b6d4" num={1} />
         <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
           {[
-            { label: tr("Fatura Sayısı","Anzahl"),     val: String(invoices.length), color:"#eff6ff", bc:"#bfdbfe", tc:"#1e40af" },
-            { label: tr("Net Toplam","Netto gesamt"),   val: fmt(totalNet),           color:"#f0f9ff", bc:"#bae6fd", tc:"#0284c7" },
-            { label: "KDV / VSt.",                     val: fmt(totalVat),           color:"#f0f9ff", bc:"#bae6fd", tc:"#0284c7" },
-            { label: tr("Brüt Toplam","Brutto gesamt"),val: fmt(totalGross),         color:"#e0f2fe", bc:"#7dd3fc", tc:"#0369a1" },
+            { label: tr("Fatura Sayısı", "Anzahl"), val: String(invoices.length), color: "#eff6ff", bc: "#bfdbfe", tc: "#1e40af" },
+            { label: tr("Net Toplam", "Netto gesamt"), val: fmt(totalNet), color: "#f0f9ff", bc: "#bae6fd", tc: "#0284c7" },
+            { label: "KDV / VSt.", val: fmt(totalVat), color: "#f0f9ff", bc: "#bae6fd", tc: "#0284c7" },
+            { label: tr("Brüt Toplam", "Brutto gesamt"), val: fmt(totalGross), color: "#e0f2fe", bc: "#7dd3fc", tc: "#0369a1" },
           ].map(k => (
             <div key={k.label} style={{ flex: 1, padding: "8px 10px", borderRadius: "6px", background: k.color, border: `1px solid ${k.bc}` }}>
               <div style={{ fontSize: "8px", color: k.tc, fontWeight: 700 }}>{k.label}</div>
@@ -1114,15 +1114,15 @@ const TeslimRaporuDoc: React.FC<{
         <STitle title={tr("Banka Geliri — Ausgangsbuch Özeti", "Bankgutschriften — Übersicht")} color="#10b981" num={2} />
         <div style={{ display: "flex", gap: "8px" }}>
           <div style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-            <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("İşlem Sayısı","Buchungen")}</div>
+            <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("İşlem Sayısı", "Buchungen")}</div>
             <div style={{ fontSize: "16px", fontWeight: 800, color: "#166534" }}>{bankIncomes.length}</div>
           </div>
           <div style={{ flex: 2, padding: "8px 12px", borderRadius: "6px", background: "#dcfce7", border: "1px solid #86efac" }}>
-            <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("Toplam Gelir","Gesamtgutschriften")}</div>
+            <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("Toplam Gelir", "Gesamtgutschriften")}</div>
             <div style={{ fontSize: "16px", fontWeight: 900, color: "#166534", fontFamily: "monospace" }}>{fmt(totalBankIncome)}</div>
           </div>
           <div style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-            <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("Eşleşen","Zugeordnet")}</div>
+            <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("Eşleşen", "Zugeordnet")}</div>
             <div style={{ fontSize: "16px", fontWeight: 800, color: "#166534" }}>
               {bankIncomes.filter(tx => tx.matched_invoice_id).length} / {bankIncomes.length}
             </div>
@@ -1140,16 +1140,16 @@ const TeslimRaporuDoc: React.FC<{
         <STitle title={tr("Açık Kalemler (OPOS)", "Offene Posten Liste (OPOS)")} color="#f59e0b" num={3} />
         <div style={{ display: "flex", gap: "8px" }}>
           <div style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", background: overdueInvoices.length > 0 ? "#fef2f2" : "#f0fdf4", border: `1px solid ${overdueInvoices.length > 0 ? "#fecaca" : "#bbf7d0"}` }}>
-            <div style={{ fontSize: "8px", fontWeight: 700, color: overdueInvoices.length > 0 ? "#b91c1c" : "#15803d" }}>{tr("VADESİ GEÇMİŞ","ÜBERFÄLLIG")}</div>
+            <div style={{ fontSize: "8px", fontWeight: 700, color: overdueInvoices.length > 0 ? "#b91c1c" : "#15803d" }}>{tr("VADESİ GEÇMİŞ", "ÜBERFÄLLIG")}</div>
             <div style={{ fontSize: "15px", fontWeight: 800, color: overdueInvoices.length > 0 ? "#991b1b" : "#166534", fontFamily: "monospace" }}>
-              {overdueInvoices.length > 0 ? fmt(totalOverdue) : tr("Yok","Keine")}
+              {overdueInvoices.length > 0 ? fmt(totalOverdue) : tr("Yok", "Keine")}
             </div>
-            <div style={{ fontSize: "9px", color: "#94a3b8" }}>{overdueInvoices.length} {tr("fatura","Rechnungen")}</div>
+            <div style={{ fontSize: "9px", color: "#94a3b8" }}>{overdueInvoices.length} {tr("fatura", "Rechnungen")}</div>
           </div>
           <div style={{ flex: 2, padding: "8px 12px", borderRadius: "6px", background: "#fffbeb", border: "1px solid #fde68a" }}>
-            <div style={{ fontSize: "8px", color: "#92400e", fontWeight: 700 }}>{tr("AÇIK KALEMLER TOPLAMI","OFFENE POSTEN GESAMT")}</div>
+            <div style={{ fontSize: "8px", color: "#92400e", fontWeight: 700 }}>{tr("AÇIK KALEMLER TOPLAMI", "OFFENE POSTEN GESAMT")}</div>
             <div style={{ fontSize: "16px", fontWeight: 900, color: "#78350f", fontFamily: "monospace" }}>{fmt(totalGross)}</div>
-            <div style={{ fontSize: "9px", color: "#94a3b8" }}>{invoices.length} {tr("toplam fatura","Rechnungen gesamt")}</div>
+            <div style={{ fontSize: "9px", color: "#94a3b8" }}>{invoices.length} {tr("toplam fatura", "Rechnungen gesamt")}</div>
           </div>
         </div>
       </div>
@@ -1157,7 +1157,7 @@ const TeslimRaporuDoc: React.FC<{
       {/* Bölüm 4+5: Eksik Belgeler & DATEV */}
       <div style={{ marginBottom: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
         <div>
-          <STitle title={tr("Eksik Belgeler","Fehlende Belege")} color="#f43f5e" num={4} />
+          <STitle title={tr("Eksik Belgeler", "Fehlende Belege")} color="#f43f5e" num={4} />
           <div style={{ padding: "12px", borderRadius: "8px", background: missingItems.length > 0 ? "#fff1f2" : "#f0fdf4", border: `1px solid ${missingItems.length > 0 ? "#fecdd3" : "#bbf7d0"}` }}>
             <div style={{ fontSize: "26px", fontWeight: 900, color: missingItems.length > 0 ? "#9f1239" : "#166534" }}>
               {missingItems.length}
@@ -1170,7 +1170,7 @@ const TeslimRaporuDoc: React.FC<{
           </div>
         </div>
         <div>
-          <STitle title={tr("DATEV Hazırlık Durumu","DATEV-Exportbereitschaft")} color="#a78bfa" num={5} />
+          <STitle title={tr("DATEV Hazırlık Durumu", "DATEV-Exportbereitschaft")} color="#a78bfa" num={5} />
           <div style={{ padding: "12px", borderRadius: "8px", background: datevReady ? "#f0fdf4" : "#fff7ed", border: `1px solid ${datevReady ? "#bbf7d0" : "#fed7aa"}` }}>
             <div style={{ fontSize: "26px", fontWeight: 900, color: datevReady ? "#166534" : "#92400e" }}>
               {completeness}%
@@ -1187,9 +1187,9 @@ const TeslimRaporuDoc: React.FC<{
       {/* İmza / Onay */}
       <div style={{ marginTop: "28px", paddingTop: "14px", borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px" }}>
         {[
-          { label: tr("Hazırlayan / Erstellt von",                       "Erstellt von"),              sub: "fibu.de Smart Accounting" },
-          { label: tr("Teslim Tarihi / Übergabedatum",                   "Übergabedatum"),             sub: new Date().toLocaleDateString("de-DE") },
-          { label: tr("Steuerberater Kaşe & İmza",                       "Stempel & Unterschrift"),    sub: "" },
+          { label: tr("Hazırlayan / Erstellt von", "Erstellt von"), sub: "fibu.de Smart Accounting" },
+          { label: tr("Teslim Tarihi / Übergabedatum", "Übergabedatum"), sub: new Date().toLocaleDateString("de-DE") },
+          { label: tr("Steuerberater Kaşe & İmza", "Stempel & Unterschrift"), sub: "" },
         ].map(({ label, sub }) => (
           <div key={label}>
             <div style={{ fontSize: "8px", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "2px" }}>{label}</div>
@@ -1207,7 +1207,8 @@ const TeslimRaporuDoc: React.FC<{
 };
 
 // ─── MAIN PANEL ───────────────────────────────────────────────────────────────
-export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) => {
+export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
 
@@ -1237,11 +1238,26 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
     load();
   }, []);
 
+  // Kalemleri yukle
+  useEffect(() => {
+    const loadItems = async () => {
+      const allItems: InvoiceItem[] = [];
+      for (const inv of invoices) {
+        const items = await fetchItems(inv.id);
+        allItems.push(...items);
+      }
+      setInvoiceItems(allItems);
+    };
+    if (invoices.length > 0) loadItems();
+    else setInvoiceItems([]);
+  }, [invoices, fetchItems]);
+
   const currentYear = new Date().getFullYear();
   const allYears = useMemo(() => {
     const ys = new Set<number>();
     invoices.forEach(inv => {
-      if (inv.invoice_date) ys.add(new Date(inv.invoice_date).getFullYear());
+      const dateStr = inv.tarih || inv.invoice_date;
+      if (dateStr) ys.add(new Date(dateStr).getFullYear());
     });
     [currentYear - 1, currentYear].forEach(y => ys.add(y));
     return Array.from(ys).sort((a, b) => b - a);
@@ -1256,8 +1272,9 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
   // Filter invoices by period
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      if (!inv.invoice_date) return false;
-      const d = new Date(inv.invoice_date);
+      const dateStr = inv.tarih || inv.invoice_date;
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
       if (d.getFullYear() !== selectedYear) return false;
       if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
       return true;
@@ -1290,8 +1307,9 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
 
   const monthCount = (m: number) =>
     invoices.filter(inv => {
-      if (!inv.invoice_date) return false;
-      const d = new Date(inv.invoice_date);
+      const dateStr = inv.tarih || inv.invoice_date;
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
       return d.getFullYear() === selectedYear && d.getMonth() === m;
     }).length;
 
@@ -1338,14 +1356,14 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
     window.print();
   };
 
-  const renderReport = () => {
+  const renderReportContent = (key: ReportKey) => {
     const props = {
       invoices: filteredInvoices,
       items: filteredItems,
       period,
       tr,
     };
-    switch (activeReport) {
+    switch (key) {
       case "teslim": return <TeslimRaporuDoc
         invoices={filteredInvoices}
         items={filteredItems}
@@ -1356,22 +1374,62 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
       />;
       case "eingangsbuch": return <EingangsbuchDoc {...props} />;
       case "ausgangsbuch": return <AusgangsbuchDoc bankIncomes={filteredBankIncomes} period={period} companyInfo={companyInfo} tr={tr} />;
-      case "opos":         return <OposDoc invoices={filteredInvoices} period={period} tr={tr} />;
-      case "bwa":          return <BwaDoc {...props} />;
-      case "fehlende":     return <FehlendeDoc {...props} />;
-      case "datev":        return <DatevExportDoc {...props} />;
-      case "susa":         return (
+      case "opos": return <OposDoc invoices={filteredInvoices} period={period} tr={tr} />;
+      case "bwa": return <BwaDoc {...props} />;
+      case "fehlende": return <FehlendeDoc {...props} />;
+      case "datev": return <DatevExportDoc {...props} />;
+      case "susa": return (
         <SuSaReport
+          key={`susa-${selectedYear}-${selectedMonth}`}
           invoices={invoices}
           invoiceItems={invoiceItems}
           companyName={companyInfo?.company_name ?? ""}
           clientNumber=""
           hideControls={true}
           initialYear={selectedYear}
-          initialMonth={selectedMonth !== null ? selectedMonth + 1 : new Date().getMonth() + 1}
+          initialMonth={selectedMonth !== null ? selectedMonth + 1 : 12}
         />
       );
     }
+  };
+
+  const renderReport = () => renderReportContent(activeReport);
+
+  const printAllRef = useRef<HTMLDivElement>(null);
+
+  const handlePrintAll = () => {
+    if (!printAllRef.current) return;
+
+    const clone = printAllRef.current.cloneNode(true) as HTMLElement;
+    clone.id = "__mm_print_all_target__";
+    clone.style.display = "block";
+    document.body.appendChild(clone);
+
+    const styleEl = document.createElement("style");
+    styleEl.id = "__mm_print_all_style__";
+    styleEl.textContent =
+      `@page{size:A4 portrait;margin:0;}` +
+      `@media print{` +
+      `  body>*:not(#__mm_print_all_target__){display:none!important;}` +
+      `  #__mm_print_all_target__{display:block!important;position:static!important;` +
+      `    margin:0!important;box-shadow:none!important;border-radius:0!important;}` +
+      `  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;` +
+      `    color-adjust:exact!important;box-sizing:border-box;}` +
+      `  body{margin:0;padding:20px 0;}` +
+      `  table{border-collapse:collapse;}` +
+      `  .print-page-break { page-break-before: always; border-top: 1px solid transparent; }` +
+      `}`;
+    document.head.appendChild(styleEl);
+
+    const cleanup = () => {
+      document.getElementById("__mm_print_all_target__")?.remove();
+      document.getElementById("__mm_print_all_style__")?.remove();
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    setTimeout(cleanup, 120_000);
+
+    window.print();
   };
 
   const activeRpt = REPORTS.find(r => r.key === activeReport)!;
@@ -1573,6 +1631,19 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
             </div>
           </div>
           <button
+            onClick={handlePrintAll}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "6px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
+              cursor: "pointer",
+              background: "rgba(16, 185, 129, 0.12)", border: "1px solid rgba(16, 185, 129, 0.3)",
+              color: "#10b981",
+            }}
+          >
+            <Printer size={13} />
+            {tr("Tümünü PDF Yap", "Alles als PDF")}
+          </button>
+          <button
             onClick={handlePrint}
             style={{
               display: "flex", alignItems: "center", gap: "6px",
@@ -1583,7 +1654,7 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
             }}
           >
             <Printer size={13} />
-            {tr("Yazdır / PDF", "Drucken / PDF")}
+            {tr("Yazdır", "Drucken")}
           </button>
         </div>
 
@@ -1609,6 +1680,30 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, invoiceItems }) =>
           >
             {renderReport()}
           </div>
+        </div>
+      </div>
+
+      {/* GİZLİ: TÜM RAPORLARI YAZDIRMAK İÇİN YAPI */}
+      <div style={{ display: "none" }}>
+        <div ref={printAllRef}>
+          {REPORTS.map((rpt, idx) => {
+            const isGenel = rpt.key === "teslim" || rpt.key === "susa";
+            return (
+              <div
+                key={rpt.key}
+                className={idx > 0 ? "print-page-break" : ""}
+                style={{
+                  width: "794px",
+                  margin: "0 auto",
+                  background: "#fff",
+                  padding: isGenel ? "0" : "40px 48px",
+                  pageBreakBefore: idx > 0 ? "always" : "auto",
+                }}
+              >
+                {renderReportContent(rpt.key)}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

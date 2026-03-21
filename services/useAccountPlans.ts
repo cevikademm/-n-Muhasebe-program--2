@@ -46,11 +46,10 @@ export function useAccountPlans(
     const needsData =
       (activeMenu === "accountPlans" && userRole === "admin") ||
       (activeMenu === "adminView" && userRole === "admin") ||
-      activeMenu === "invoices" ||
       activeMenu === "forms";
 
-    if (needsData && data.length === 0) fetchData();
-  }, [session, activeMenu, userRole, fetchData, data.length]);
+    if (needsData) fetchData();
+  }, [session, activeMenu, userRole, fetchData]);
 
   return { data, dataLoading, fetchData };
 }

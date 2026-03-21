@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLang } from "../LanguageContext";
 import { supabase } from "../services/supabaseService";
-import { Company, Invoice, InvoiceItem, AccountRow } from "../types";
+import { Company, AccountRow, Invoice, InvoiceItem } from "../types";
 import { SuSaReport } from "./SuSaReport";
 
 interface AdminPanelProps {

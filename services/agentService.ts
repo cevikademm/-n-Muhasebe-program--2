@@ -1,13 +1,25 @@
-import { GoogleGenAI } from "@google/genai";
-
 // ─────────────────────────────────────────────
 //  MODEL CONFIG
 // ─────────────────────────────────────────────
-const MODEL_FAST  = "gemini-2.5-flash-lite-preview-06-17";
+const MODEL_FAST = "gemini-2.5-flash-lite-preview-06-17";
 const MODEL_SMART = "gemini-2.5-flash";
 
-const getApiKey  = (): string => (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
-const getClient  = ()         => new GoogleGenAI({ apiKey: getApiKey() });
+// ─────────────────────────────────────────────
+// PROXY FETCH YÖNTEMİ (İstemci Tarafı API Gizleme)
+// ─────────────────────────────────────────────
+const fetchGeminiProxy = async (model: string, contents: any, config?: any) => {
+  const res = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, contents, config })
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `Proxy Hatası: HTTP ${res.status}`);
+  }
+  return data;
+};
 
 // ─────────────────────────────────────────────
 //  AJAN TİPİ
@@ -414,26 +426,13 @@ export const askAgent = async (
   const agent = AGENTS[agentKey];
   if (!agent) return `Ajan bulunamadı: ${agentKey}`;
 
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    return (
-      `[${agent.name}] Gemini API anahtarı tanımlı değil.\n` +
-      "Lütfen .env dosyasına VITE_GEMINI_API_KEY ekleyin."
-    );
-  }
-
   try {
-    const ai     = getClient();
-    const model  = agent.model === "smart" ? MODEL_SMART : MODEL_FAST;
+    const model = agent.model === "smart" ? MODEL_SMART : MODEL_FAST;
     const prompt = context
       ? `${agent.systemPrompt}\n\n═══ BAĞLAM ═══\n${context}\n\n═══ KULLANICI SORUSU ═══\n${userQuery}`
       : `${agent.systemPrompt}\n\n═══ KULLANICI SORUSU ═══\n${userQuery}`;
 
-    const res = await ai.models.generateContent({
-      model,
-      contents: prompt,
-    });
-
+    const res = await fetchGeminiProxy(model, prompt);
     return res.text || `[${agent.name}] Yanıt alınamadı.`;
   } catch (err: any) {
     console.error(`[${agent.name}] Hata:`, err);
@@ -445,14 +444,14 @@ export const askAgent = async (
 //  SEKMEYE ÖZGÜ KISA YARDIMCI FONKSIYONLAR
 // ─────────────────────────────────────────────
 
-export const askDashboard     = (q: string, ctx?: string) => askAgent("AjanDashboard",     q, ctx);
-export const askFatura        = (q: string, ctx?: string) => askAgent("AjanFatura",        q, ctx);
-export const askRapor         = (q: string, ctx?: string) => askAgent("AjanRapor",         q, ctx);
-export const askForm          = (q: string, ctx?: string) => askAgent("AjanForm",          q, ctx);
-export const askBanka         = (q: string, ctx?: string) => askAgent("AjanBanka",         q, ctx);
-export const askMaliMusavir   = (q: string, ctx?: string) => askAgent("AjanMaliMusavir",   q, ctx);
-export const askAyarlar       = (q: string, ctx?: string) => askAgent("AjanAyarlar",       q, ctx);
-export const askAbonelik      = (q: string, ctx?: string) => askAgent("AjanAbonelik",      q, ctx);
+export const askDashboard = (q: string, ctx?: string) => askAgent("AjanDashboard", q, ctx);
+export const askFatura = (q: string, ctx?: string) => askAgent("AjanFatura", q, ctx);
+export const askRapor = (q: string, ctx?: string) => askAgent("AjanRapor", q, ctx);
+export const askForm = (q: string, ctx?: string) => askAgent("AjanForm", q, ctx);
+export const askBanka = (q: string, ctx?: string) => askAgent("AjanBanka", q, ctx);
+export const askMaliMusavir = (q: string, ctx?: string) => askAgent("AjanMaliMusavir", q, ctx);
+export const askAyarlar = (q: string, ctx?: string) => askAgent("AjanAyarlar", q, ctx);
+export const askAbonelik = (q: string, ctx?: string) => askAgent("AjanAbonelik", q, ctx);
 export const askHesapPlanlari = (q: string, ctx?: string) => askAgent("AjanHesapPlanlari", q, ctx);
-export const askSirketler     = (q: string, ctx?: string) => askAgent("AjanSirketler",     q, ctx);
-export const askYonetim       = (q: string, ctx?: string) => askAgent("AjanYonetim",       q, ctx);
+export const askSirketler = (q: string, ctx?: string) => askAgent("AjanSirketler", q, ctx);
+export const askYonetim = (q: string, ctx?: string) => askAgent("AjanYonetim", q, ctx);

@@ -1,14 +1,44 @@
-import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseService";
 
 // ─────────────────────────────────────────────
-//  MODEL CONFIG
+//  EDGE FUNCTION URL
 // ─────────────────────────────────────────────
-const MODEL_SMART = "gemini-2.5-flash";
+const getEdgeFunctionUrl = () => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  if (!supabaseUrl) throw new Error("VITE_SUPABASE_URL tanımlı değil.");
+  return `${supabaseUrl}/functions/v1/super-worker`;
+};
 
-const getApiKey = (): string => (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
+// ─────────────────────────────────────────────
+//  BANKA EKSTRESİ EDGE FUNCTION ÇAĞRISI
+// ─────────────────────────────────────────────
+const fetchBankAnalysis = async (fileBase64: string, fileType: string): Promise<string> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
 
-const getAiClient = () => new GoogleGenAI({ apiKey: getApiKey() });
+  const edgeUrl = getEdgeFunctionUrl();
+  const res = await fetch(edgeUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session.access_token}`,
+      "apikey": (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "",
+    },
+    body: JSON.stringify({ mode: "bank", fileBase64, fileType }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Edge Function ${res.status}: ${errText.substring(0, 200)}`);
+  }
+
+  const json = await res.json();
+  if (!json.success || !json.data) throw new Error(json.error || "Edge Function geçersiz yanıt döndürdü");
+
+  // Edge Function zaten parse edilmiş obje döndürüyor; tekrar stringify ediyoruz
+  // çünkü analyzeBankStatement JSON string bekliyor
+  return JSON.stringify(json.data);
+};
 
 // ─────────────────────────────────────────────
 //  TYPES
@@ -41,61 +71,9 @@ export const analyzeBankStatement = async (
   fileBase64: string,
   fileType: string
 ): Promise<BankStatement> => {
-  const ai = getAiClient();
+  const jsonText = await fetchBankAnalysis(fileBase64, fileType || "application/pdf");
 
-  const mediaType = fileType || "application/pdf";
-
-  const prompt = `Sen Alman bankacılık uzmanısın. Bu banka ekstresini (Kontoauszug) analiz et.
-
-GÖREV:
-1. Tüm işlemleri (Buchungen) çıkar
-2. Her işlem için: tarih, açıklama, tutar, işlem türü (gelir/gider), karşı taraf bilgilerini çıkar
-3. Hesap özetini çıkar (dönem, açılış/kapanış bakiyesi vb.)
-
-ÖNEMLI KURALLAR:
-- Giderler (Lastschrift, Überweisung ausgehend, Auszahlung): negatif tutar
-- Gelirler (Gutschrift, Überweisung eingehend, Einzahlung): pozitif tutar
-- Tarihleri YYYY-MM-DD formatında yaz
-- Tutarları ondalık sayı olarak ver (virgül değil nokta)
-- description: Verwendungszweck veya açıklama metni
-- counterpart: Auftraggeber veya Empfänger adı
-- reference: Referenznummer, EREF, MREF, oder leer
-- RESERV / Reservierung / Vormerkung / Vorausbuchung girişlerini transactions listesine EKLEME — bunlar gerçek işlem değildir
-
-SADECE şu JSON formatını döndür (başka hiçbir şey yazma):
-{
-  "period": "Monat Jahr",
-  "accountNumber": "IBAN veya hesap no",
-  "bankName": "Banka adı",
-  "openingBalance": 0.00,
-  "closingBalance": 0.00,
-  "totalIncome": 0.00,
-  "totalExpense": 0.00,
-  "transactions": [
-    {
-      "date": "YYYY-MM-DD",
-      "description": "Verwendungszweck / açıklama",
-      "amount": -99.99,
-      "type": "expense",
-      "reference": "REF123",
-      "counterpart": "Firma GmbH"
-    }
-  ]
-}`;
-
-  const response = await ai.models.generateContent({
-    model: MODEL_SMART,
-    contents: {
-      parts: [
-        { inlineData: { mimeType: mediaType, data: fileBase64 } },
-        { text: prompt },
-      ],
-    },
-    config: { responseMimeType: "application/json" },
-  });
-
-  const text = response.text || "";
-  let clean = text.replace(/```json|```/g, "").trim();
+  let clean = jsonText.replace(/```json|```/g, "").trim();
   const f = clean.indexOf("{");
   const l = clean.lastIndexOf("}");
   if (f !== -1 && l > f) clean = clean.substring(f, l + 1);
@@ -111,8 +89,8 @@ SADECE şu JSON formatını döndür (başka hiçbir şey yazma):
   const transactions: BankTransaction[] = (raw.transactions || [])
     .filter((tx: any) => {
       const desc = String(tx.description || "");
-      const ref  = String(tx.reference || "");
-      const cp   = String(tx.counterpart || "");
+      const ref = String(tx.reference || "");
+      const cp = String(tx.counterpart || "");
       return !RESERV_PATTERN.test(desc) && !RESERV_PATTERN.test(ref) && !RESERV_PATTERN.test(cp);
     })
     .map((tx: any, idx: number) => ({
@@ -182,7 +160,7 @@ const extractNumbers = (s: string): string[] =>
 
 /** Alman USt-IdNr pattern: DE + 9 rakam */
 const extractVatIds = (s: string): string[] =>
-  (s.match(/DE\d{9}/gi) || []).map(v => v.toUpperCase());
+  (s.match(/DE\d{9}/gi) || []).map((v: string) => v.toUpperCase());
 
 export interface MatchResult {
   invoiceId: string;

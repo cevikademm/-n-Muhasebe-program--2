@@ -1,364 +1,258 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabaseService";
-import { AccountRow, Invoice, InvoiceItem, Language, MenuKey } from "../types";
-import { analyzeInvoiceWithAI } from "./geminiService";
-import {
-  loadRulesFromLS,
-  applyRulesToItems,
-  loadRulesFromSupabase,
-  saveRulesToSupabase,
-  learnFromManualOverride,
-} from "./ruleEngine";
-import { useToast } from "../contexts/ToastContext";
+import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
+import { getLearningRules } from "./learningEngine";
 
-interface UseInvoicesOptions {
-  session: any;
-  activeMenu: MenuKey;
-  accountPlansData: AccountRow[];
-  lang: Language;
-  duplicateMessage: string;
-  deleteConfirm: string;
-}
-
-export function useInvoices({
-  session,
-  activeMenu,
-  accountPlansData,
-  lang,
-  duplicateMessage,
-  deleteConfirm,
-}: UseInvoicesOptions) {
-  const { toast } = useToast();
+export function useInvoices(session: any) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
-  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const lastUploadRef = useRef<number>(0);
-
-  const fetchInvoices = useCallback(async () => {
-    if (!session?.user?.id) return;
-    setInvoicesLoading(true);
-    // ⚠ GÜVENLİK: user_id filtresi ile yalnızca oturumdaki kullanıcının faturaları çekilir (IDOR koruması)
-    const { data: invData } = await supabase
-      .from("invoices")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .order("created_at", { ascending: false });
-
-    if (invData) {
-      setInvoices(invData as Invoice[]);
-      const ids = invData.map((i) => i.id);
-      if (ids.length > 0) {
-        const { data: items } = await supabase
-          .from("invoice_items")
-          .select("*")
-          .in("invoice_id", ids);
-        if (items) setInvoiceItems(items as InvoiceItem[]);
-      }
-    }
-    setInvoicesLoading(false);
-  }, [session?.user?.id]);
+  const prevInvoicesRef = useRef<Invoice[]>([]);
 
   useEffect(() => {
-    if (!session) return;
-    if (activeMenu === "invoices" || activeMenu === "dashboard" || activeMenu === "bankDocuments") {
-      if (invoices.length === 0) fetchInvoices();
+    prevInvoicesRef.current = invoices;
+  }, [invoices]);
+
+  const fetchInvoices = useCallback(async () => {
+    // Veritabanı kullanımı devredışı. (Sadece Prompt + AI modunda çalışıyoruz)
+    // Supabase den fetch yapmayı engelliyoruz ki önbellek sıfırlanmasın.
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
+  const fetchInvoiceItems = useCallback(async (invoiceId: string): Promise<InvoiceItem[]> => {
+    const { data, error } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", invoiceId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("[useInvoices] items fetch error:", error);
+      return [];
     }
-  }, [session, activeMenu, fetchInvoices, invoices.length]);
+    return data || [];
+  }, []);
 
-  // ─── Upload & AI Analiz ───────────────────────────────────────────
-  const handleUploadInvoice = useCallback(
-    async (file: File): Promise<Invoice | null> => {
-      if (!session?.user?.id) return null;
+  const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
+    // Oturum kontrolu - expire olmussa refresh
+    let { data: { session: currentSession } } = await supabase.auth.getSession();
+    if (currentSession?.expires_at && currentSession.expires_at * 1000 < Date.now() + 30000) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (refreshed.session) currentSession = refreshed.session;
+    }
+    if (!currentSession?.access_token) {
+      throw new Error("Oturum bulunamadi. Lutfen tekrar giris yapin.");
+    }
 
-      const COOLDOWN_MS = 8_000;
-      const now = Date.now();
-      if (now - lastUploadRef.current < COOLDOWN_MS) {
-        toast(
-          lang === "tr"
-            ? "Lütfen bir sonraki yükleme için birkaç saniye bekleyin."
-            : "Bitte warten Sie einige Sekunden vor dem nächsten Upload.",
-          "warn"
-        );
-        return null;
-      }
+    setUploading(true);
+    try {
+      const base64 = await fileToBase64(file);
 
-      // ⚠ GÜVENLİK (ORT-04): Sunucu tarafı rate limiting
-      // Son 1 saat içindeki yükleme sayısını kontrol et (max 20/saat)
+      const currentUserId = currentSession?.user?.id;
+      const rules = getLearningRules(currentUserId); // user-specific
+
+      // Ayarlar sekmesindeki "Manuel Kurallar" ve "Öğrenilen Kurallar"ı çek
+      let activeSettingsRules: any[] = [];
+      let companyName = "";
+      let companyVatId = "";
       try {
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const { count } = await supabase
-          .from("invoices")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", session.user.id)
-          .gte("created_at", oneHourAgo);
-
-        if (count != null && count >= 20) {
-          toast(
-            lang === "tr"
-              ? "Saatlik yükleme limitine ulaştınız (maks. 20). Lütfen daha sonra tekrar deneyin."
-              : "Stündliches Upload-Limit erreicht (max. 20). Bitte versuchen Sie es später erneut.",
-            "warn"
-          );
-          return null;
-        }
-      } catch {
-        // Rate limit sorgusu başarısız olursa devam et (istemci tarafı cooldown yeterli)
-      }
-
-      const MAX_SIZE = 15 * 1024 * 1024;
-      if (file.size > MAX_SIZE) {
-        toast(
-          lang === "tr"
-            ? "Dosya boyutu 15 MB'dan büyük olamaz."
-            : "Die Datei darf nicht größer als 15 MB sein.",
-          "error"
-        );
-        return null;
-      }
-
-      const ALLOWED_TYPES = new Set([
-        "application/pdf",
-        "image/jpeg",
-        "image/jpg",
-        "image/png",
-        "image/webp",
-      ]);
-      if (!ALLOWED_TYPES.has(file.type)) {
-        toast(
-          lang === "tr"
-            ? "Sadece PDF, JPG, PNG ve WebP dosyaları kabul edilmektedir."
-            : "Nur PDF-, JPG-, PNG- und WebP-Dateien werden akzeptiert.",
-          "error"
-        );
-        return null;
-      }
-
-      lastUploadRef.current = now;
-      setUploading(true);
-
-      try {
-        const safeName = file.name.replace(/[^a-zA-Z0-9.]/g, "_");
-        const fileName = `${session.user.id}/${Date.now()}_${safeName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("invoices")
-          .upload(fileName, file);
-
-        if (uploadError) throw new Error("Dosya yükleme hatası: " + uploadError.message);
-
-        const { data: urlData } = supabase.storage
-          .from("invoices")
-          .getPublicUrl(fileName);
-        const fileUrl = urlData.publicUrl;
-
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const res = reader.result as string;
-            resolve(res.includes(",") ? res.split(",")[1] : res);
-          };
-          reader.onerror = () => reject(new Error("Dosya okunamadı"));
-          reader.readAsDataURL(file);
-        });
-
-        let allAccountPlans = accountPlansData.length > 0 ? accountPlansData : [];
-        if (allAccountPlans.length === 0) {
-          const { data: ap } = await supabase
-            .from("account_plans")
-            .select("*")
-            .order("id", { ascending: true });
-          if (ap) allAccountPlans = ap as AccountRow[];
-        }
-
-        const analysis = await analyzeInvoiceWithAI(base64, file.type, allAccountPlans);
-
-        const safeHeader = analysis.header;
-        let safeItems = Array.isArray(analysis.items) ? analysis.items : [];
-
-        try {
-          const currentRules = loadRulesFromLS();
-          safeItems = applyRulesToItems(safeItems, safeHeader.supplier_name, currentRules);
-        } catch (ruleErr) {
-          console.warn("[RuleEngine] Post-pass hatası:", ruleErr);
-        }
-
-        let invoiceStatus = safeItems.length > 0 ? "analyzed" : "error";
-        if (safeHeader.invoice_number && safeHeader.supplier_name) {
-          const { count } = await supabase
-            .from("invoices")
-            .select("*", { count: "exact", head: true })
-            .eq("invoice_number", safeHeader.invoice_number)
-            .ilike("supplier_name", safeHeader.supplier_name);
-
-          if (count && count > 0) {
-            invoiceStatus = "duplicate";
-            toast(duplicateMessage, "warn");
+        const settingsKey = currentUserId ? `fibu_de_settings_${currentUserId}` : "fibu_de_settings";
+        const settingsData = localStorage.getItem(settingsKey);
+        if (settingsData) {
+          const parsed = JSON.parse(settingsData);
+          if (parsed.rules && Array.isArray(parsed.rules)) {
+            // Yalnızca aktif olanları gönder
+            activeSettingsRules = parsed.rules.filter((r: any) => r.active === true);
           }
+          // Şirket bilgilerini al (fatura yön doğrulaması için)
+          companyName = parsed?.company?.company_name || "";
+          companyVatId = parsed?.company?.ust_id || "";
         }
-
-        const { data: insertedInvoice, error: invError } = await supabase
-          .from("invoices")
-          .insert({
-            user_id: session.user.id,
-            invoice_number: safeHeader.invoice_number || "BELGESİZ",
-            supplier_name: safeHeader.supplier_name || "Bilinmiyor",
-            invoice_date: safeHeader.invoice_date,
-            total_net: safeHeader.total_net,
-            total_vat: safeHeader.total_vat,
-            total_gross: safeHeader.total_gross,
-            currency: safeHeader.currency || "EUR",
-            file_url: fileUrl,
-            file_type: file.type || "application/octet-stream",
-            status: invoiceStatus,
-          })
-          .select()
-          .single();
-
-        if (invError) throw new Error("Fatura kaydı başarısız: " + invError.message);
-        if (!insertedInvoice) throw new Error("Kayıt oluşturuldu fakat veri alınamadı.");
-
-        if (safeItems.length > 0) {
-          const itemsToInsert = safeItems.map((item: any) => ({
-            invoice_id: insertedInvoice.id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            vat_rate: item.vat_rate,
-            vat_amount: item.vat_amount,
-            net_amount: item.net_amount,
-            gross_amount: item.gross_amount,
-            account_code: item.account_code,
-            account_name: item.account_name,
-            account_name_tr: item.account_name_tr,
-            match_score: item.match_score,
-            match_justification: item.match_justification,
-            hgb_reference: item.hgb_reference,
-            tax_note: item.tax_note,
-            period_note: item.period_note,
-            expense_type: item.expense_type,
-            datev_counter_account: item.datev_counter_account,
-            match_source: item.match_source || "ai",
-          }));
-          const { error: itemError } = await supabase.from("invoice_items").insert(itemsToInsert);
-          if (itemError) console.error("[invoice_items] Kalem ekleme hatası:", itemError);
-        }
-
-        await fetchInvoices();
-        toast(lang === "tr" ? "Fatura başarıyla analiz edildi." : "Rechnung erfolgreich analysiert.", "success");
-        return insertedInvoice as Invoice;
-      } catch (err: any) {
-        console.error("[handleUploadInvoice]", err);
-        toast("Hata: " + (err.message || "Bilinmeyen bir hata oluştu"), "error");
-        return null;
-      } finally {
-        setUploading(false);
+      } catch (err) {
+        console.warn("fibu_de_settings okunamadı", err);
       }
-    },
-    [session, accountPlansData, lang, duplicateMessage, toast, fetchInvoices]
-  );
 
-  // ─── Sil ──────────────────────────────────────────────────────────
-  const handleDeleteInvoice = useCallback(
-    async (invoice: Invoice): Promise<boolean> => {
-      if (!window.confirm(deleteConfirm)) return false;
+      const { data, error } = await supabase.functions.invoke("super-worker", {
+        body: {
+          fileBase64: base64,
+          fileType: file.type,
+          learningRules: rules,
+          settingsRules: activeSettingsRules,
+          companyName,
+          companyVatId,
+        },
+      });
 
-      const { error } = await supabase.from("invoices").delete().eq("id", invoice.id);
-      if (!error) {
-        await fetchInvoices();
-        toast(lang === "tr" ? "Fatura silindi." : "Rechnung gelöscht.", "success");
-        return true;
-      } else {
-        toast("Silme hatası: " + error.message, "error");
-        return false;
-      }
-    },
-    [deleteConfirm, lang, toast, fetchInvoices]
-  );
-
-  // ─── Durum Güncelle ───────────────────────────────────────────────
-  const handleUpdateStatus = useCallback(
-    async (invoice: Invoice, newStatus: string): Promise<Invoice | null> => {
-      const { data, error } = await supabase
-        .from("invoices")
-        .update({ status: newStatus })
-        .eq("id", invoice.id)
-        .select()
-        .single();
-
-      if (!error && data) {
-        setInvoices((prev) =>
-          prev.map((inv) => (inv.id === invoice.id ? (data as Invoice) : inv))
-        );
-        return data as Invoice;
-      }
-      return null;
-    },
-    []
-  );
-
-  // ─── Kalem Güncelle ───────────────────────────────────────────────
-  const handleUpdateInvoiceItem = useCallback(
-    async (itemId: string, newAccount: AccountRow): Promise<InvoiceItem | null> => {
-      const { data, error } = await supabase
-        .from("invoice_items")
-        .update({
-          account_code: newAccount.account_code,
-          account_name: newAccount.account_description,
-          account_name_tr: newAccount.account_description,
-          match_score: 100,
-          match_justification: "Manuel olarak kullanıcı tarafından düzeltildi.",
-          match_source: "manual",
-        })
-        .eq("id", itemId)
-        .select()
-        .single();
-
-      if (!error && data) {
-        setInvoiceItems((prev) =>
-          prev.map((item) => (item.id === itemId ? (data as InvoiceItem) : item))
-        );
-
-        // Otomatik öğrenme
+      if (error) {
+        let errorBody = "";
         try {
-          if (session?.user?.id) {
-            const currentRules = await loadRulesFromSupabase(session.user.id, supabase);
-            const item = invoiceItems.find((i) => i.id === itemId);
-            const inv = item ? invoices.find((v) => v.id === item.invoice_id) : null;
-            const supplierName = inv?.supplier_name || "";
-            if (item) {
-              const updatedRules = learnFromManualOverride(
-                item as any,
-                supplierName,
-                newAccount.account_code || "",
-                newAccount.account_description || "",
-                currentRules
-              );
-              await saveRulesToSupabase(updatedRules, session.user.id, supabase);
+          if (error.context && typeof error.context.text === "function") {
+            errorBody = await error.context.text();
+          }
+        } catch (e) {}
+        console.error("Invoke Error Detail:", error, errorBody);
+        throw new Error(`Sunucu Hatası: ${errorBody || error.message}`);
+      }
+      
+      if (!data?.success) throw new Error(data?.error || "Analiz başarısız");
+
+      const aiData = data.data; // { header, items, context }
+
+      // ── Post-processing Doğrulama: Gelen faturalarda 8xxx hesap kodu engelle ──
+      // Satıcısı biz olmayan faturalar kesinlikle gelir (8xxx) hesabına atanamaz
+      if (aiData?.items && Array.isArray(aiData.items)) {
+        const supplierName = (aiData?.header?.supplier_name || "").toLowerCase();
+        const supplierVat = aiData?.header?.satici_vkn || "";
+        const ownName = companyName.toLowerCase();
+        const ownVat = companyVatId;
+
+        // Satıcı biz değilsek → gelen fatura → 8xxx yasak
+        const isOwnCompanySeller =
+          (ownVat && supplierVat && supplierVat === ownVat) ||
+          (ownName && supplierName && supplierName.includes(ownName));
+
+        if (!isOwnCompanySeller) {
+          for (const item of aiData.items) {
+            if (item.account_code && String(item.account_code).startsWith("8")) {
+              console.warn(`[useInvoices] 8xxx hesap kodu düzeltildi: ${item.account_code} → 4960 (Satıcı biz değiliz)`);
+              item.account_code = "4960";
+              item.account_name = "Verschiedene betriebliche Aufwendungen";
+              item.account_name_tr = "Çeşitli İşletme Giderleri";
+              item.match_justification = "Gelen fatura: 8xxx gelir hesabı engellendi, manuel inceleme gerekli";
+              item.match_score = 50;
             }
           }
-        } catch (learnErr) {
-          console.warn("[RuleEngine] Öğrenme hatası (kritik değil):", learnErr);
         }
-
-        return data as InvoiceItem;
-      } else {
-        toast("Güncelleme hatası: " + (error?.message || "Bilinmiyor"), "error");
-        return null;
       }
-    },
-    [session, invoiceItems, invoices, toast]
-  );
+
+      // Invoices tablosuna mock olarak ekle (Yeni Modele Gore)
+      const mappedResult = {
+        ...aiData,
+        fatura_bilgileri: aiData?.header || {},
+        finansal_ozet: {
+          ara_toplam: aiData?.header?.total_net || 0,
+          toplam_kdv: aiData?.header?.total_vat || 0,
+          genel_toplam: aiData?.header?.total_gross || 0,
+        },
+        kalemler: aiData?.items || [],
+        uyarilar: aiData?.context ? [aiData.context] : []
+      };
+
+      const mockInvoiceId = "mock-" + Date.now().toString();
+
+      const isDuplicate = prevInvoicesRef.current.some(inv => 
+        inv.fatura_no === mappedResult.fatura_bilgileri.invoice_number && 
+        inv.satici_adi === mappedResult.fatura_bilgileri.supplier_name
+      );
+
+      if (isDuplicate) {
+        mappedResult.uyarilar.push("Mükerrer Fatura: Bu dosya/fatura numarası daha önce yüklenmiş görünüyor.");
+      }
+
+      const mockInvoice: Invoice = {
+        id: mockInvoiceId,
+        user_id: currentSession.user.id,
+        fatura_no: mappedResult.fatura_bilgileri.invoice_number || null,
+        tarih: mappedResult.fatura_bilgileri.invoice_date || null,
+        satici_vkn: mappedResult.fatura_bilgileri.supplier_vat_id || null,
+        satici_adi: mappedResult.fatura_bilgileri.supplier_name || null,
+        alici_vkn: mappedResult.fatura_bilgileri.buyer_vat_id || null,
+        ara_toplam: mappedResult.finansal_ozet.ara_toplam,
+        toplam_kdv: mappedResult.finansal_ozet.toplam_kdv,
+        genel_toplam: mappedResult.finansal_ozet.genel_toplam,
+        status: isDuplicate ? "mükerrer" : "analyzed",
+        raw_ai_response: mappedResult,
+        uyarilar: mappedResult.uyarilar,
+        file_url: `data:${file.type};base64,${base64}`,
+        created_at: new Date().toISOString()
+      };
+
+      // Invoices listesini yalnızca React state üzerinden güncelle (DB KAPALI)
+      setInvoices(prev => [mockInvoice, ...prev]);
+
+      return mappedResult as InvoiceAnalysisResult;
+    } catch (err: any) {
+      console.error("[useInvoices] uploadAndAnalyze error:", err);
+      throw new Error(err?.message || "Bir hata oluştu");
+    } finally {
+      setUploading(false);
+    }
+  }, [fetchInvoices]);
+
+  const deleteInvoice = useCallback(async (invoiceId: string) => {
+    // Veritabanı devre dışı, sadece React state den siliyoruz.
+    setInvoices(prev => prev.filter(i => i.id !== invoiceId));
+  }, []);
+
+  const updateInvoice = useCallback((invoiceId: string, updates: Partial<Invoice>) => {
+    setInvoices(prev => prev.map(inv => {
+      if (inv.id !== invoiceId) return inv;
+      const updated = { ...inv, ...updates };
+      // raw_ai_response içindeki header bilgilerini de güncelle
+      if (updated.raw_ai_response) {
+        const header = updated.raw_ai_response.header || updated.raw_ai_response.fatura_bilgileri || {};
+        if (updates.fatura_no !== undefined) header.invoice_number = updates.fatura_no;
+        if (updates.tarih !== undefined) header.invoice_date = updates.tarih;
+        if (updates.satici_adi !== undefined) header.supplier_name = updates.satici_adi;
+        if (updates.satici_vkn !== undefined) header.supplier_vat_id = updates.satici_vkn;
+        if (updates.alici_vkn !== undefined) header.buyer_vat_id = updates.alici_vkn;
+        if ((updates as any).alici_adi !== undefined) header.buyer_name = (updates as any).alici_adi;
+        if (updates.ara_toplam !== undefined) header.total_net = updates.ara_toplam;
+        if (updates.toplam_kdv !== undefined) header.total_vat = updates.toplam_kdv;
+        if (updates.genel_toplam !== undefined) header.total_gross = updates.genel_toplam;
+        if (updated.raw_ai_response.header) updated.raw_ai_response.header = { ...header };
+        if (updated.raw_ai_response.fatura_bilgileri) updated.raw_ai_response.fatura_bilgileri = { ...header };
+      }
+      // Manuel düzenleme yapıldıysa status'u güncelle
+      if (!updated.status || updated.status === "error") {
+        updated.status = "analyzed";
+      }
+      return updated;
+    }));
+  }, []);
+
+  const updateInvoiceItems = useCallback((invoiceId: string, updatedItems: any[]) => {
+    setInvoices(prev => prev.map(inv => {
+      if (inv.id !== invoiceId) return inv;
+      const updated = { ...inv };
+      if (updated.raw_ai_response) {
+        updated.raw_ai_response = {
+          ...updated.raw_ai_response,
+          items: updatedItems,
+          kalemler: updatedItems,
+        };
+      }
+      return updated;
+    }));
+  }, []);
 
   return {
     invoices,
-    invoiceItems,
-    invoicesLoading,
+    loading,
     uploading,
     fetchInvoices,
-    handleUploadInvoice,
-    handleDeleteInvoice,
-    handleUpdateStatus,
-    handleUpdateInvoiceItem,
+    fetchInvoiceItems,
+    uploadAndAnalyze,
+    deleteInvoice,
+    updateInvoice,
+    updateInvoiceItems,
   };
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // data:image/jpeg;base64,/9j/4AAQ... → sadece base64 kısmı
+      const base64 = result.split(",")[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }

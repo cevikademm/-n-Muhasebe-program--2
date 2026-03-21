@@ -35,3 +35,15 @@ hata çıktısı/
 *.pdf
 FIBU_SUNUM.*
 .claude/
+
+# Agent skills / temp
+.agent/
+datev 3 - Kopya/
+fatura analiz/
+supabase/.temp/
+mcp_pdf_reader/
+
+# Generated / temp scripts
+*.traineddata
+ocr_results.txt
+datev_full_text.txt

@@ -16,7 +16,6 @@ export interface Translations {
   dashboard: string;
   accountPlans: string;
   companies: string;
-  invoices: string;
   reports: string;
   forms: string;
   bankDocuments: string;
@@ -71,79 +70,8 @@ export interface Translations {
   deleteCompany: string;
   deleteConfirm: string;
   deleted: string;
-  // Invoice translations
-  invoiceNumber: string;
-  supplier: string;
-  invoiceDate: string;
-  totalNet: string;
-  totalVat: string;
-  totalGross: string;
-  currency: string;
-  status: string;
-  pending: string;
-  analyzed: string;
-  duplicate: string;
-  check: string;
-  markAsCheck: string;
-  deleteInvoice: string;
-  duplicateMessage: string;
-  noInvoices: string;
-  invoiceItems: string;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  vatRate: string;
-  vatAmount: string;
-  netAmount: string;
-  grossAmount: string;
-  analyzing: string;
-  invoicePreview: string;
-  accountMatch: string;
-  assignedCode: string;
-  turkishDesc: string;
-  matchScore: string;
-  invoiceContext: string;
-  dbAnalysis: string;
-  codeJustification: string;
-  hgbRef: string;
-  taxDimension: string;
-  periodicity: string;
-  classification: string;
-  expenseType: string;
-  datevCounter: string;
-  selectInvoice: string;
-  backToPreview: string;
-  items: string;
-  header: string;
-  uploadDragDrop: string;
-  fileSelected: string;
-  upload: string;
-  noPreview: string;
-  // Stats
-  invoiceStats: string;
-  totalVolume: string;
-  averageAmount: string;
-  waitingAnalysis: string;
-  // Filters
-  months: string[];
-  recentUploads: string;
-  allMonths: string;
-  filterYear: string;
-  calendarMode: string;
-  // Manual Edit
-  editAccount: string;
-  searchAccountPlaceholder: string;
-  manualOverride: string;
-  // Settings
-  matchingRules: string;
-  addRule: string;
-  supplierKeyword: string;
-  targetAccount: string;
-  note: string;
-  ruleAdded: string;
-  ruleDeleted: string;
-  noRules: string;
   subscription: string;
+  invoices: string;
 }
 
 export interface AccountRow {
@@ -172,63 +100,67 @@ export interface Company {
 }
 
 export interface Invoice {
-  id: string; // uuid
+  id: string;
   user_id: string;
-  company_id?: string | null;
-  invoice_number: string | null;
-  supplier_name: string | null;
-  invoice_date: string | null;
-  total_net: number | null;
-  total_vat: number | null;
-  total_gross: number | null;
-  currency: string | null;
+  fatura_no: string | null;
+  tarih: string | null;
+  satici_vkn: string | null;
+  alici_vkn: string | null;
+  ara_toplam: number;
+  toplam_kdv: number;
+  genel_toplam: number;
+  status: string;
   file_url: string | null;
-  file_type: string | null;
-  status: 'pending' | 'analyzed' | 'error' | 'duplicate' | 'check';
+  raw_ai_response: any;
+  uyarilar: string[];
   created_at: string;
+  [key: string]: any; // eski bilesenlerle geriye uyumluluk
 }
 
 export interface InvoiceItem {
-  id: string; // uuid
+  id: string;
   invoice_id: string;
-  description: string | null;
-  quantity: number | null;
-  unit_price: number | null;
-  vat_rate: number | null;
-  vat_amount: number | null;
-  net_amount: number | null;
-  gross_amount: number | null;
-  account_code: string | null;
-  account_name: string | null;
-  account_name_tr: string | null;
-  match_score: number | null;
-  match_justification: string | null;
-  hgb_reference: string | null;
-  tax_note: string | null;
-  period_note: string | null;
-  expense_type: string | null;
-  datev_counter_account: string | null;
-  match_source: string | null;
+  urun_adi: string;
+  miktar: number;
+  kdv_orani: number;
+  satir_toplami: number;
+  created_at: string;
+  [key: string]: any; // eski bilesenlerle geriye uyumluluk
 }
 
-export interface MatchingRule {
-  id: string;
-  supplier_keyword: string;
-  account_code: string;
-  account_name: string;
-  note: string;
+export interface InvoiceAnalysisResult {
+  fatura_bilgileri: {
+    fatura_no: string;
+    tarih: string;
+    satici_vkn: string;
+    alici_vkn: string;
+  };
+  kalemler: {
+    urun_adi: string;
+    miktar: number;
+    kdv_orani: number;
+    satir_toplami: number;
+  }[];
+  finansal_ozet: {
+    ara_toplam: number;
+    toplam_kdv: number;
+    genel_toplam: number;
+  };
+  uyarilar: string[];
 }
+
+export type MatchingRule = Record<string, any>;
 
 export interface UserSettings {
   id: string;
   user_id: string;
   company: Record<string, any>;
   accounting: Record<string, any>;
-  rules: MatchingRule[];
+  rules: any[];
   updated_at: string;
 }
 
-export type MenuKey = 'dashboard' | 'accountPlans' | 'companies' | 'invoices' | 'reports' | 'forms' | 'bankDocuments' | 'settings' | 'adminView' | 'subscription' | 'maliMusavir';
+export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'settings' | 'adminView' | 'subscription' | 'maliMusavir' | 'campaigns';
 
 export interface UserProfile {
   id: string;

@@ -1,81 +1,122 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useLang } from "../LanguageContext";
+import { supabase } from "../services/supabaseService";
 
-export const getPlans = (tr: (a: string, b: string) => string) => [
-  {
-    title: tr("Ücretsiz", "Kostenlos"),
-    price: 0,
-    period: "",
-    desc: tr("Başlangıç için ideal", "Ideal für den Einstieg"),
-    highlight: false,
-    features: [
-      { text: tr("10 Fatura İşleme", "10 Rechnungen verarbeiten"), included: true },
-      { text: tr("1 Banka Dökümü", "1 Kontoauszug"), included: true },
-      { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
-      { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
-      { text: tr("Kurallar", "Regeln"), included: false },
-      { text: tr("Export", "Exportieren"), included: false },
-      { text: tr("Online Destek", "Online-Support"), included: false },
-    ],
-    buttonText: tr("Ücretsiz Başla", "Kostenlos starten"),
-    badge: null,
-  },
-  {
-    title: tr("Aylık", "Monatlich"),
-    price: 40,
-    period: tr("/ay", "/Monat"),
-    desc: tr("Tam erişim, aylık ödeme", "Voller Zugriff, monatliche Zahlung"),
-    highlight: false,
-    features: [
-      { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
-      { text: tr("Aylık Banka Dökümü", "Monatlicher Kontoauszug"), included: true },
-      { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
-      { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
-      { text: tr("Kurallar", "Regeln"), included: true },
-      { text: tr("Export", "Exportieren"), included: true },
-      { text: tr("Online Destek", "Online-Support"), included: true },
-    ],
-    buttonText: tr("Planı Seç", "Plan wählen"),
-    badge: null,
-  },
-  {
-    title: tr("3 Aylık", "3 Monate"),
-    price: 120,
-    period: tr("/3 ay", "/3 Mon."),
-    desc: tr("3 aylık erişim, tek ödeme", "3 Monate Zugriff, Einmalzahlung"),
-    highlight: false,
-    features: [
-      { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
-      { text: tr("3 Aylık Banka Dökümü", "3 Monate Kontoauszug"), included: true },
-      { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
-      { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
-      { text: tr("Kurallar", "Regeln"), included: true },
-      { text: tr("Export", "Exportieren"), included: true },
-      { text: tr("Online Destek", "Online-Support"), included: true },
-    ],
-    buttonText: tr("Planı Seç", "Plan wählen"),
-    badge: null,
-  },
-  {
-    title: tr("Yıllık", "Jährlich"),
-    price: 400,
-    period: tr("/yıl", "/Jahr"),
-    desc: tr("En avantajlı plan — aylık ~33€", "Bester Plan — ~33€ monatlich"),
-    highlight: true,
-    features: [
-      { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
-      { text: tr("12 Aylık Banka Dökümü", "12 Monate Kontoauszug"), included: true },
-      { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
-      { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
-      { text: tr("Kurallar", "Regeln"), included: true },
-      { text: tr("Export", "Exportieren"), included: true },
-      { text: tr("Online Destek", "Online-Support"), included: true },
-    ],
-    buttonText: tr("Planı Seç", "Plan wählen"),
-    badge: tr("En Popüler", "Beliebtest"),
-  },
-];
+// ─── Sabit ana fiyatlar ───────────────────────────────────────
+const BASE_PRICES: Record<string, number> = {
+  free: 0,
+  monthly: 40,
+  quarterly: 120,
+  yearly: 400,
+};
+
+export interface PlanDiscount {
+  plan: string;
+  discount_amount: number;
+  active: boolean;
+  label_tr: string;
+  label_de: string;
+}
+
+export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanDiscount[]) => {
+  const getDiscount = (planKey: string) => {
+    const d = discounts?.find((x) => x.plan === planKey);
+    return d && d.active && d.discount_amount > 0 ? d : null;
+  };
+
+  const freeDisc = getDiscount("free");
+  const monthlyDisc = getDiscount("monthly");
+  const quarterlyDisc = getDiscount("quarterly");
+  const yearlyDisc = getDiscount("yearly");
+
+  return [
+    {
+      key: "free",
+      title: tr("Ücretsiz", "Kostenlos"),
+      basePrice: 0,
+      price: 0,
+      discount: freeDisc,
+      period: "",
+      desc: tr("Başlangıç için ideal", "Ideal für den Einstieg"),
+      highlight: false,
+      features: [
+        { text: tr("10 Fatura İşleme", "10 Rechnungen verarbeiten"), included: true },
+        { text: tr("1 Banka Dökümü", "1 Kontoauszug"), included: true },
+        { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
+        { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
+        { text: tr("Kurallar", "Regeln"), included: false },
+        { text: tr("Export", "Exportieren"), included: false },
+        { text: tr("Online Destek", "Online-Support"), included: false },
+      ],
+      buttonText: tr("Ücretsiz Başla", "Kostenlos starten"),
+      badge: null,
+    },
+    {
+      key: "monthly",
+      title: tr("Aylık", "Monatlich"),
+      basePrice: 40,
+      price: monthlyDisc ? Math.max(0, 40 - monthlyDisc.discount_amount) : 40,
+      discount: monthlyDisc,
+      period: tr("/ay", "/Monat"),
+      desc: tr("Tam erişim, aylık ödeme", "Voller Zugriff, monatliche Zahlung"),
+      highlight: false,
+      features: [
+        { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
+        { text: tr("Aylık Banka Dökümü", "Monatlicher Kontoauszug"), included: true },
+        { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
+        { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
+        { text: tr("Kurallar", "Regeln"), included: true },
+        { text: tr("Export", "Exportieren"), included: true },
+        { text: tr("Online Destek", "Online-Support"), included: true },
+      ],
+      buttonText: tr("Planı Seç", "Plan wählen"),
+      badge: null,
+    },
+    {
+      key: "quarterly",
+      title: tr("3 Aylık", "3 Monate"),
+      basePrice: 120,
+      price: quarterlyDisc ? Math.max(0, 120 - quarterlyDisc.discount_amount) : 120,
+      discount: quarterlyDisc,
+      period: tr("/3 ay", "/3 Mon."),
+      desc: tr("3 aylık erişim, tek ödeme", "3 Monate Zugriff, Einmalzahlung"),
+      highlight: false,
+      features: [
+        { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
+        { text: tr("3 Aylık Banka Dökümü", "3 Monate Kontoauszug"), included: true },
+        { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
+        { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
+        { text: tr("Kurallar", "Regeln"), included: true },
+        { text: tr("Export", "Exportieren"), included: true },
+        { text: tr("Online Destek", "Online-Support"), included: true },
+      ],
+      buttonText: tr("Planı Seç", "Plan wählen"),
+      badge: null,
+    },
+    {
+      key: "yearly",
+      title: tr("Yıllık", "Jährlich"),
+      basePrice: 400,
+      price: yearlyDisc ? Math.max(0, 400 - yearlyDisc.discount_amount) : 400,
+      discount: yearlyDisc,
+      period: tr("/yıl", "/Jahr"),
+      desc: tr("En avantajlı plan — aylık ~33€", "Bester Plan — ~33€ monatlich"),
+      highlight: true,
+      features: [
+        { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
+        { text: tr("12 Aylık Banka Dökümü", "12 Monate Kontoauszug"), included: true },
+        { text: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), included: true },
+        { text: tr("Aylık Rapor", "Monatlicher Bericht"), included: true },
+        { text: tr("Kurallar", "Regeln"), included: true },
+        { text: tr("Export", "Exportieren"), included: true },
+        { text: tr("Online Destek", "Online-Support"), included: true },
+      ],
+      buttonText: tr("Planı Seç", "Plan wählen"),
+      badge: tr("En Popüler", "Beliebtest"),
+    },
+  ];
+};
 
 const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -89,8 +130,12 @@ const XIcon = () => (
   </svg>
 );
 
-export const PlanCard = ({ plan, index, tr, onSelect }: { key?: React.Key; plan: any, index: number, tr: any, onSelect?: () => void }) => {
+export const PlanCard = ({ plan, index, tr, onSelect, lang }: { key?: React.Key; plan: any; index: number; tr: any; onSelect?: () => void; lang?: string }) => {
   const [hovered, setHovered] = useState(false);
+  const hasDiscount = plan.discount && plan.discount.active && plan.discount.discount_amount > 0;
+  const campaignLabel = hasDiscount
+    ? (lang === "de" ? plan.discount.label_de : plan.discount.label_tr) || ""
+    : "";
 
   return (
     <motion.div
@@ -121,7 +166,29 @@ export const PlanCard = ({ plan, index, tr, onSelect }: { key?: React.Key; plan:
         minWidth: 0,
       }}
     >
-      {/* Badge */}
+      {/* Campaign Badge */}
+      {hasDiscount && campaignLabel && (
+        <div style={{
+          position: "absolute",
+          top: "14px",
+          left: "14px",
+          background: "linear-gradient(135deg, #10b981, #059669)",
+          color: "#fff",
+          fontSize: "10px",
+          fontWeight: 700,
+          padding: "3px 9px",
+          borderRadius: "8px",
+          letterSpacing: "0.3px",
+          display: "flex",
+          alignItems: "center",
+          gap: "4px",
+          zIndex: 2,
+        }}>
+          🎉 {campaignLabel}
+        </div>
+      )}
+
+      {/* Plan Badge */}
       {plan.badge && (
         <div style={{
           position: "absolute",
@@ -141,7 +208,7 @@ export const PlanCard = ({ plan, index, tr, onSelect }: { key?: React.Key; plan:
       )}
 
       {/* Header */}
-      <div style={{ padding: "28px 24px 0" }}>
+      <div style={{ padding: hasDiscount && campaignLabel ? "42px 24px 0" : "28px 24px 0" }}>
         <h2 style={{
           fontSize: "14px",
           fontWeight: 500,
@@ -153,11 +220,23 @@ export const PlanCard = ({ plan, index, tr, onSelect }: { key?: React.Key; plan:
           {plan.title}
         </h2>
 
-        <div style={{ marginTop: "16px", display: "flex", alignItems: "baseline", gap: "2px" }}>
+        <div style={{ marginTop: "16px", display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+          {/* Eğer indirim varsa eski fiyatı üstü çizili göster */}
+          {hasDiscount && (
+            <span style={{
+              fontSize: "22px",
+              fontWeight: 700,
+              color: "rgba(255,255,255,0.3)",
+              textDecoration: "line-through",
+              lineHeight: 1,
+            }}>
+              {plan.basePrice}€
+            </span>
+          )}
           <span style={{
             fontSize: "44px",
             fontWeight: 800,
-            color: "#fff",
+            color: hasDiscount ? "#10b981" : "#fff",
             lineHeight: 1,
             letterSpacing: "-2px",
           }}>
@@ -169,6 +248,25 @@ export const PlanCard = ({ plan, index, tr, onSelect }: { key?: React.Key; plan:
             </span>
           )}
         </div>
+
+        {/* İndirim tutarı rozeti */}
+        {hasDiscount && (
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            marginTop: "8px",
+            fontSize: "11px",
+            fontWeight: 700,
+            color: "#10b981",
+            background: "rgba(16,185,129,0.1)",
+            border: "1px solid rgba(16,185,129,0.2)",
+            padding: "3px 10px",
+            borderRadius: "8px",
+          }}>
+            -{plan.discount.discount_amount}€ {tr("indirim", "Rabatt")}
+          </div>
+        )}
 
         <p style={{
           fontSize: "13px",
@@ -248,10 +346,54 @@ export const PlanCard = ({ plan, index, tr, onSelect }: { key?: React.Key; plan:
   );
 };
 
-export const SubscriptionPanel: React.FC<{ onPlanSelected?: () => void }> = ({ onPlanSelected }) => {
+// ─── Custom hook: Kampanya indirimlerini yükle + canlı güncelle ─────
+export const useCampaignDiscounts = () => {
+  const [discounts, setDiscounts] = useState<PlanDiscount[]>([]);
+
+  const fetchDiscounts = async () => {
+    try {
+      const { data } = await supabase.from("campaigns").select("*").eq("active", true);
+      if (data && data.length > 0) {
+        setDiscounts(
+          data.map((d: any) => ({
+            plan: d.plan,
+            discount_amount: d.discount_amount || 0,
+            active: d.active ?? false,
+            label_tr: d.label_tr || "",
+            label_de: d.label_de || "",
+          }))
+        );
+        return;
+      }
+    } catch { /* Supabase hatası — localStorage fallback */ }
+
+    // localStorage fallback
+    try {
+      const stored = localStorage.getItem("fibu_campaigns");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setDiscounts(parsed.filter((d: any) => d.active && d.discount_amount > 0));
+      }
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    fetchDiscounts();
+
+    // CampaignsPanel kaydettiğinde bu event fırlatılır
+    const handler = () => fetchDiscounts();
+    window.addEventListener("campaigns-updated", handler);
+    return () => window.removeEventListener("campaigns-updated", handler);
+  }, []);
+
+  return discounts;
+};
+
+export const SubscriptionPanel: React.FC<{ onPlanSelected?: (plan?: any) => void }> = ({ onPlanSelected }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
-  const plans = getPlans(tr);
+  const discounts = useCampaignDiscounts();
+  const plans = getPlans(tr, discounts);
 
   const [paymentProcessing, setPaymentProcessing] = useState(false);
 
@@ -260,10 +402,10 @@ export const SubscriptionPanel: React.FC<{ onPlanSelected?: () => void }> = ({ o
       setPaymentProcessing(true);
       setTimeout(() => {
         setPaymentProcessing(false);
-        if (onPlanSelected) onPlanSelected();
+        if (onPlanSelected) onPlanSelected(plan);
       }, 2500);
     } else {
-      if (onPlanSelected) onPlanSelected();
+      if (onPlanSelected) onPlanSelected(plan);
     }
   };
 
@@ -340,12 +482,36 @@ export const SubscriptionPanel: React.FC<{ onPlanSelected?: () => void }> = ({ o
           }}>
             {tr("İhtiyacınıza uygun planı seçin, hemen kullanmaya başlayın.", "Wählen Sie den Plan, der Ihren Bedürfnissen entspricht, und legen Sie sofort los.")}
           </p>
+
+          {/* Active campaigns banner */}
+          {discounts.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3 }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "16px",
+                padding: "8px 18px",
+                borderRadius: "12px",
+                background: "rgba(16,185,129,0.08)",
+                border: "1px solid rgba(16,185,129,0.2)",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#10b981",
+              }}
+            >
+              🎉 {tr("Aktif kampanya mevcut! İndirimli fiyatlardan yararlanın.", "Aktive Kampagne! Profitieren Sie von reduzierten Preisen.")}
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {plans.map((plan, index) => (
-            <PlanCard key={plan.title} plan={plan} index={index} tr={tr} />
+            <PlanCard key={plan.title} plan={plan} index={index} tr={tr} lang={lang} onSelect={() => handleSelectPlan(plan)} />
           ))}
         </div>
 

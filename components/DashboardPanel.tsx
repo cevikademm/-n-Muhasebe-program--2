@@ -1,16 +1,15 @@
 import React, { useMemo, useRef, useEffect, useState } from "react";
 import { useLang } from "../LanguageContext";
-import { Invoice, InvoiceItem, MenuKey } from "../types";
+import { MenuKey } from "../types";
 import {
   Upload, FileText, BookOpen, PieChart,
   Settings, Image as ImageIcon, ArrowRight,
   TrendingUp, TrendingDown, Minus, Sparkles,
   Brain, Shield, Zap, CircleDot,
 } from "lucide-react";
+import { MagicCard } from "./ui/magic-card";
 
 interface DashboardPanelProps {
-  invoices: Invoice[];
-  invoiceItems: InvoiceItem[];
   onNavigate: (menu: MenuKey) => void;
 }
 
@@ -44,7 +43,9 @@ function useCountUp(target: number, duration = 900) {
   return val;
 }
 
-export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoiceItems, onNavigate }) => {
+export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) => {
+  const invoices: any[] = [];
+  const invoiceItems: any[] = [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const MONTHS = lang === "tr" ? MONTHS_TR : MONTHS_DE;
@@ -135,7 +136,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
     {
       icon: <FileText size={18} />,
       val: animTotal.toString(),
-      label: tr("Toplam Fatura", "Rechnungen"),
+      label: tr("Toplam Kayıt", "Einträge"),
       sub: tr(`${stats.analyzed} analiz tamamlandı`, `${stats.analyzed} analysiert`),
       accent: "#06b6d4",
       glow: "rgba(6,182,212,.15)",
@@ -243,7 +244,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
           </div>
 
           <button
-            onClick={() => onNavigate("invoices")}
+            onClick={() => onNavigate("bankDocuments")}
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: "11px 20px",
@@ -271,7 +272,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
             }}
           >
             <Upload size={15} />
-            {tr("Fatura Yükle", "Rechnung hochladen")}
+            {tr("Banka Dökümanı", "Bankdokumente")}
           </button>
         </div>
       </div>
@@ -282,8 +283,9 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
         {/* ── KPI Cards ── */}
         <div className="dp-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
           {kpiCards.map((card, i) => (
-            <div
+            <MagicCard
               key={i}
+              gradientColor={card.glow}
               style={{
                 position: "relative", overflow: "hidden",
                 borderRadius: "16px",
@@ -372,7 +374,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
               <div style={{ fontSize: "11px", color: "#1e2530", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 {card.sub}
               </div>
-            </div>
+            </MagicCard>
           ))}
         </div>
 
@@ -380,14 +382,16 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
         <div className="dp-chart" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "16px" }}>
 
           {/* ── Aylık Hacim Grafiği ── */}
-          <div style={{
-            borderRadius: "18px",
-            border: "1px solid #111520",
-            background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
-            padding: "24px",
-            position: "relative",
-            overflow: "hidden",
-          }}>
+          <MagicCard
+            gradientColor="rgba(6, 182, 212, 0.12)"
+            style={{
+              borderRadius: "18px",
+              border: "1px solid #111520",
+              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              padding: "24px",
+              position: "relative",
+              overflow: "hidden",
+            }}>
             {/* bg decoration */}
             <div style={{
               position: "absolute", bottom: 0, right: 0,
@@ -423,25 +427,25 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
 
             {/* SVG Sütun (Column) Bar Chart */}
             {(() => {
-              const svgH  = 110;
-              const W     = 500;
-              const padL  = 4;
-              const padR  = 4;
-              const padT  = 18;    // value label için üst boşluk
-              const padB  = 18;    // ay etiketi için alt boşluk
+              const svgH = 110;
+              const W = 500;
+              const padL = 4;
+              const padR = 4;
+              const padT = 18;    // value label için üst boşluk
+              const padB = 18;    // ay etiketi için alt boşluk
               const chartH = svgH - padT - padB;
-              const n     = monthlyData.length;
-              const slot  = n > 0 ? (W - padL - padR) / n : W;
-              const barW  = Math.max(slot * 0.55, 6);
-              const maxV  = Math.max(...monthlyData.map(m => m.value), 1);
+              const n = monthlyData.length;
+              const slot = n > 0 ? (W - padL - padR) / n : W;
+              const barW = Math.max(slot * 0.55, 6);
+              const maxV = Math.max(...monthlyData.map(m => m.value), 1);
 
-              const barH  = (v: number) =>
+              const barH = (v: number) =>
                 v > 0 ? Math.max((v / maxV) * chartH, 4) : 0;
-              const barX  = (i: number) =>
+              const barX = (i: number) =>
                 padL + i * slot + (slot - barW) / 2;
-              const barY  = (v: number) =>
+              const barY = (v: number) =>
                 padT + chartH - barH(v);
-              const midX  = (i: number) =>
+              const midX = (i: number) =>
                 padL + i * slot + slot / 2;
 
               return (
@@ -454,15 +458,15 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                   <defs>
                     {/* Her sütun için aynı gradient — hovered sütun daha parlak */}
                     <linearGradient id="dp-bar-normal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor="#22d3ee" stopOpacity="0.85" />
+                      <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.85" />
                       <stop offset="100%" stopColor="#0891b2" stopOpacity="0.30" />
                     </linearGradient>
                     <linearGradient id="dp-bar-hover" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor="#06b6d4" stopOpacity="1"    />
+                      <stop offset="0%" stopColor="#06b6d4" stopOpacity="1" />
                       <stop offset="100%" stopColor="#0e7490" stopOpacity="0.55" />
                     </linearGradient>
                     <linearGradient id="dp-bar-last" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor="#8b5cf6" stopOpacity="0.95" />
+                      <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.95" />
                       <stop offset="100%" stopColor="#6d28d9" stopOpacity="0.35" />
                     </linearGradient>
                     <filter id="dp-bar-glow">
@@ -493,14 +497,14 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                   {/* Sütunlar */}
                   {monthlyData.map((m, i) => {
                     const isLast = i === n - 1;
-                    const isH    = hoveredMonth === i;
-                    const bH     = barH(m.value);
-                    const bX     = barX(i);
-                    const bY     = barY(m.value);
-                    const cx     = midX(i);
-                    const grad   = isH ? "url(#dp-bar-hover)"
-                                 : isLast ? "url(#dp-bar-last)"
-                                 : "url(#dp-bar-normal)";
+                    const isH = hoveredMonth === i;
+                    const bH = barH(m.value);
+                    const bX = barX(i);
+                    const bY = barY(m.value);
+                    const cx = midX(i);
+                    const grad = isH ? "url(#dp-bar-hover)"
+                      : isLast ? "url(#dp-bar-last)"
+                        : "url(#dp-bar-normal)";
                     return (
                       <g key={i}
                         onMouseEnter={() => setHoveredMonth(i)}
@@ -562,19 +566,21 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                 </svg>
               );
             })()}
-          </div>
+          </MagicCard>
 
           {/* ── Vorsteuer Özeti ── */}
-          <div style={{
-            borderRadius: "18px",
-            border: "1px solid #111520",
-            background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
-            padding: "24px",
-            display: "flex",
-            flexDirection: "column",
-            position: "relative",
-            overflow: "hidden",
-          }}>
+          <MagicCard
+            gradientColor="rgba(139, 92, 246, 0.12)"
+            style={{
+              borderRadius: "18px",
+              border: "1px solid #111520",
+              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              padding: "24px",
+              display: "flex",
+              flexDirection: "column",
+              position: "relative",
+              overflow: "hidden",
+            }}>
             <div style={{
               position: "absolute", top: "-20px", right: "-20px",
               width: "110px", height: "110px", borderRadius: "50%",
@@ -599,10 +605,10 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
               const GAP = (4 / 360) * circ;
               const vatSegs = gross > 0
                 ? [
-                    { label: tr("Net", "Netto"),       value: vatSummary.net,   color: "#06b6d4" },
-                    { label: tr("KDV 19%", "USt 19%"), value: vatSummary.vat19, color: "#10b981" },
-                    { label: tr("KDV 7%", "USt 7%"),   value: vatSummary.vat7,  color: "#f59e0b" },
-                  ].filter(s => s.value > 0)
+                  { label: tr("Net", "Netto"), value: vatSummary.net, color: "#06b6d4" },
+                  { label: tr("KDV 19%", "USt 19%"), value: vatSummary.vat19, color: "#10b981" },
+                  { label: tr("KDV 7%", "USt 7%"), value: vatSummary.vat7, color: "#f59e0b" },
+                ].filter(s => s.value > 0)
                 : [];
               let cumLen = 0;
               const segs = vatSegs.map(s => {
@@ -670,19 +676,21 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                 </div>
               ))}
             </div>
-          </div>
+          </MagicCard>
         </div>
 
         {/* ── Bottom Row: Suppliers + Recent Invoices ── */}
         <div className="dp-bottom" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
 
           {/* Top Suppliers */}
-          <div style={{
-            borderRadius: "18px",
-            border: "1px solid #111520",
-            background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
-            padding: "22px",
-          }}>
+          <MagicCard
+            gradientColor="rgba(16, 185, 129, 0.12)"
+            style={{
+              borderRadius: "18px",
+              border: "1px solid #111520",
+              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              padding: "22px",
+            }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
               <div>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#e2e8f0" }}>
@@ -746,26 +754,28 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                 })}
               </div>
             )}
-          </div>
+          </MagicCard>
 
           {/* Recent Invoices */}
-          <div style={{
-            borderRadius: "18px",
-            border: "1px solid #111520",
-            background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
-            padding: "22px",
-          }}>
+          <MagicCard
+            gradientColor="rgba(6, 182, 212, 0.12)"
+            style={{
+              borderRadius: "18px",
+              border: "1px solid #111520",
+              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              padding: "22px",
+            }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
               <div>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#e2e8f0" }}>
-                  {tr("Son Faturalar", "Letzte Rechnungen")}
+                  {tr("Son İşlemler", "Letzte Aktivitäten")}
                 </div>
                 <div style={{ fontSize: "11px", color: "#2a3040", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "3px" }}>
-                  {tr("En son eklenenler", "Zuletzt hinzugefügt")}
+                  {tr("Son aktiviteler", "Letzte Aktivitäten")}
                 </div>
               </div>
               <button
-                onClick={() => onNavigate("invoices")}
+                onClick={() => onNavigate("dashboard")}
                 style={{
                   display: "flex", alignItems: "center", gap: "4px",
                   fontSize: "11px", fontWeight: 600, color: "#06b6d4",
@@ -783,7 +793,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
 
             {recent.length === 0 ? (
               <div style={{ padding: "32px 0", textAlign: "center", color: "#1e2530", fontSize: "12px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                {tr("Henüz fatura yok", "Noch keine Rechnungen")}
+                {tr("Henüz veri yok", "Noch keine Daten")}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -792,7 +802,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                   return (
                     <div
                       key={inv.id}
-                      onClick={() => onNavigate("invoices")}
+                      onClick={() => onNavigate("dashboard")}
                       style={{
                         display: "flex", alignItems: "center", gap: "10px",
                         padding: "9px 10px", borderRadius: "10px",
@@ -859,13 +869,13 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
                 })}
               </div>
             )}
-          </div>
+          </MagicCard>
         </div>
 
         {/* ── Quick Actions ── */}
         <div className="dp-actions" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
           {[
-            { icon: <Upload size={22} />, label: tr("Fatura Yükle", "Rechnung hochladen"), desc: tr("PDF, JPG, PNG", "PDF, JPG, PNG"), menu: "invoices", accent: "#06b6d4" },
+            { icon: <Upload size={22} />, label: tr("Raporlar", "Berichte"), desc: tr("Dönem analizi", "Periodenanalyse"), menu: "reports", accent: "#06b6d4" },
             { icon: <BookOpen size={22} />, label: tr("Hesap Planları", "Kontenplan"), desc: tr("SKR03 / SKR04", "SKR03 / SKR04"), menu: "accountPlans", accent: "#8b5cf6" },
             { icon: <PieChart size={22} />, label: tr("Raporlar", "Berichte"), desc: tr("Dönem analizi", "Periodenanalyse"), menu: "reports", accent: "#10b981" },
             { icon: <Settings size={22} />, label: tr("Ayarlar", "Einstellungen"), desc: tr("Şirket & Kurallar", "Firma & Regeln"), menu: "settings", accent: "#f59e0b" },
@@ -958,6 +968,6 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ invoices, invoic
           .dp-actions { grid-template-columns: repeat(2, 1fr) !important; }
         }
       `}</style>
-    </div>
+    </div >
   );
 };

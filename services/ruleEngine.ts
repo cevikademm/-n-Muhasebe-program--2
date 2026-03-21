@@ -228,23 +228,28 @@ export function applyRulesToItems(
   supplierName: string,
   rules: EnhancedRule[]
 ): any[] {
-  if (!rules.filter(r => r.active).length) return items;
+  if (!rules.length || !items.length) return items;
 
-  return items.map(item => {
-    if (VORSTEUER.has(String(item.account_code || "").trim())) return item;
+  return items.map((item) => {
+    // Vorsteuer satırlarına dokunma
+    if (item.account_code && VORSTEUER.has(item.account_code.trim())) {
+      return item;
+    }
 
     const result = matchRule(item.description || "", supplierName, rules);
     if (!result.matched || !result.rule) return item;
 
+    const rule = result.rule;
     return {
       ...item,
-      account_code: result.rule.account_code,
-      account_name: result.rule.account_name,
-      account_name_tr: result.rule.account_name_tr || result.rule.account_name,
-      match_score: result.rule.confidence,
-      match_source: result.rule.type === "manual" ? "rule_manual" : "rule_learned",
-      match_justification:
-        `${item.match_justification || ""} [${result.rule.type === "manual" ? "Manuel kural" : "Öğrenilen kural"}: "${result.matchedKeyword}" → ${result.rule.account_code}]`.trim(),
+      account_code: rule.account_code,
+      account_name: rule.account_name,
+      account_name_tr: rule.account_name_tr || rule.account_name,
+      match_score: rule.confidence,
+      match_justification: result.matchedOn === "supplier"
+        ? `Kural eşleşmesi: Tedarikçi "${result.matchedKeyword}" → ${rule.account_code} (${rule.type})`
+        : `Kural eşleşmesi: Anahtar kelime "${result.matchedKeyword}" → ${rule.account_code} (${rule.type})`,
+      match_source: rule.type === "manual" ? "rule" : `rule_${rule.type}`,
     };
   });
 }

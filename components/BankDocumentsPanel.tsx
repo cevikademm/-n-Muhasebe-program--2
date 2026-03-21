@@ -30,8 +30,7 @@ import { createUnmatchedNotifications } from "../services/notificationService";
 //  PROPS
 // ─────────────────────────────────────────────
 interface BankDocumentsPanelProps {
-  invoices: Invoice[];
-  invoiceItems: any[];
+  isSubscriptionExpired?: boolean;
 }
 
 // ─────────────────────────────────────────────
@@ -121,7 +120,8 @@ const parseStmtDate = (s: SavedBankStatement): { year: number; month: number } =
 // ─────────────────────────────────────────────
 //  ANA PANEL
 // ─────────────────────────────────────────────
-export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ invoices }) => {
+export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscriptionExpired }) => {
+  const invoices: any[] = [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => (lang === "tr" ? a : b);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -150,9 +150,9 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ invoices
     }
     setProgress(0);
     const stages: { target: number; step: number; interval: number; msg: string }[] = [
-      { target: 15, step: 3,   interval: 150, msg: tr("Dosya okunuyor...",             "Datei wird gelesen...") },
-      { target: 45, step: 2,   interval: 220, msg: tr("Gemini AI'ya gönderiliyor...",  "Wird an Gemini AI gesendet...") },
-      { target: 80, step: 1,   interval: 380, msg: tr("İşlemler analiz ediliyor...",   "Transaktionen werden analysiert...") },
+      { target: 15, step: 3, interval: 150, msg: tr("Dosya okunuyor...", "Datei wird gelesen...") },
+      { target: 45, step: 2, interval: 220, msg: tr("Gemini AI'ya gönderiliyor...", "Wird an Gemini AI gesendet...") },
+      { target: 80, step: 1, interval: 380, msg: tr("İşlemler analiz ediliyor...", "Transaktionen werden analysiert...") },
       { target: 95, step: 0.4, interval: 700, msg: tr("Faturalarla eşleştiriliyor...", "Rechnungen werden abgeglichen...") },
     ];
     let current = 0; let stageIdx = 0; let timerId: ReturnType<typeof setInterval>;
@@ -409,9 +409,9 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ invoices
   // ── Aktif analiz: tip/eşleşme/arama filtresi (monthTxMatches üzerine)
   const filtered = useMemo(() => {
     let list = monthTxMatches;
-    if (filter === "income")    list = list.filter((t: TxWithMatch) => t.tx.type === "income");
-    else if (filter === "expense")   list = list.filter((t: TxWithMatch) => t.tx.type === "expense");
-    else if (filter === "matched")   list = list.filter((t: TxWithMatch) => t.match !== null);
+    if (filter === "income") list = list.filter((t: TxWithMatch) => t.tx.type === "income");
+    else if (filter === "expense") list = list.filter((t: TxWithMatch) => t.tx.type === "expense");
+    else if (filter === "matched") list = list.filter((t: TxWithMatch) => t.match !== null);
     else if (filter === "unmatched") list = list.filter((t: TxWithMatch) => t.match === null);
     if (search) {
       const q = search.toLowerCase();
@@ -477,7 +477,14 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ invoices
               {saving ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> {tr("Kaydediliyor...", "Speichert...")}</> : <><Save size={12} /> {tr("Kaydet", "Speichern")}</>}
             </button>
           )}
-          <button onClick={() => fileRef.current?.click()} disabled={analyzing} style={btnStyle("#06b6d4", analyzing)}>
+          <button
+            onClick={() => {
+              if (!isSubscriptionExpired) fileRef.current?.click();
+            }}
+            disabled={analyzing || isSubscriptionExpired}
+            style={btnStyle(isSubscriptionExpired ? "#4b5563" : "#06b6d4", analyzing || isSubscriptionExpired)}
+            title={isSubscriptionExpired ? tr("Ekstre Yükle (Abonelik Süresi Doldu)", "Hochladen (Abonnement abgelaufen)") : ""}
+          >
             {analyzing ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> {tr("Analiz...", "Analyse...")}</> : <><Upload size={12} /> {tr("Ekstre Yükle", "Hochladen")}</>}
           </button>
         </div>
@@ -486,227 +493,229 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ invoices
 
       {/* İÇERİK */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "14px 22px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "14px 22px" }}>
 
-        {/* Mesajlar */}
-        {error && <Msg type="error" text={error} />}
-        {successMsg && <Msg type="success" text={successMsg} />}
+          {/* Mesajlar */}
+          {error && <Msg type="error" text={error} />}
+          {successMsg && <Msg type="success" text={successMsg} />}
 
-        {/* ══ 1. ARŞİV BAŞLIĞI + YIL/AY FİLTRE SEKMELERİ ══ */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {/* Arşiv başlığı — belirgin */}
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "10px 14px", borderRadius: "9px",
-            background: "rgba(6,182,212,.06)", border: "1px solid rgba(6,182,212,.15)",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Banknote size={15} style={{ color: "#06b6d4" }} />
-              <div>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#e2e8f0", fontFamily: "'Syne',sans-serif" }}>
-                  {tr("Arşiv", "Archiv")}
-                </div>
-                <div style={{ fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
-                  {tr("Kayıtlı banka ekstreleri", "Gespeicherte Kontoauszüge")} · {savedStatements.length} {tr("adet", "Einträge")}
+          {/* ══ 1. ARŞİV BAŞLIĞI + YIL/AY FİLTRE SEKMELERİ ══ */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {/* Arşiv başlığı — belirgin */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "10px 14px", borderRadius: "9px",
+              background: "rgba(6,182,212,.06)", border: "1px solid rgba(6,182,212,.15)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Banknote size={15} style={{ color: "#06b6d4" }} />
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#e2e8f0", fontFamily: "'Syne',sans-serif" }}>
+                    {tr("Arşiv", "Archiv")}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
+                    {tr("Kayıtlı banka ekstreleri", "Gespeicherte Kontoauszüge")} · {savedStatements.length} {tr("adet", "Einträge")}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              {savedStatements.length > 0 && (
-                <button
-                  onClick={() => exportBankCSV(savedStatements, stmtTxs, lang)}
-                  title={tr("Tüm banka hareketlerini CSV olarak indir", "Alle Bankbewegungen als CSV herunterladen")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "5px",
-                    background: "rgba(16,185,129,.08)", border: "1px solid rgba(16,185,129,.2)",
-                    color: "#10b981", borderRadius: "6px", padding: "4px 9px",
-                    fontSize: "11px", fontWeight: 600, cursor: "pointer",
-                  }}
-                >
-                  <Download size={11} />
-                  CSV
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                {savedStatements.length > 0 && (
+                  <button
+                    onClick={() => exportBankCSV(savedStatements, stmtTxs, lang)}
+                    title={tr("Tüm banka hareketlerini CSV olarak indir", "Alle Bankbewegungen als CSV herunterladen")}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "5px",
+                      background: "rgba(16,185,129,.08)", border: "1px solid rgba(16,185,129,.2)",
+                      color: "#10b981", borderRadius: "6px", padding: "4px 9px",
+                      fontSize: "11px", fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    <Download size={11} />
+                    CSV
+                  </button>
+                )}
+                <button onClick={() => userId && loadSaved(userId)} style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "3px" }}>
+                  <RefreshCw size={11} style={loadingSaved ? { animation: "spin 1s linear infinite" } : {}} />
                 </button>
-              )}
-              <button onClick={() => userId && loadSaved(userId)} style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "3px" }}>
-                <RefreshCw size={11} style={loadingSaved ? { animation: "spin 1s linear infinite" } : {}} />
-              </button>
+              </div>
             </div>
-          </div>
 
-          {/* YIL SEKMELERİ */}
-          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-            {availableYears.map(y => (
-              <button key={y} onClick={() => setSelectedYear(y)} style={{
-                padding: "4px 12px", borderRadius: "6px", fontSize: "11px", fontWeight: 700,
-                fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
-                border: `1px solid ${selectedYear === y ? "#06b6d4" : "#1c1f27"}`,
-                background: selectedYear === y ? "rgba(6,182,212,.1)" : "transparent",
-                color: selectedYear === y ? "#06b6d4" : "#4b5563",
-              }}>{y}</button>
-            ))}
-          </div>
-
-          {/* AY SEKMELERİ */}
-          <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
-            {MONTHS.map((m, i) => {
-              const cnt = monthCounts[i] || 0;
-              const active = selectedMonth === i;
-              return (
-                <button key={i} onClick={() => setSelectedMonth(i)} style={{
-                  padding: "5px 9px", borderRadius: "6px", fontSize: "10px", fontWeight: 600,
+            {/* YIL SEKMELERİ */}
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+              {availableYears.map(y => (
+                <button key={y} onClick={() => setSelectedYear(y)} style={{
+                  padding: "4px 12px", borderRadius: "6px", fontSize: "11px", fontWeight: 700,
                   fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
-                  border: `1px solid ${active ? "#06b6d4" : "#1c1f27"}`,
-                  background: active ? "rgba(6,182,212,.1)" : "transparent",
-                  color: active ? "#06b6d4" : cnt > 0 ? "#6b7280" : "#2a3040",
-                  position: "relative",
-                }}>
-                  {m}
-                  {cnt > 0 && (
-                    <span style={{
-                      position: "absolute", top: "-4px", right: "-4px",
-                      width: "14px", height: "14px", borderRadius: "50%",
-                      background: active ? "#06b6d4" : "#374151",
-                      color: active ? "#fff" : "#9ca3af",
-                      fontSize: "8px", fontWeight: 700,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>{cnt}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ══ 2. AKTİF ANALİZ BÖLÜMÜ ══ */}
-        {!analyzing && !statement && (
-          <DropZone onDrop={handleDrop} onClick={() => fileRef.current?.click()} tr={tr} />
-        )}
-        {analyzing && <LoadingState tr={tr} progress={progress} progressMsg={progressMsg} fileName={currentFileName} />}
-        {statement && !analyzing && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <SectionHeader label={tr("Aktif Analiz", "Aktive Analyse")} sub={currentFileName} />
-
-            {/* ── Analiz Kartları ── */}
-            <AnalysisCards statement={statement} txMatches={monthTxMatches} matchedCount={matchedCount} tr={tr} />
-
-            {/* Filtreler + arama */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {/* ── Filtre Kartları ── */}
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                {([
-                  { key: "all",       label: tr("Tümü",       "Alle"),         count: monthTxMatches.length,                                                              color: "#6b7280" },
-                  { key: "income",    label: tr("Gelir",      "Einnahmen"),    count: monthTxMatches.filter((t: TxWithMatch) => t.tx.type === "income").length,   color: "#10b981" },
-                  { key: "expense",   label: tr("Gider",      "Ausgaben"),     count: monthTxMatches.filter((t: TxWithMatch) => t.tx.type === "expense").length,  color: "#ef4444" },
-                  { key: "matched",   label: tr("Eşleşen",    "Abgeglichen"),  count: matchedCount,                                                               color: "#6366f1" },
-                  { key: "unmatched", label: tr("Eşleşmeyen", "Nicht abgl."), count: monthTxMatches.length - matchedCount,                                       color: "#f59e0b" },
-                ] as const).map(f => {
-                  const isActive = filter === f.key;
-                  return (
-                    <button key={f.key} onClick={() => setFilter(f.key)} style={{
-                      display: "flex", flexDirection: "column", alignItems: "flex-start",
-                      gap: "4px", padding: "10px 16px", borderRadius: "10px", flex: 1, minWidth: "80px",
-                      border: `1px solid ${isActive ? f.color : f.color + "38"}`,
-                      background: isActive ? `${f.color}1a` : `${f.color}0a`,
-                      cursor: "pointer", transition: "all .15s",
-                      boxShadow: isActive ? `0 0 12px ${f.color}22` : "none",
-                    }}>
-                      <span style={{
-                        fontSize: "22px", fontWeight: 800, lineHeight: 1,
-                        fontFamily: "'Syne',sans-serif",
-                        color: isActive ? f.color : f.color + "bb",
-                      }}>{f.count}</span>
-                      <span style={{
-                        fontSize: "10px", fontWeight: 700, letterSpacing: ".06em",
-                        textTransform: "uppercase", fontFamily: "'DM Sans',sans-serif",
-                        color: isActive ? f.color : "#4b5563",
-                      }}>{f.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* ── Arama ── */}
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <div className="glow-wrap" style={{ position: "relative", width: "180px" }}>
-                  <Search size={10} className="glow-icon" style={{ position: "absolute", left: "8px", top: "50%", transform: "translateY(-50%)", color: "var(--text-3)" }} />
-                  <input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                    placeholder={tr("Ara...", "Suchen...")}
-                    style={{ paddingLeft: "26px", paddingRight: "8px", paddingTop: "5px", paddingBottom: "5px", color: "#9ca3af", fontSize: "11px", fontFamily: "'DM Sans',sans-serif", width: "100%" }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* İşlem tablosu */}
-            <TxTable
-              rows={filtered} isLiveAnalysis tr={tr}
-              expandedId={expandedTx} onToggle={id => setExpandedTx(expandedTx === id ? null : id)}
-              invoices={invoices}
-              manualMatchTxId={manualMatchTxId}
-              onToggleManualMatch={id => setManualMatchTxId(manualMatchTxId === id ? null : id)}
-              onUpdateMatch={handleUpdateMatch}
-              bankRules={bankRules}
-              onSaveRule={saveAsKesinKural}
-            />
-          </div>
-        )}
-
-        {/* ══ 3. SEÇİLİ AY ARŞİV KAYITLARI ══ */}
-        {monthStatements.length === 0 ? (
-          <div style={{ padding: "20px", textAlign: "center", color: "#2a3040", fontSize: "11px", fontFamily: "'DM Sans',sans-serif", border: "1px dashed #1c1f27", borderRadius: "8px" }}>
-            {tr(`${MONTHS[selectedMonth]} ${selectedYear} için kayıtlı ekstre yok.`, `Kein Kontoauszug für ${MONTHS[selectedMonth]} ${selectedYear}.`)}
-          </div>
-        ) : (
-          <div style={{ border: "1px solid #1c1f27", borderRadius: "9px", overflow: "hidden" }}>
-            {/* Tablo başlığı */}
-            <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "#0d0f15", borderBottom: "1px solid #1c1f27" }}>
-              {[
-                { w: "130px", label: tr("Dönem", "Zeitraum") },
-                { w: "110px", label: tr("Banka", "Bank") },
-                { w: "110px", label: tr("Gelir", "Einnahmen"), align: "right" as const },
-                { w: "110px", label: tr("Gider", "Ausgaben"), align: "right" as const },
-                { w: "80px", label: tr("Kayıt Tarihi", "Datum") },
-                { w: "30px", label: "" },
-              ].map((col, i) => (
-                <div key={i} style={{ width: col.w, textAlign: col.align || "left", fontSize: "9px", fontWeight: 700, color: "#374151", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".08em", flexShrink: 0 }}>
-                  {col.label}
-                </div>
+                  border: `1px solid ${selectedYear === y ? "#06b6d4" : "#1c1f27"}`,
+                  background: selectedYear === y ? "rgba(6,182,212,.1)" : "transparent",
+                  color: selectedYear === y ? "#06b6d4" : "#4b5563",
+                }}>{y}</button>
               ))}
             </div>
 
-            {monthStatements.map((s, si) => (
-              <div key={s.id}>
-                <div style={{
-                  display: "flex", alignItems: "center", padding: "10px 12px",
-                  borderBottom: si < monthStatements.length - 1 || expandedStmt === s.id ? "1px solid #141720" : "none",
-                  background: expandedStmt === s.id ? "rgba(6,182,212,.04)" : "#0a0c11",
-                  cursor: "pointer",
-                }} onClick={() => loadStmtTxs(s.id)}>
-                  <div style={{ width: "130px", fontSize: "12px", color: "#9ca3af", fontFamily: "'DM Sans',sans-serif", fontWeight: 500, flexShrink: 0 }}>{s.period || "—"}</div>
-                  <div style={{ width: "110px", fontSize: "10px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif", flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.bank_name || "—"}</div>
-                  <div style={{ width: "110px", textAlign: "right", fontSize: "11px", color: "#10b981", fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0 }}>+{fmtDE(s.total_income)} €</div>
-                  <div style={{ width: "110px", textAlign: "right", fontSize: "11px", color: "#ef4444", fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0 }}>-{fmtDE(s.total_expense)} €</div>
-                  <div style={{ width: "80px", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif", flexShrink: 0 }}>{fmtDate(s.created_at)}</div>
-                  <div style={{ width: "30px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
-                    {loadingTxs === s.id
-                      ? <Loader2 size={11} style={{ color: "#374151", animation: "spin 1s linear infinite" }} />
-                      : <ChevronDown size={11} style={{ color: "#374151", transform: expandedStmt === s.id ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-                    }
-                    <button onClick={e => { e.stopPropagation(); handleDelete(s.id); }} style={{ background: "none", border: "none", color: "#2a3040", cursor: "pointer", padding: "2px", lineHeight: 0 }}>
-                      <Trash2 size={10} />
-                    </button>
+            {/* AY SEKMELERİ */}
+            <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
+              {MONTHS.map((m, i) => {
+                const cnt = monthCounts[i] || 0;
+                const active = selectedMonth === i;
+                return (
+                  <button key={i} onClick={() => setSelectedMonth(i)} style={{
+                    padding: "5px 9px", borderRadius: "6px", fontSize: "10px", fontWeight: 600,
+                    fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
+                    border: `1px solid ${active ? "#06b6d4" : "#1c1f27"}`,
+                    background: active ? "rgba(6,182,212,.1)" : "transparent",
+                    color: active ? "#06b6d4" : cnt > 0 ? "#6b7280" : "#2a3040",
+                    position: "relative",
+                  }}>
+                    {m}
+                    {cnt > 0 && (
+                      <span style={{
+                        position: "absolute", top: "-4px", right: "-4px",
+                        width: "14px", height: "14px", borderRadius: "50%",
+                        background: active ? "#06b6d4" : "#374151",
+                        color: active ? "#fff" : "#9ca3af",
+                        fontSize: "8px", fontWeight: 700,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>{cnt}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ══ 2. AKTİF ANALİZ BÖLÜMÜ ══ */}
+          {!analyzing && !statement && (
+            <div style={isSubscriptionExpired ? { opacity: 0.5, pointerEvents: "none" } : {}}>
+              <DropZone onDrop={handleDrop} onClick={() => { if (!isSubscriptionExpired) fileRef.current?.click(); }} tr={tr} />
+            </div>
+          )}
+          {analyzing && <LoadingState tr={tr} progress={progress} progressMsg={progressMsg} fileName={currentFileName} />}
+          {statement && !analyzing && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <SectionHeader label={tr("Aktif Analiz", "Aktive Analyse")} sub={currentFileName} />
+
+              {/* ── Analiz Kartları ── */}
+              <AnalysisCards statement={statement} txMatches={monthTxMatches} matchedCount={matchedCount} tr={tr} />
+
+              {/* Filtreler + arama */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {/* ── Filtre Kartları ── */}
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {([
+                    { key: "all", label: tr("Tümü", "Alle"), count: monthTxMatches.length, color: "#6b7280" },
+                    { key: "income", label: tr("Gelir", "Einnahmen"), count: monthTxMatches.filter((t: TxWithMatch) => t.tx.type === "income").length, color: "#10b981" },
+                    { key: "expense", label: tr("Gider", "Ausgaben"), count: monthTxMatches.filter((t: TxWithMatch) => t.tx.type === "expense").length, color: "#ef4444" },
+                    { key: "matched", label: tr("Eşleşen", "Abgeglichen"), count: matchedCount, color: "#6366f1" },
+                    { key: "unmatched", label: tr("Eşleşmeyen", "Nicht abgl."), count: monthTxMatches.length - matchedCount, color: "#f59e0b" },
+                  ] as const).map(f => {
+                    const isActive = filter === f.key;
+                    return (
+                      <button key={f.key} onClick={() => setFilter(f.key)} style={{
+                        display: "flex", flexDirection: "column", alignItems: "flex-start",
+                        gap: "4px", padding: "10px 16px", borderRadius: "10px", flex: 1, minWidth: "80px",
+                        border: `1px solid ${isActive ? f.color : f.color + "38"}`,
+                        background: isActive ? `${f.color}1a` : `${f.color}0a`,
+                        cursor: "pointer", transition: "all .15s",
+                        boxShadow: isActive ? `0 0 12px ${f.color}22` : "none",
+                      }}>
+                        <span style={{
+                          fontSize: "22px", fontWeight: 800, lineHeight: 1,
+                          fontFamily: "'Syne',sans-serif",
+                          color: isActive ? f.color : f.color + "bb",
+                        }}>{f.count}</span>
+                        <span style={{
+                          fontSize: "10px", fontWeight: 700, letterSpacing: ".06em",
+                          textTransform: "uppercase", fontFamily: "'DM Sans',sans-serif",
+                          color: isActive ? f.color : "#4b5563",
+                        }}>{f.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* ── Arama ── */}
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div className="glow-wrap" style={{ position: "relative", width: "180px" }}>
+                    <Search size={10} className="glow-icon" style={{ position: "absolute", left: "8px", top: "50%", transform: "translateY(-50%)", color: "var(--text-3)" }} />
+                    <input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+                      placeholder={tr("Ara...", "Suchen...")}
+                      style={{ paddingLeft: "26px", paddingRight: "8px", paddingTop: "5px", paddingBottom: "5px", color: "#9ca3af", fontSize: "11px", fontFamily: "'DM Sans',sans-serif", width: "100%" }}
+                    />
                   </div>
                 </div>
-
-                {expandedStmt === s.id && stmtTxs[s.id] && (
-                  <div style={{ background: "#080a0e", borderBottom: si < monthStatements.length - 1 ? "1px solid #141720" : "none" }}>
-                    <SavedStmtView rows={stmtTxs[s.id]} stmt={s} tr={tr} invoices={invoices} />
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
-        )}
-      </div>{/* inner flex column */}
+
+              {/* İşlem tablosu */}
+              <TxTable
+                rows={filtered} isLiveAnalysis tr={tr}
+                expandedId={expandedTx} onToggle={id => setExpandedTx(expandedTx === id ? null : id)}
+                invoices={invoices}
+                manualMatchTxId={manualMatchTxId}
+                onToggleManualMatch={id => setManualMatchTxId(manualMatchTxId === id ? null : id)}
+                onUpdateMatch={handleUpdateMatch}
+                bankRules={bankRules}
+                onSaveRule={saveAsKesinKural}
+              />
+            </div>
+          )}
+
+          {/* ══ 3. SEÇİLİ AY ARŞİV KAYITLARI ══ */}
+          {monthStatements.length === 0 ? (
+            <div style={{ padding: "20px", textAlign: "center", color: "#2a3040", fontSize: "11px", fontFamily: "'DM Sans',sans-serif", border: "1px dashed #1c1f27", borderRadius: "8px" }}>
+              {tr(`${MONTHS[selectedMonth]} ${selectedYear} için kayıtlı ekstre yok.`, `Kein Kontoauszug für ${MONTHS[selectedMonth]} ${selectedYear}.`)}
+            </div>
+          ) : (
+            <div style={{ border: "1px solid #1c1f27", borderRadius: "9px", overflow: "hidden" }}>
+              {/* Tablo başlığı */}
+              <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "#0d0f15", borderBottom: "1px solid #1c1f27" }}>
+                {[
+                  { w: "130px", label: tr("Dönem", "Zeitraum") },
+                  { w: "110px", label: tr("Banka", "Bank") },
+                  { w: "110px", label: tr("Gelir", "Einnahmen"), align: "right" as const },
+                  { w: "110px", label: tr("Gider", "Ausgaben"), align: "right" as const },
+                  { w: "80px", label: tr("Kayıt Tarihi", "Datum") },
+                  { w: "30px", label: "" },
+                ].map((col, i) => (
+                  <div key={i} style={{ width: col.w, textAlign: col.align || "left", fontSize: "9px", fontWeight: 700, color: "#374151", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".08em", flexShrink: 0 }}>
+                    {col.label}
+                  </div>
+                ))}
+              </div>
+
+              {monthStatements.map((s, si) => (
+                <div key={s.id}>
+                  <div style={{
+                    display: "flex", alignItems: "center", padding: "10px 12px",
+                    borderBottom: si < monthStatements.length - 1 || expandedStmt === s.id ? "1px solid #141720" : "none",
+                    background: expandedStmt === s.id ? "rgba(6,182,212,.04)" : "#0a0c11",
+                    cursor: "pointer",
+                  }} onClick={() => loadStmtTxs(s.id)}>
+                    <div style={{ width: "130px", fontSize: "12px", color: "#9ca3af", fontFamily: "'DM Sans',sans-serif", fontWeight: 500, flexShrink: 0 }}>{s.period || "—"}</div>
+                    <div style={{ width: "110px", fontSize: "10px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif", flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.bank_name || "—"}</div>
+                    <div style={{ width: "110px", textAlign: "right", fontSize: "11px", color: "#10b981", fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0 }}>+{fmtDE(s.total_income)} €</div>
+                    <div style={{ width: "110px", textAlign: "right", fontSize: "11px", color: "#ef4444", fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0 }}>-{fmtDE(s.total_expense)} €</div>
+                    <div style={{ width: "80px", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif", flexShrink: 0 }}>{fmtDate(s.created_at)}</div>
+                    <div style={{ width: "30px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+                      {loadingTxs === s.id
+                        ? <Loader2 size={11} style={{ color: "#374151", animation: "spin 1s linear infinite" }} />
+                        : <ChevronDown size={11} style={{ color: "#374151", transform: expandedStmt === s.id ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                      }
+                      <button onClick={e => { e.stopPropagation(); handleDelete(s.id); }} style={{ background: "none", border: "none", color: "#2a3040", cursor: "pointer", padding: "2px", lineHeight: 0 }}>
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {expandedStmt === s.id && stmtTxs[s.id] && (
+                    <div style={{ background: "#080a0e", borderBottom: si < monthStatements.length - 1 ? "1px solid #141720" : "none" }}>
+                      <SavedStmtView rows={stmtTxs[s.id]} stmt={s} tr={tr} invoices={invoices} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>{/* inner flex column */}
       </div>{/* scroll container */}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

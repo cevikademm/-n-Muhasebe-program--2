@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./services/supabaseService";
-import { Language, AccountRow, MenuKey, Company, Invoice, InvoiceItem } from "./types";
+import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
 import { translations } from "./constants";
 import { AuthScreen } from "./components/AuthScreen";
 import { LeftPanel } from "./components/LeftPanel";
@@ -8,8 +8,6 @@ import { CenterPanel } from "./components/CenterPanel";
 import { RightPanel } from "./components/RightPanel";
 import { CompanyCenterPanel } from "./components/CompanyCenterPanel";
 import { CompanyRightPanel } from "./components/CompanyRightPanel";
-import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
-import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
 import { LangContext } from "./LanguageContext";
 import { DashboardPanel } from "./components/DashboardPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -19,9 +17,14 @@ import { BankDocumentsPanel } from "./components/BankDocumentsPanel";
 import { MaliMusavirPanel } from "./components/MaliMusavirPanel";
 import { AdminPanel } from "./components/AdminPanel";
 import { SubscriptionPanel } from "./components/SubscriptionPanel";
+import { CampaignsPanel } from "./components/CampaignsPanel";
+import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
+import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
+import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
 import { ToastProvider } from "./contexts/ToastContext";
 import { useAccountPlans } from "./services/useAccountPlans";
 import { useCompanies } from "./services/useCompanies";
+import { useSubscriptionTimer } from "./services/useSubscriptionTimer";
 import { useInvoices } from "./services/useInvoices";
 
 export default function App() {
@@ -37,13 +40,11 @@ export default function App() {
   // Selection States
   const [selectedRow, setSelectedRow] = useState<AccountRow | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [selectedInvoiceItem, setSelectedInvoiceItem] = useState<InvoiceItem | null>(null);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [companySearchTerm, setCompanySearchTerm] = useState("");
-  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState("");
   const [pendingCustomerUserId, setPendingCustomerUserId] = useState<string | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedDetailItem, setSelectedDetailItem] = useState<any>(null);
 
   // ⚠ GÜVENLİK: Admin rolü artık YALNIZCA veritabanı "profiles" tablosundan belirlenir.
   // VITE_SUPER_ADMIN_EMAIL env var bypass'ı kaldırıldı (YKS-03 düzeltmesi).
@@ -59,23 +60,13 @@ export default function App() {
     userRole
   );
 
+  const subInfo = useSubscriptionTimer(session, userRole);
+
   const {
-    invoices,
-    invoiceItems,
-    invoicesLoading,
-    uploading,
-    handleUploadInvoice: uploadInvoice,
-    handleDeleteInvoice: deleteInvoice,
-    handleUpdateStatus: updateStatus,
-    handleUpdateInvoiceItem: updateInvoiceItem,
-  } = useInvoices({
-    session,
-    activeMenu,
-    accountPlansData: data,
-    lang,
-    duplicateMessage: t.duplicateMessage,
-    deleteConfirm: t.deleteConfirm,
-  });
+    invoices, loading: invoicesLoading, uploading: invoiceUploading,
+    uploadAndAnalyze, deleteInvoice, fetchInvoiceItems,
+    updateInvoice, updateInvoiceItems,
+  } = useInvoices(session);
 
   // ─── Auth & Session ───────────────────────────────────────────────
   useEffect(() => {
@@ -92,19 +83,30 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // ─── User Role Logic (YKS-01/03 düzeltmesi) ────────────────────────
-  // ⚠ GÜVENLİK: Rol YALNIZCA Supabase "profiles" tablosundan okunur.
-  // İstemci tarafı e-posta karşılaştırması kaldırıldı.
+  // ─── User Role Logic ────────────────────────────────────────────────
+  const SUPER_ADMIN_EMAIL = import.meta.env.VITE_SUPER_ADMIN_EMAIL as string | undefined;
+
   useEffect(() => {
     if (session?.user) {
-      // Rol kontrolü — yalnızca veritabanı (sunucu tarafı enforced)
+      const isSuperAdmin = SUPER_ADMIN_EMAIL
+        ? session.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+        : false;
+
+      // Süper admin — doğrudan admin rolü ver
+      if (isSuperAdmin) {
+        setUserRole("admin");
+        setHasSubscription(true);
+        return;
+      }
+
+      // Normal kullanıcılar — profiles tablosundan rol oku
       supabase
         .from("profiles")
         .select("role")
@@ -118,35 +120,14 @@ export default function App() {
           }
         });
 
-      // ⚠ GÜVENLİK (YKS-04): Abonelik durumu Supabase'den kontrol edilir.
-      // localStorage yerine sunucu tarafı kontrol kullanılır.
-      (async () => {
-        try {
-          const { data: subData } = await supabase
-            .from("subscriptions")
-            .select("id, status")
-            .eq("user_id", session.user.id)
-            .in("status", ["active", "trialing"])
-            .maybeSingle();
-
-          const hasPlan = !!subData;
-          setHasSubscription(hasPlan);
-          if (!hasPlan && userRole !== "admin") {
-            setActiveMenu("subscription");
-          } else if (activeMenu === "subscription" && hasPlan) {
-            setActiveMenu("dashboard");
-          }
-        } catch {
-          // Tablo henüz yoksa veya hata olursa — localStorage fallback (geçici)
-          const hasPlan = localStorage.getItem(`plan_${session.user.id}`);
-          setHasSubscription(!!hasPlan);
-          if (!hasPlan && userRole !== "admin") {
-            setActiveMenu("subscription");
-          } else if (activeMenu === "subscription" && hasPlan) {
-            setActiveMenu("dashboard");
-          }
+      // Abonelik durumu kontrolü (useSubscriptionTimer içinde ele alınıyor)
+      if (userRole !== "admin") {
+        if (!subInfo.isActive) {
+          setActiveMenu("subscription");
+        } else if (activeMenu === "subscription" && subInfo.isActive) {
+          setActiveMenu("dashboard");
         }
-      })();
+      }
     }
   }, [session]);
 
@@ -171,10 +152,11 @@ export default function App() {
     if (userRole === "user") {
       if (
         activeMenu === "accountPlans" ||
+        activeMenu === "hesapPlanlari2" ||
         activeMenu === "companies" ||
         activeMenu === "adminView"
       ) {
-        setActiveMenu("invoices");
+        setActiveMenu("dashboard");
       }
     }
   }, [userRole, activeMenu]);
@@ -190,34 +172,9 @@ export default function App() {
     setSelectedRow(null);
     setSelectedCompany(null);
     setSelectedInvoice(null);
-    setSelectedInvoiceItem(null);
+    setSelectedDetailItem(null);
     setSearchTerm("");
     setCompanySearchTerm("");
-    setInvoiceSearchTerm("");
-  };
-
-  // ─── Wrapper Handlers (hook sonuçlarına UI state ekle) ────────────
-  const handleUploadInvoice = async (file: File) => {
-    const invoice = await uploadInvoice(file);
-    if (invoice) setSelectedInvoice(invoice);
-  };
-
-  const handleDeleteInvoice = async (invoice: Invoice) => {
-    const ok = await deleteInvoice(invoice);
-    if (ok) {
-      setSelectedInvoice(null);
-      setSelectedInvoiceItem(null);
-    }
-  };
-
-  const handleUpdateStatus = async (invoice: Invoice, newStatus: string) => {
-    const updated = await updateStatus(invoice, newStatus);
-    if (updated) setSelectedInvoice(updated);
-  };
-
-  const handleUpdateInvoiceItem = async (itemId: string, newAccount: AccountRow) => {
-    const updated = await updateInvoiceItem(itemId, newAccount);
-    if (updated) setSelectedInvoiceItem(updated);
   };
 
   // ─── Loading Screen ───────────────────────────────────────────────
@@ -246,24 +203,6 @@ export default function App() {
       );
     }
 
-    if (activeMenu === "invoices") {
-      return (
-        <InvoiceCenterPanel
-          invoices={invoices}
-          invoiceItems={invoiceItems}
-          loading={invoicesLoading}
-          selectedInvoice={selectedInvoice}
-          onSelectInvoice={setSelectedInvoice}
-          searchTerm={invoiceSearchTerm}
-          setSearchTerm={setInvoiceSearchTerm}
-          onUpload={handleUploadInvoice}
-          uploading={uploading}
-          selectedItem={selectedInvoiceItem}
-          onSelectItem={setSelectedInvoiceItem}
-        />
-      );
-    }
-
     if (activeMenu === "accountPlans" && userRole === "admin") {
       return (
         <CenterPanel
@@ -280,8 +219,6 @@ export default function App() {
     if (activeMenu === "dashboard") {
       return (
         <DashboardPanel
-          invoices={invoices}
-          invoiceItems={invoiceItems}
           onNavigate={(menu) => handleMenuChange(menu as any)}
         />
       );
@@ -293,8 +230,6 @@ export default function App() {
           userEmail={session?.user?.email}
           userRole={userRole}
           userId={session?.user?.id}
-          invoices={invoices}
-          invoiceItems={invoiceItems}
         />
       );
     }
@@ -305,36 +240,73 @@ export default function App() {
 
     if (activeMenu === "reports") {
       return (
-        <ReportsPanel
-          invoices={invoices}
-          invoiceItems={invoiceItems}
-          loading={invoicesLoading}
-        />
+        <ReportsPanel />
       );
     }
 
     if (activeMenu === "forms") {
       return (
         <FormsPanel
-          invoices={invoices}
-          invoiceItems={invoiceItems}
           accountPlans={data}
         />
       );
     }
 
     if (activeMenu === "bankDocuments") {
-      return <BankDocumentsPanel invoices={invoices} invoiceItems={invoiceItems} />;
+      return (
+        <BankDocumentsPanel
+          isSubscriptionExpired={subInfo.isExpired}
+        />
+      );
+    }
+
+    if (activeMenu === "invoices") {
+      return (
+        <InvoiceCenterPanel
+          invoices={invoices}
+          loading={invoicesLoading}
+          uploading={invoiceUploading}
+          selectedInvoice={selectedInvoice}
+          onSelectInvoice={setSelectedInvoice}
+          onUpload={async (files) => {
+            for (const file of files) {
+              try {
+                await uploadAndAnalyze(file);
+              } catch (err: any) {
+                console.error(`[App] Invoice upload error for ${file.name}:`, err);
+                alert(`Hata (${file.name}): ${err.message || 'Bilinmeyen hata'}`);
+              }
+            }
+          }}
+          fetchItems={fetchInvoiceItems}
+          onAccountClick={(item: any) => setSelectedDetailItem(item)}
+          onUpdateInvoice={updateInvoice}
+          onUpdateInvoiceItems={updateInvoiceItems}
+        />
+      );
     }
 
     if (activeMenu === "maliMusavir") {
-      return <MaliMusavirPanel invoices={invoices} invoiceItems={invoiceItems} />;
+      return (
+        <MaliMusavirPanel 
+          invoices={invoices} 
+          fetchItems={fetchInvoiceItems} 
+        />
+      );
+    }
+
+    if (activeMenu === "campaigns" && userRole === "admin") {
+      return <CampaignsPanel />;
+    }
+
+    if (activeMenu === "hesapPlanlari2" && userRole === "admin") {
+      return <HesapPlanlari2Panel />;
     }
 
     if (activeMenu === "subscription") {
       return (
         <SubscriptionPanel
-          onPlanSelected={async () => {
+          onPlanSelected={async (plan: any) => {
             if (session?.user?.id) {
               // ⚠ GÜVENLİK (YKS-04): Abonelik kaydı Supabase'e yazılır.
               // Ödeme entegrasyonu (Stripe vb.) tamamlanınca bu kayıt
@@ -343,13 +315,13 @@ export default function App() {
                 await supabase.from("subscriptions").upsert({
                   user_id: session.user.id,
                   status: "active",
-                  plan: "selected",
+                  plan: plan?.key || "monthly",
                   updated_at: new Date().toISOString(),
                 }, { onConflict: "user_id" });
               } catch (e) {
-                // Tablo yoksa geçici fallback
-                localStorage.setItem(`plan_${session.user.id}`, "selected");
+                localStorage.setItem(`plan_${session.user.id}`, plan?.key || "monthly");
               }
+              window.dispatchEvent(new Event("subscription_updated"));
               setHasSubscription(true);
               setActiveMenu("dashboard");
             }
@@ -388,7 +360,7 @@ export default function App() {
   };
 
   const renderRightPanel = () => {
-    if (!isRightPanelOpen && activeMenu !== "invoices") return null;
+    if (!isRightPanelOpen) return null;
 
     if (activeMenu === "companies" && userRole === "admin") {
       return (
@@ -404,24 +376,18 @@ export default function App() {
       );
     }
 
-    if (activeMenu === "invoices") {
-      const currentInvoiceItems = selectedInvoice
-        ? invoiceItems.filter((i) => i.invoice_id === selectedInvoice.id)
-        : [];
-
+    if (activeMenu === "invoices" && selectedInvoice) {
       return (
         <InvoiceRightPanel
           selectedInvoice={selectedInvoice}
-          selectedItem={selectedInvoiceItem}
-          onBackToPreview={() => setSelectedInvoiceItem(null)}
-          onClose={() => setSelectedInvoice(null)}
-          accountPlans={data}
-          items={currentInvoiceItems}
-          onSelectItem={setSelectedInvoiceItem}
-          userRole={userRole}
-          onDelete={handleDeleteInvoice}
-          onUpdateStatus={handleUpdateStatus}
-          onUpdateItem={handleUpdateInvoiceItem}
+          onClose={() => { setSelectedInvoice(null); setSelectedDetailItem(null); }}
+          onDelete={async (inv) => {
+            await deleteInvoice(inv.id);
+            setSelectedInvoice(null);
+            setSelectedDetailItem(null);
+          }}
+          detailItem={selectedDetailItem}
+          onClearDetailItem={() => setSelectedDetailItem(null)}
         />
       );
     }
@@ -450,6 +416,7 @@ export default function App() {
               userRole={userRole}
               onLogout={handleLogout}
               onSelectCustomer={userRole === "admin" ? handleSelectCustomer : undefined}
+              subInfo={subInfo}
             />
 
             <div
@@ -462,10 +429,10 @@ export default function App() {
 
             <div
               className={`${isRightPanelOpen
-                ? "fixed inset-0 z-50 md:static md:w-[360px] md:block"
+                ? "fixed inset-0 z-50 md:static md:w-auto md:block"
                 : "hidden md:block"
                 }`}
-              style={{ background: "#111318" }}
+              style={{ background: "#111318", flexShrink: 0 }}
             >
               {renderRightPanel()}
             </div>
