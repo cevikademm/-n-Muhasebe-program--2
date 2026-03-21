@@ -1,5 +1,5 @@
 /**
- * MuhaSys — Admin Yönetim Paneli
+ * FikoAI — Admin Yönetim Paneli
  * Tüm şirketlerin faturalarını süzer, hesap kodlarını düzeltir.
  * + Her şirket için SuSa (Summen & Salden) raporu görüntüleme
  * Sadece Admin rolü erişebilir.

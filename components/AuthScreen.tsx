@@ -150,7 +150,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center font-syne font-bold text-white text-sm"
                   style={{ background: "linear-gradient(135deg,#06b6d4,#0891b2)" }}>F</div>
-                <span className="font-syne font-bold text-lg text-slate-100">Fibu.de</span>
+                <span className="font-syne font-bold text-lg text-slate-100">FikoAI</span>
               </div>
 
               <div className="flex items-center gap-3 mb-1">
@@ -320,7 +320,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
               <div className="flex items-center gap-3 mb-8">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center font-syne font-bold text-white text-sm"
                   style={{ background: "linear-gradient(135deg,#06b6d4,#0891b2)" }}>F</div>
-                <span className="font-syne font-bold text-lg text-slate-100">Fibu.de</span>
+                <span className="font-syne font-bold text-lg text-slate-100">FikoAI</span>
               </div>
 
               <div className="mb-6">

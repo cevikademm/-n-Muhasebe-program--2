@@ -735,7 +735,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           </div>
           <div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "15px", color: "#f1f5f9", lineHeight: 1 }}>
-              Fibu.de
+              FikoAI
             </div>
             <div style={{ fontSize: "9px", marginTop: "3px", color: "var(--text-dim)", letterSpacing: ".05em" }}>
               Smart Accounting
@@ -819,7 +819,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             color: "#fff", background: "linear-gradient(135deg,#06b6d4,#0891b2)",
             boxShadow: "0 2px 10px rgba(6,182,212,.3)",
           }}>F</div>
-          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#f1f5f9" }}>Fibu.de</span>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#f1f5f9" }}>FikoAI</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <button onClick={() => setLang(lang === "tr" ? "de" : "tr")} style={{
@@ -858,7 +858,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", height: "62px", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <div style={{ width: "30px", height: "30px", borderRadius: "9px", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: "13px", color: "#fff", background: "linear-gradient(135deg,#06b6d4,#0891b2)" }}>F</div>
-                <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#f1f5f9" }}>Fibu.de</span>
+                <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#f1f5f9" }}>FikoAI</span>
               </div>
               <button onClick={() => setMobileOpen(false)} style={{ width: "28px", height: "28px", borderRadius: "7px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "rgba(255,255,255,.05)", color: "var(--text-3)", fontSize: "12px" }}>✕</button>
             </div>

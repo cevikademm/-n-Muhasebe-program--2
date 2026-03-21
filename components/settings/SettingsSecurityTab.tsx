@@ -88,7 +88,7 @@ export const SettingsSecurityTab: React.FC<Props> = ({ userId, userEmail, userRo
     try {
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: "Fibu.de Authenticator",
+        friendlyName: "FikoAI Authenticator",
       });
       if (error) throw error;
       if (data) {

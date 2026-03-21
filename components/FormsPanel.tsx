@@ -71,7 +71,7 @@ const DocSummary: React.FC<{
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "inline-block", background: "#166534", color: "#fff", padding: "4px 10px", fontSize: "16px", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "12px" }}>
-            DATEV <span style={{ fontWeight: 400 }}>| fibu.de</span>
+            DATEV <span style={{ fontWeight: 400 }}>| fikoai.de</span>
           </div>
           <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", textTransform: "uppercase" as const, letterSpacing: "0.02em" }}>
             {tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse")}
@@ -1003,7 +1003,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans }) => {
                   fontSize: "7px", color: "#94a3b8",
                   fontFamily: "system-ui, sans-serif",
                 }}>
-                  <span>fibu.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}</span>
+                  <span>fikoai.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}</span>
                   <span>
                     {selectedInvoice.file_url
                       ? tr("Orijinal belge aşağıda görüntüleniyor.", "Originaldokument wird unten angezeigt.")
@@ -1054,7 +1054,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans }) => {
                   ...DOC_FONT,
                 }}>
                   <div style={{ fontSize: "8px", color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.14em", marginBottom: "3px" }}>
-                    fibu.de Smart Accounting
+                    fikoai.de Smart Accounting
                   </div>
                   <div style={{ fontSize: "14px", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: "0.04em", color: "#0f172a" }}>
                     {tr("Orijinal Fatura Belgesi", "Originalrechnung")}
@@ -1165,7 +1165,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans }) => {
                 fontSize: "7px", color: "#94a3b8",
                 fontFamily: "system-ui, sans-serif",
               }}>
-                <span>fibu.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}</span>
+                <span>fikoai.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}</span>
                 <span>
                   {inv.file_url
                     ? tr("Orijinal belge aşağıda görüntüleniyor.", "Originaldokument wird unten angezeigt.")

@@ -289,7 +289,7 @@ export const ReportDoc: React.FC<{
           fontSize: "160px", fontWeight: 900, color: "#fff",
           fontFamily: "monospace", lineHeight: 1,
         }}>
-          MuhaSys
+          FikoAI
         </div>
 
         {/* Logo alanı */}
@@ -306,7 +306,7 @@ export const ReportDoc: React.FC<{
               fontSize: "16px", fontWeight: 900,
             }}>M</div>
             <span style={{ fontSize: "13px", fontWeight: 700, color: "#94a3b8", letterSpacing: ".05em" }}>
-              MuhaSys AI
+              FikoAI AI
             </span>
           </div>
         </div>
@@ -678,7 +678,7 @@ export const ReportDoc: React.FC<{
           fontSize: "9px",
           color: "#94a3b8",
         }}>
-          <span>MuhaSys AI — {tr("Ön Muhasebe Sistemi", "Vorläufige Buchführung")}</span>
+          <span>FikoAI AI — {tr("Ön Muhasebe Sistemi", "Vorläufige Buchführung")}</span>
           <span>{tr("Hazırlanma Tarihi:", "Erstellt am:")} {today()}</span>
           <span>{company.name || "—"}</span>
         </div>

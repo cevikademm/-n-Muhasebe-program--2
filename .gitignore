@@ -47,3 +47,5 @@ mcp_pdf_reader/
 *.traineddata
 ocr_results.txt
 datev_full_text.txt
+
+.vercel

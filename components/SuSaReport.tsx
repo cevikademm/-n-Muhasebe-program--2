@@ -1,5 +1,5 @@
 /**
- * MuhaSys — Summen und Salden Liste (SuSa)
+ * FikoAI — Summen und Salden Liste (SuSa)
  * DATEV Kanzlei-Rechnungswesen V.14.24 formatında
  * Aylık Hesap Kodları Özet Raporu — Yazdırılabilir
  */

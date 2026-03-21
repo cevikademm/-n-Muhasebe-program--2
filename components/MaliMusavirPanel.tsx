@@ -173,7 +173,7 @@ const DocHeader: React.FC<{ title: string; subtitle: string; period: string; col
     }}>
       <div>
         <div style={{ fontSize: "8px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: "4px" }}>
-          fibu.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}
+          fikoai.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}
         </div>
         <div style={{ fontSize: "16px", fontWeight: 800, color: "#0f172a", letterSpacing: "0.02em" }}>
           {title}
@@ -1012,7 +1012,7 @@ const TeslimRaporuDoc: React.FC<{
       {/* Başlık */}
       <div style={{ marginBottom: "20px", paddingBottom: "14px", borderBottom: "3px solid #0f172a" }}>
         <div style={{ fontSize: "8px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: "5px" }}>
-          fibu.de Smart Accounting · {new Date().toLocaleDateString("de-DE")} · {tr("Gizlilik: Yalnızca Vergi Danışmanı'na özel", "Vertraulich: Nur für Steuerberater")}
+          fikoai.de Smart Accounting · {new Date().toLocaleDateString("de-DE")} · {tr("Gizlilik: Yalnızca Vergi Danışmanı'na özel", "Vertraulich: Nur für Steuerberater")}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -1187,7 +1187,7 @@ const TeslimRaporuDoc: React.FC<{
       {/* İmza / Onay */}
       <div style={{ marginTop: "28px", paddingTop: "14px", borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px" }}>
         {[
-          { label: tr("Hazırlayan / Erstellt von", "Erstellt von"), sub: "fibu.de Smart Accounting" },
+          { label: tr("Hazırlayan / Erstellt von", "Erstellt von"), sub: "fikoai.de Smart Accounting" },
           { label: tr("Teslim Tarihi / Übergabedatum", "Übergabedatum"), sub: new Date().toLocaleDateString("de-DE") },
           { label: tr("Steuerberater Kaşe & İmza", "Stempel & Unterschrift"), sub: "" },
         ].map(({ label, sub }) => (
@@ -1200,7 +1200,7 @@ const TeslimRaporuDoc: React.FC<{
       </div>
 
       <div style={{ marginTop: "10px", textAlign: "center", fontSize: "8px", color: "#cbd5e1", letterSpacing: "0.1em" }}>
-        fibu.de Smart Accounting · {new Date().toLocaleDateString("de-DE")} · {tr("Gizli belge — Yetkisiz dağıtım yasaktır.", "Vertraulich — Unbefugte Weitergabe untersagt.")}
+        fikoai.de Smart Accounting · {new Date().toLocaleDateString("de-DE")} · {tr("Gizli belge — Yetkisiz dağıtım yasaktır.", "Vertraulich — Unbefugte Weitergabe untersagt.")}
       </div>
     </div>
   );

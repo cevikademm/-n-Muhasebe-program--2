@@ -47,7 +47,7 @@ const buildDatevCSV = (invoices: Invoice[], items: InvoiceItem[]): string => {
     const today = new Date();
     const datevDate = `${String(today.getDate()).padStart(2, "0")}${String(today.getMonth() + 1).padStart(2, "0")}${today.getFullYear()}`;
     lines.push(
-        `"EXTF";700;21;"Buchungsstapel";3;${datevDate};;;;"fibu.de";;0;${today.getFullYear()}0101;${today.getFullYear()}1231;0`
+        `"EXTF";700;21;"Buchungsstapel";3;${datevDate};;;;"fikoai.de";;0;${today.getFullYear()}0101;${today.getFullYear()}1231;0`
     );
     // Column headers
     lines.push(
@@ -174,7 +174,7 @@ const buildElsterXML = (invoices: Invoice[]): string => {
     const gross = invoices.reduce((s, i) => s + (i.total_gross || 0), 0);
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- Elster XML Export — fibu.de Smart Accounting -->
+<!-- Elster XML Export — fikoai.de Smart Accounting -->
 <!-- Bitte vor der Übermittlung prüfen! -->
 <Elster xmlns="http://www.elster.de/elsterxml/schema/v12">
   <TransferHeader>
@@ -224,7 +224,7 @@ const buildSteuerberaterReport = (invoices: Invoice[], items: InvoiceItem[], lan
     const lines = [
         "═══════════════════════════════════════════════════════════════",
         isDE ? "STEUERBERATER-ÜBERGABEBERICHT" : "VERGİ DANIŞMANI TESLİM RAPORU",
-        `fibu.de Smart Accounting — Export vom ${now}`,
+        `fikoai.de Smart Accounting — Export vom ${now}`,
         "═══════════════════════════════════════════════════════════════",
         "",
         isDE ? "1. ZUSAMMENFASSUNG" : "1. ÖZET",
@@ -252,7 +252,7 @@ const buildSteuerberaterReport = (invoices: Invoice[], items: InvoiceItem[], lan
 
     lines.push("");
     lines.push("═══════════════════════════════════════════════════════════════");
-    lines.push(isDE ? "Erstellt mit fibu.de Smart Accounting" : "fibu.de Smart Accounting ile oluşturuldu");
+    lines.push(isDE ? "Erstellt mit fikoai.de Smart Accounting" : "fikoai.de Smart Accounting ile oluşturuldu");
 
     return lines.join("\n");
 };
@@ -311,12 +311,12 @@ export const ExportTab: React.FC<ExportTabProps> = ({ invoices, invoiceItems, tr
                 }
                 case "excel": {
                     const tsv = buildExcelTSV(filtered, filteredItems, lang);
-                    downloadBlob(tsv, `Fibu_Rechnungen_${stamp}.xls`, "application/vnd.ms-excel");
+                    downloadBlob(tsv, `FikoAI_Rechnungen_${stamp}.xls`, "application/vnd.ms-excel");
                     break;
                 }
                 case "json": {
                     const json = buildJSON(filtered, filteredItems);
-                    downloadBlob(json, `Fibu_Export_${stamp}.json`, "application/json");
+                    downloadBlob(json, `FikoAI_Export_${stamp}.json`, "application/json");
                     break;
                 }
                 case "elster": {

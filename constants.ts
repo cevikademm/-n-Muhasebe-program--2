@@ -10,7 +10,7 @@ const _supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 if (!_supabaseUrl || !_supabaseKey) {
   console.error(
-    "[Fibu.de] VITE_SUPABASE_URL ve/veya VITE_SUPABASE_ANON_KEY ortam değişkenleri bulunamadı.\n" +
+    "[FikoAI] VITE_SUPABASE_URL ve/veya VITE_SUPABASE_ANON_KEY ortam değişkenleri bulunamadı.\n" +
     "Lütfen .env dosyanızı kontrol edin."
   );
 }
