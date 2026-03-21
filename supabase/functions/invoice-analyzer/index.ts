@@ -2,18 +2,30 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// [FIX H-2] CORS origin kısıtlaması
+const ALLOWED_ORIGINS = [
+  "https://fikoai.de",
+  "https://www.fikoai.de",
+  "https://fibu-de-2.vercel.app",
+];
 
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("Origin") || "";
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+// [FIX M-5] Kullanılmayan SUPABASE_SERVICE_ROLE_KEY kaldırıldı
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 import { SYSTEM_PROMPT } from "./prompt.ts";
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -65,11 +77,15 @@ serve(async (req) => {
     const mimeType = fileType.startsWith("image/") ? fileType :
                      fileType === "application/pdf" ? "application/pdf" : "image/jpeg";
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // [FIX H-1] API anahtarı URL yerine header'da gönderiliyor
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
 
     const geminiResponse = await fetch(geminiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+      },
       body: JSON.stringify({
         contents: [{
           parts: [
@@ -107,12 +123,12 @@ serve(async (req) => {
     try {
       const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       analysisResult = JSON.parse(cleaned);
+    // [FIX M-3] Ham AI yanıtı istemciye gönderilmiyor
     } catch {
-      console.error("[invoice-analyzer] JSON parse error:", rawText);
+      console.error("[invoice-analyzer] JSON parse error, raw preview:", rawText.substring(0, 200));
       return new Response(JSON.stringify({
         success: false,
         error: "AI yanıtı geçerli JSON değil",
-        raw: rawText,
       }), {
         status: 422,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

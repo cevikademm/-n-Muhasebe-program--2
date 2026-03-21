@@ -1,22 +1,50 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SYSTEM_PROMPT } from "./prompt.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const ALLOWED_ORIGINS = [
+  "https://fikoai.de",
+  "https://www.fikoai.de",
+  "https://fibu-de-2.vercel.app",
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("Origin") || "";
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
+    // [FIX C-1] JWT doğrulaması — sadece header varlığı değil, token geçerliliği kontrol ediliyor
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ success: false, error: "Yetkisiz erişim" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ success: false, error: "Geçersiz veya süresi dolmuş oturum" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -31,10 +59,41 @@ serve(async (req) => {
       });
     }
 
-    const { fileBase64, fileType, learningRules, settingsRules, companyName, companyVatId } = await req.json();
+    // [FIX M-6] İstek gövdesi doğrulaması — boyut ve tip kontrolü
+    const bodyText = await req.text();
+    if (bodyText.length > 10_000_000) { // ~10MB hard limit
+      return new Response(JSON.stringify({ success: false, error: "İstek boyutu çok büyük (maks 10MB)" }), {
+        status: 413,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { fileBase64, fileType, learningRules, settingsRules, companyName, companyVatId } = JSON.parse(bodyText);
 
     if (!fileBase64 || !fileType) {
       return new Response(JSON.stringify({ success: false, error: "fileBase64 ve fileType gerekli" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Dosya tipi doğrulaması
+    const ALLOWED_TYPES = new Set(["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"]);
+    if (!ALLOWED_TYPES.has(fileType)) {
+      return new Response(JSON.stringify({ success: false, error: "Desteklenmeyen dosya türü" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Öğrenme kuralları boyut sınırı (prompt injection koruması)
+    if (learningRules && Array.isArray(learningRules) && learningRules.length > 200) {
+      return new Response(JSON.stringify({ success: false, error: "Çok fazla öğrenme kuralı (maks 200)" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (settingsRules && Array.isArray(settingsRules) && settingsRules.length > 100) {
+      return new Response(JSON.stringify({ success: false, error: "Çok fazla ayar kuralı (maks 100)" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -92,11 +151,15 @@ serve(async (req) => {
       finalPrompt += "======================================================\n";
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // [FIX H-1] API anahtarı URL yerine header'da gönderiliyor
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
 
     const geminiResponse = await fetch(geminiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+      },
       body: JSON.stringify({
         contents: [{
           parts: [
@@ -117,10 +180,11 @@ serve(async (req) => {
       }),
     });
 
+    // [FIX M-2] AI hata detayları istemciye sızdırılmıyor
     if (!geminiResponse.ok) {
       const errText = await geminiResponse.text();
-      console.error("[super-worker] Gemini API error:", errText);
-      return new Response(JSON.stringify({ success: false, error: "AI servis hatası: " + errText }), {
+      console.error("[super-worker] Gemini API error:", errText.substring(0, 300));
+      return new Response(JSON.stringify({ success: false, error: `AI servis hatası: ${geminiResponse.status}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -133,11 +197,12 @@ serve(async (req) => {
     try {
         const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
         analysisResult = JSON.parse(cleaned);
+    // [FIX M-3] Ham AI yanıtı istemciye gönderilmiyor
     } catch {
+        console.error("[super-worker] JSON parse error, raw preview:", rawText.substring(0, 200));
         return new Response(JSON.stringify({
             success: false,
-            error: "AI yanıtı JSON formatında değil",
-            raw: rawText
+            error: "AI yanıtı JSON formatında değil"
         }), {
             status: 422,
             headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -36,14 +36,31 @@ export interface InvoiceExtractedData {
     lines: InvoiceLineItem[];
 }
 
-export const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// [FIX H-2] CORS origin kısıtlaması — wildcard kaldırıldı
+const ALLOWED_ORIGINS = [
+    "https://fikoai.de",
+    "https://www.fikoai.de",
+    "https://fibu-de-2.vercel.app",
+];
 
-export const jsonResponse = (body: any, status = 200) =>
-    new Response(JSON.stringify(body), {
+export function getCorsHeaders(req: Request) {
+    const origin = req.headers.get("Origin") || "";
+    const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+    return {
+        "Access-Control-Allow-Origin": allowedOrigin,
+        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+    };
+}
+
+export const jsonResponse = (body: any, status = 200, req?: Request) => {
+    const headers = req ? getCorsHeaders(req) : {
+        "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0],
+        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+    };
+    return new Response(JSON.stringify(body), {
         status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...headers, "Content-Type": "application/json" },
     });
+};

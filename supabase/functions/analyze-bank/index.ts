@@ -4,11 +4,22 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// [FIX H-2] CORS origin kısıtlaması
+const ALLOWED_ORIGINS = [
+  "https://fikoai.de",
+  "https://www.fikoai.de",
+  "https://fibu-de-2.vercel.app",
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("Origin") || "";
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 const MODEL_SMART = "gemini-2.5-flash";
 
@@ -51,6 +62,8 @@ SADECE şu JSON formatını döndür (başka hiçbir şey yazma):
 }`;
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders, status: 204 });
   }
@@ -123,7 +136,8 @@ Deno.serve(async (req) => {
     );
   }
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_SMART}:generateContent?key=${geminiApiKey}`;
+  // [FIX H-1] API anahtarı URL yerine header'da gönderiliyor
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_SMART}:generateContent`;
 
   const geminiPayload = {
     contents: [
@@ -141,7 +155,10 @@ Deno.serve(async (req) => {
   try {
     geminiResponse = await fetch(geminiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": geminiApiKey,
+      },
       body: JSON.stringify(geminiPayload),
     });
   } catch (fetchErr) {

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./services/supabaseService";
 import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
 import { translations } from "./constants";
+import {
+  LayoutDashboard, FileText, BarChart3, Building2, Settings2, Briefcase,
+} from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { LeftPanel } from "./components/LeftPanel";
 import { CenterPanel } from "./components/CenterPanel";
@@ -66,7 +69,7 @@ export default function App() {
     invoices, loading: invoicesLoading, uploading: invoiceUploading,
     uploadAndAnalyze, deleteInvoice, fetchInvoiceItems,
     updateInvoice, updateInvoiceItems,
-  } = useInvoices(session);
+  } = useInvoices(session, subInfo);
 
   // ─── Auth & Session ───────────────────────────────────────────────
   useEffect(() => {
@@ -91,22 +94,10 @@ export default function App() {
   }, []);
 
   // ─── User Role Logic ────────────────────────────────────────────────
-  const SUPER_ADMIN_EMAIL = import.meta.env.VITE_SUPER_ADMIN_EMAIL as string | undefined;
-
+  // [FIX H-3] Admin rolü artık yalnızca profiles tablosundan (server-side RLS) okunuyor
   useEffect(() => {
     if (session?.user) {
-      const isSuperAdmin = SUPER_ADMIN_EMAIL
-        ? session.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
-        : false;
-
-      // Süper admin — doğrudan admin rolü ver
-      if (isSuperAdmin) {
-        setUserRole("admin");
-        setHasSubscription(true);
-        return;
-      }
-
-      // Normal kullanıcılar — profiles tablosundan rol oku
+      // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
       supabase
         .from("profiles")
         .select("role")
@@ -115,6 +106,9 @@ export default function App() {
         .then(({ data, error }) => {
           if (!error && data?.role) {
             setUserRole(data.role);
+            if (data.role === "admin") {
+              setHasSubscription(true);
+            }
           } else {
             setUserRole("user");
           }
@@ -240,7 +234,7 @@ export default function App() {
 
     if (activeMenu === "reports") {
       return (
-        <ReportsPanel />
+        <ReportsPanel invoices={invoices} />
       );
     }
 
@@ -256,6 +250,8 @@ export default function App() {
       return (
         <BankDocumentsPanel
           isSubscriptionExpired={subInfo.isExpired}
+          subscriptionExpiresAt={subInfo.expiresAt}
+          subscriptionPlan={subInfo.plan}
         />
       );
     }
@@ -268,6 +264,9 @@ export default function App() {
           uploading={invoiceUploading}
           selectedInvoice={selectedInvoice}
           onSelectInvoice={setSelectedInvoice}
+          isSubscriptionExpired={subInfo.isExpired}
+          subscriptionExpiresAt={subInfo.expiresAt}
+          subscriptionPlan={subInfo.plan}
           onUpload={async (files) => {
             for (const file of files) {
               try {
@@ -306,12 +305,29 @@ export default function App() {
     if (activeMenu === "subscription") {
       return (
         <SubscriptionPanel
-          onPlanSelected={async (plan: any) => {
+          purchasedPeriods={subInfo.purchasedPeriods}
+          onPlanSelected={async (plan: any, selectedPeriods?: string[]) => {
             if (session?.user?.id) {
               // ⚠ GÜVENLİK (YKS-04): Abonelik kaydı Supabase'e yazılır.
               // Ödeme entegrasyonu (Stripe vb.) tamamlanınca bu kayıt
               // webhook üzerinden sunucu tarafında oluşturulmalıdır.
               try {
+                if (selectedPeriods && selectedPeriods.length > 0) {
+                  // Dönemsel kayıtlar oluştur
+                  const rows = selectedPeriods.map(p => {
+                    const [year, month] = p.split("-").map(Number);
+                    return {
+                      user_id: session.user.id,
+                      period_year: year,
+                      period_month: month,
+                      plan_type: plan?.key || "monthly",
+                      price_paid: (plan?.price || 0) / selectedPeriods.length,
+                    };
+                  });
+                  await supabase.from("subscription_periods")
+                    .upsert(rows, { onConflict: "user_id,period_year,period_month" });
+                }
+                // Geriye uyumluluk: eski subscriptions tablosuna da özet kayıt
                 await supabase.from("subscriptions").upsert({
                   user_id: session.user.id,
                   status: "active",
@@ -319,7 +335,11 @@ export default function App() {
                   updated_at: new Date().toISOString(),
                 }, { onConflict: "user_id" });
               } catch (e) {
-                localStorage.setItem(`plan_${session.user.id}`, plan?.key || "monthly");
+                // localStorage fallback
+                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
+                  periods: selectedPeriods || [],
+                  plan: plan?.key || "monthly",
+                }));
               }
               window.dispatchEvent(new Event("subscription_updated"));
               setHasSubscription(true);
@@ -436,6 +456,73 @@ export default function App() {
             >
               {renderRightPanel()}
             </div>
+
+            {/* ══ MOBILE BOTTOM NAV ══ */}
+            {!isRightPanelOpen && (
+              <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe flex items-stretch justify-around"
+                style={{
+                  background: "rgba(7,10,16,.96)",
+                  backdropFilter: "blur(20px)",
+                  borderTop: "1px solid rgba(255,255,255,.07)",
+                  padding: "0",
+                  height: "56px",
+                }}>
+                {([
+                  { key: "dashboard" as MenuKey, icon: <LayoutDashboard size={18} />, label: t.dashboard },
+                  { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
+                  { key: "reports" as MenuKey, icon: <BarChart3 size={18} />, label: t.reports },
+                  { key: "bankDocuments" as MenuKey, icon: <Building2 size={18} />, label: t.bankDocuments },
+                  { key: "maliMusavir" as MenuKey, icon: <Briefcase size={18} />, label: t.maliMusavir },
+                  { key: "settings" as MenuKey, icon: <Settings2 size={18} />, label: t.settings },
+                ] as const).map(item => {
+                  const isActive = activeMenu === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => handleMenuChange(item.key)}
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "2px",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: isActive ? "#06b6d4" : "var(--text-dim)",
+                        position: "relative",
+                        transition: "color .15s",
+                        padding: "4px 0",
+                      }}
+                    >
+                      {isActive && (
+                        <span style={{
+                          position: "absolute", top: 0, left: "25%", right: "25%", height: "2px",
+                          borderRadius: "0 0 2px 2px",
+                          background: "#06b6d4",
+                          boxShadow: "0 0 8px rgba(6,182,212,.6)",
+                        }} />
+                      )}
+                      {item.icon}
+                      <span style={{
+                        fontSize: "9px",
+                        fontWeight: isActive ? 700 : 500,
+                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                        letterSpacing: ".02em",
+                        lineHeight: 1,
+                        maxWidth: "56px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}>
+                        {item.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+            )}
           </div>
         )}
       </LangContext.Provider>

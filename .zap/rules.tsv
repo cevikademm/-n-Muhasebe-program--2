@@ -1,0 +1,6 @@
+10011	IGNORE	(Informational - Modern Web Application)
+10015	IGNORE	(Informational - Re-examine Cache-control Directives)
+10027	IGNORE	(Informational - Suspicious Comments)
+10096	IGNORE	(Informational - Timestamp Disclosure)
+10055	IGNORE	(Informational - CSP)
+90033	IGNORE	(Informational - Loosely Scoped Cookie)

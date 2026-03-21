@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>FikoAI - Guvenlik Testi Raporu</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 15mm 18mm;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 10pt;
+    line-height: 1.45;
+    color: #1a1a2e;
+    background: #fff;
+    width: 210mm;
+    margin: 0 auto;
+    padding: 15mm 18mm;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 3px solid #0f3460;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+  }
+  .header h1 {
+    font-size: 18pt;
+    color: #0f3460;
+    letter-spacing: -0.5px;
+  }
+  .header .meta {
+    text-align: right;
+    font-size: 8.5pt;
+    color: #555;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 8pt;
+    font-weight: 700;
+    color: #fff;
+    margin-right: 3px;
+  }
+  .badge-critical { background: #d32f2f; }
+  .badge-high { background: #e65100; }
+  .badge-medium { background: #f9a825; color: #333; }
+  .badge-low { background: #0288d1; }
+  .badge-info { background: #7b1fa2; }
+  .badge-pass { background: #2e7d32; }
+  h2 {
+    font-size: 13pt;
+    color: #0f3460;
+    border-left: 4px solid #e94560;
+    padding-left: 8px;
+    margin: 16px 0 8px 0;
+  }
+  h3 {
+    font-size: 11pt;
+    color: #16213e;
+    margin: 10px 0 4px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 9pt;
+  }
+  th {
+    background: #0f3460;
+    color: #fff;
+    padding: 5px 8px;
+    text-align: left;
+    font-size: 8.5pt;
+  }
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #ddd;
+    vertical-align: top;
+  }
+  tr:nth-child(even) { background: #f5f5f5; }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .summary-card {
+    text-align: center;
+    padding: 10px 5px;
+    border-radius: 6px;
+    color: #fff;
+  }
+  .summary-card .num { font-size: 22pt; font-weight: 800; }
+  .summary-card .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sc-crit { background: linear-gradient(135deg, #d32f2f, #b71c1c); }
+  .sc-high { background: linear-gradient(135deg, #e65100, #bf360c); }
+  .sc-med { background: linear-gradient(135deg, #f9a825, #f57f17); color: #333; }
+  .sc-low { background: linear-gradient(135deg, #0288d1, #01579b); }
+  .sc-pass { background: linear-gradient(135deg, #2e7d32, #1b5e20); }
+  .finding {
+    margin: 6px 0;
+    padding: 6px 10px;
+    border-left: 3px solid #ccc;
+    background: #fafafa;
+    border-radius: 0 4px 4px 0;
+    page-break-inside: avoid;
+  }
+  .finding-crit { border-left-color: #d32f2f; }
+  .finding-high { border-left-color: #e65100; }
+  .finding-med  { border-left-color: #f9a825; }
+  .finding-low  { border-left-color: #0288d1; }
+  .file { font-family: 'Consolas', monospace; font-size: 8.5pt; color: #555; }
+  .section-box {
+    background: #f0f4ff;
+    border: 1px solid #c5cae9;
+    border-radius: 6px;
+    padding: 10px;
+    margin: 8px 0;
+  }
+  .workflow-item {
+    display: flex;
+    align-items: flex-start;
+    margin: 5px 0;
+  }
+  .workflow-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11pt;
+    margin-right: 8px;
+    flex-shrink: 0;
+    background: #e8eaf6;
+    color: #0f3460;
+    font-weight: bold;
+  }
+  .check { color: #2e7d32; font-weight: bold; }
+  .cross { color: #d32f2f; font-weight: bold; }
+  .footer {
+    margin-top: 20px;
+    padding-top: 8px;
+    border-top: 2px solid #0f3460;
+    font-size: 7.5pt;
+    color: #777;
+    display: flex;
+    justify-content: space-between;
+  }
+  .page-break { page-break-before: always; }
+  ul { margin-left: 16px; }
+  li { margin: 2px 0; }
+  code {
+    font-family: 'Consolas', monospace;
+    font-size: 8.5pt;
+    background: #e8eaf6;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  @media print {
+    body { padding: 0; width: auto; }
+    .page-break { page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SAYFA 1: KAPAK + OZET -->
+<div class="header">
+  <div>
+    <h1>FIKOAI GUVENLIK TESTI RAPORU</h1>
+    <div style="font-size:9pt; color:#e94560; font-weight:600;">Kapsamli DevSecOps Entegrasyon ve Zafiyet Analizi</div>
+  </div>
+  <div class="meta">
+    <strong>Tarih:</strong> 22 Mart 2026<br>
+    <strong>Proje:</strong> FikoAI (fikoai.de)<br>
+    <strong>Versiyon:</strong> 0.0.0 (main)<br>
+    <strong>Hazrlayan:</strong> Claude AI Security Audit
+  </div>
+</div>
+
+<h2>1. Yonetici Ozeti</h2>
+<p>Bu rapor, FikoAI akilli muhasebe uygulamasinin kapsamli guvenlik testinin sonuclarini icerir. Uygulama; React 19 + TypeScript frontend, Supabase (PostgreSQL + Edge Functions) backend ve Python tabanli OCR bilesenlerinden olusmaktadir. Finansal veriler (faturalar, banka dokumleri, vergi numaralari) islendigi icin guvenlik kritik oneme sahiptir.</p>
+
+<div class="summary-grid">
+  <div class="summary-card sc-crit"><div class="num">2</div><div class="label">Kritik</div></div>
+  <div class="summary-card sc-high"><div class="num">4</div><div class="label">Yuksek</div></div>
+  <div class="summary-card sc-med"><div class="num">6</div><div class="label">Orta</div></div>
+  <div class="summary-card sc-low"><div class="num">3</div><div class="label">Dusuk</div></div>
+  <div class="summary-card sc-pass"><div class="num">6</div><div class="label">Basarili</div></div>
+</div>
+
+<h2>2. Test Kapsamı ve Yontem</h2>
+<div class="section-box">
+<table>
+  <tr><th style="width:30%">Test Turu</th><th>Arac / Yontem</th><th style="width:15%">Durum</th></tr>
+  <tr><td>Sir Taramasi (Secret Scanning)</td><td>Gitleaks + Manuel Regex Tarama</td><td><span class="check">Tamamlandi</span></td></tr>
+  <tr><td>Statik Kod Analizi (SAST)</td><td>Manuel Kod Incelemesi + CodeQL Workflow</td><td><span class="check">Tamamlandi</span></td></tr>
+  <tr><td>Bagimlilik Taramasi (SCA)</td><td>npm audit + Dependabot Yapilandirmasi</td><td><span class="check">Tamamlandi</span></td></tr>
+  <tr><td>DAST Yapilandirmasi</td><td>OWASP ZAP Workflow Hazirlandi</td><td><span class="check">Hazirlandi</span></td></tr>
+  <tr><td>Birim Testleri</td><td>Vitest (57 test)</td><td><span class="check">Calistirildi</span></td></tr>
+  <tr><td>Python Guvenlik</td><td>Bandit Workflow Hazirlandi</td><td><span class="check">Hazirlandi</span></td></tr>
+</table>
+</div>
+
+<h2>3. Olusturulan GitHub Actions Workflow'lari</h2>
+<div class="section-box">
+  <div class="workflow-item">
+    <div class="workflow-icon">1</div>
+    <div><strong>gitleaks.yml</strong> &mdash; Her push/PR'da gizli bilgi (API key, sifre) taramasi. Gitleaks v2 kullanir.</div>
+  </div>
+  <div class="workflow-item">
+    <div class="workflow-icon">2</div>
+    <div><strong>codeql.yml</strong> &mdash; JavaScript/TypeScript icin CodeQL SAST analizi. Haftalik zamanlanmis + her PR'da calisir.</div>
+  </div>
+  <div class="workflow-item">
+    <div class="workflow-icon">3</div>
+    <div><strong>security-audit.yml</strong> &mdash; npm audit + Python Bandit + Snyk zafiyet taramasi. Her push/PR'da tetiklenir.</div>
+  </div>
+  <div class="workflow-item">
+    <div class="workflow-icon">4</div>
+    <div><strong>owasp-zap.yml</strong> &mdash; OWASP ZAP ile baseline + full DAST taramasi. Haftalik + manuel tetikleme.</div>
+  </div>
+  <div class="workflow-item">
+    <div class="workflow-icon">5</div>
+    <div><strong>dependabot.yml</strong> &mdash; NPM, Python (pip) ve GitHub Actions bagimlilik guncelleme PR'lari olusturur.</div>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- SAYFA 2: KRITIK VE YUKSEK BULGULAR -->
+<h2>4. Kritik Bulgular</h2>
+
+<div class="finding finding-crit">
+  <span class="badge badge-critical">KRITIK</span> <strong>C-1: super-worker JWT Dogrulamasi Eksik</strong><br>
+  <span class="file">supabase/functions/super-worker/index.ts : satir 17-23</span>
+  <p style="margin-top:4px"><code>super-worker</code> fonksiyonu Authorization header'inin yalnizca <em>var olup olmadigini</em> kontrol ediyor, ancak JWT token'ini dogrulamiyor. Herhangi bir <code>Authorization: Bearer herhangi_deger</code> header'i ile istek gonderilebilir. Bu, Gemini API'sinin yetkisiz kullanimina ve maliyet artisina yol acar.</p>
+  <p><strong>Cozum:</strong> <code>analyze-bank/index.ts</code> satirn 82'deki gibi <code>supabase.auth.getUser()</code> cagirarak JWT dogrulamasi eklenmeli.</p>
+</div>
+
+<div class="finding finding-crit">
+  <span class="badge badge-critical">KRITIK</span> <strong>C-2: Guvenli Olmayan Kredi Karti Formu</strong><br>
+  <span class="file">components/AuthScreen.tsx : satir 262-281</span>
+  <p style="margin-top:4px">Odeme ekrani; kart numarasi, son kullanma tarihi ve CVV icin ham HTML <code>&lt;input&gt;</code> alanlari kullaniyor. PCI-DSS uyumlu tokenizasyon (Stripe Elements vb.) entegrasyonu yok. Kullanici gercek kart bilgilerini guvenli olmayan bir forma girebilir.</p>
+  <p><strong>Cozum:</strong> Ham input alanlari kaldirilip Stripe Elements veya benzeri PCI-DSS uyumlu odeme saglayicisi entegre edilmeli.</p>
+</div>
+
+<h2>5. Yuksek Oncelikli Bulgular</h2>
+
+<div class="finding finding-high">
+  <span class="badge badge-high">YUKSEK</span> <strong>H-1: API Anahtari URL Parametresinde</strong><br>
+  <span class="file">supabase/functions/*/index.ts (super-worker:95, invoice-analyzer:68, analyze-bank:126)</span>
+  <p style="margin-top:4px">Gemini API anahtari URL query parametresi olarak gonderiliyor (<code>?key=${GEMINI_API_KEY}</code>). Query parametreleri sunucu log'larinda, proxy log'larinda ve tarayici gecmisinde gorunur. API anahtari istek header'inda gonderilmelidir.</p>
+</div>
+
+<div class="finding finding-high">
+  <span class="badge badge-high">YUKSEK</span> <strong>H-2: Wildcard CORS (Access-Control-Allow-Origin: *)</strong><br>
+  <span class="file">Tum Edge Functions + _shared/types.ts</span>
+  <p style="margin-top:4px">Tum edge fonksiyonlari herhangi bir origin'den gelen isteklere izin veriyor. Kotu niyetli bir web sitesi, kullanicinin tarayicisindaki gecerli token'larla cross-origin istekler yapabilir.</p>
+  <p><strong>Cozum:</strong> Origin kisitlamasi: <code>https://fikoai.de</code> ve staging domain'leri.</p>
+</div>
+
+<div class="finding finding-high">
+  <span class="badge badge-high">YUKSEK</span> <strong>H-3: Client-Side Admin Yetkilendirmesi</strong><br>
+  <span class="file">App.tsx : satir 97-110</span>
+  <p style="margin-top:4px">Super-admin durumu client-side'da e-posta karsilastirmasiyla belirleniyor (<code>VITE_SUPER_ADMIN_EMAIL</code>). Saldirgan client-side kodu degistirerek admin UI ozelliklerine erisebilir.</p>
+</div>
+
+<div class="finding finding-high">
+  <span class="badge badge-high">YUKSEK</span> <strong>H-4: Edge Function'larda Rate Limiting Yok</strong><br>
+  <span class="file">Tum supabase/functions/*</span>
+  <p style="margin-top:4px">Hicbir edge fonksiyonunda hiz sinirlamasi uygulanmamiistir. C-1 bulgusiuyla birlikte, saldirgan sinirsiz Gemini API cagrisi yapabilir.</p>
+</div>
+
+<div class="page-break"></div>
+
+<!-- SAYFA 3: ORTA / DUSUK BULGULAR + BAGIMLILIK -->
+<h2>6. Orta Oncelikli Bulgular</h2>
+
+<table>
+  <tr><th style="width:5%">#</th><th style="width:25%">Bulgu</th><th>Aciklama</th><th style="width:13%">Dosya</th></tr>
+  <tr><td><span class="badge badge-medium">M-1</span></td><td>localStorage Hassas Veri</td><td>Sirket adi, vergi no, banka eslesme kurallari sifrelenmeden localStorage'da saklaniyotr.</td><td class="file">Birden fazla</td></tr>
+  <tr><td><span class="badge badge-medium">M-2</span></td><td>AI Hata Metni Istemciye Donuyor</td><td>Gemini API hata yanitlari filtrelenmeden frontend'e iletiliyor (bilgi sizintisi).</td><td class="file">super-worker</td></tr>
+  <tr><td><span class="badge badge-medium">M-3</span></td><td>Ham AI Yaniti Hata Yolunda</td><td>JSON parse basarisiz oldugunda ham AI yanit metni istemciye gonderiliyor.</td><td class="file">super-worker, invoice-analyzer</td></tr>
+  <tr><td><span class="badge badge-medium">M-4</span></td><td>MFA Sifresi Duz Metin</td><td>TOTP sifresi UI'da duz metin olarak gosteriliyor, "goster/gizle" toggle'i yok.</td><td class="file">SettingsSecurityTab</td></tr>
+  <tr><td><span class="badge badge-medium">M-5</span></td><td>Kullanilmayan Service Role Key</td><td>invoice-analyzer'da SERVICE_ROLE_KEY import ediliyor ama kullanilmiyor (RLS bypass riski).</td><td class="file">invoice-analyzer</td></tr>
+  <tr><td><span class="badge badge-medium">M-6</span></td><td>Giris Dogrulamasi Eksik</td><td>Edge function request body'lerinde uzunluk siniri ve sanitizasyon yok (prompt injection riski).</td><td class="file">super-worker</td></tr>
+</table>
+
+<h2>7. Dusuk Oncelikli Bulgular</h2>
+<table>
+  <tr><th style="width:5%">#</th><th style="width:25%">Bulgu</th><th>Aciklama</th></tr>
+  <tr><td><span class="badge badge-low">L-1</span></td><td>Uretim Kodunda console.log</td><td>Bazi servisler ve bilesenler kosulsuz console.log/warn kullaniyor (bilgi sizintisi).</td></tr>
+  <tr><td><span class="badge badge-low">L-2</span></td><td>Zayif Sifre Politikasi</td><td>Kayit formu minimum 6 karakter sifre kabul ediyor. NIST onerisi: minimum 8 karakter.</td></tr>
+  <tr><td><span class="badge badge-low">L-3</span></td><td>CSRF Token Yok</td><td>Giris ve kayit formlarinda CSRF token'i yok (Supabase Bearer token kullandigi icin risk dusuk).</td></tr>
+</table>
+
+<h2>8. Bagimlilik Zafiyet Taramasi (npm audit)</h2>
+<table>
+  <tr><th>Paket</th><th>Ciddiyet</th><th>Zafiyet</th><th>Duzeltme</th></tr>
+  <tr><td><code>jspdf &lt;=4.2.0</code></td><td><span class="badge badge-critical">Kritik</span></td><td>PDF Object Injection + HTML Injection</td><td><code>npm audit fix</code></td></tr>
+  <tr><td><code>xlsx *</code></td><td><span class="badge badge-high">Yuksek</span></td><td>Prototype Pollution + ReDoS</td><td>Alternatif kutuphane (SheetJS Pro veya exceljs)</td></tr>
+  <tr><td><code>rollup 4.x</code></td><td><span class="badge badge-high">Yuksek</span></td><td>Path Traversal ile Dosya Yazma</td><td><code>npm audit fix</code></td></tr>
+  <tr><td><code>undici 7.x</code></td><td><span class="badge badge-high">Yuksek</span></td><td>WebSocket Overflow + HTTP Smuggling + CRLF Injection + DoS</td><td><code>npm audit fix</code></td></tr>
+  <tr><td><code>minimatch 9.x</code></td><td><span class="badge badge-high">Yuksek</span></td><td>ReDoS (3 farkli vektor)</td><td><code>npm audit fix</code></td></tr>
+  <tr><td><code>dompurify 3.x</code></td><td><span class="badge badge-medium">Orta</span></td><td>XSS Zafiyeti</td><td><code>npm audit fix</code></td></tr>
+</table>
+<p><strong>Toplam:</strong> 6 zafiyet (1 kritik, 4 yuksek, 1 orta). 5 tanesi <code>npm audit fix</code> ile duzelebilir, <code>xlsx</code> icin alternatif gereklidir.</p>
+
+<div class="page-break"></div>
+
+<!-- SAYFA 4: OLUMLU BULGULAR + TEST SONUCLARI + YENI DOSYALAR -->
+<h2>9. Olumlu Bulgular (Basarili Gecen Kontroller)</h2>
+<div class="section-box">
+<table>
+  <tr><th style="width:5%"></th><th style="width:30%">Kontrol</th><th>Sonuc</th></tr>
+  <tr><td><span class="badge badge-pass">OK</span></td><td>XSS Vektorleri</td><td><code>dangerouslySetInnerHTML</code>, <code>innerHTML</code>, <code>eval()</code>, <code>new Function()</code> kullanimi yok.</td></tr>
+  <tr><td><span class="badge badge-pass">OK</span></td><td>SQL Injection</td><td>Tum veritabani sorgu isleri Supabase istemci kutuphanesi ile parametreli yontemlerle yapiliyor. Ham SQL birlestirmesi yok.</td></tr>
+  <tr><td><span class="badge badge-pass">OK</span></td><td>Gizli Bilgi Yonetimi</td><td>Tum API anahtarlari ortam degiskenlerinden okunuyor. Kaynak kodda sifrelenmis bilgi yok.</td></tr>
+  <tr><td><span class="badge badge-pass">OK</span></td><td>RLS Politikalari</td><td>Tum tablolarda Row-Level Security politikalari aktif (<code>001_security_rls_policies.sql</code>).</td></tr>
+  <tr><td><span class="badge badge-pass">OK</span></td><td>Acik Yonlendirme</td><td>Dogrulanmamis yonlendirme yok. Tek <code>window.location</code> kullanimi: <code>reload()</code>.</td></tr>
+  <tr><td><span class="badge badge-pass">OK</span></td><td>HTTPS Kullanimi</td><td>Tum API cagrilari HTTPS uzerinden. <code>http://</code> referanslari yalnizca XML namespace URI'lari.</td></tr>
+</table>
+</div>
+
+<h2>10. Birim Test Sonuclari (Vitest)</h2>
+<div class="section-box">
+<table>
+  <tr><th>Metrik</th><th>Deger</th></tr>
+  <tr><td>Toplam Test</td><td>57</td></tr>
+  <tr><td>Basarili</td><td><span style="color:#2e7d32; font-weight:700">49</span></td></tr>
+  <tr><td>Basarisiz</td><td><span style="color:#d32f2f; font-weight:700">8</span> (2 test dosyasi)</td></tr>
+  <tr><td>Test Suresi</td><td>10.11 saniye</td></tr>
+</table>
+<p style="margin-top:6px"><strong>Basarisiz Testler:</strong></p>
+<ul>
+  <li><code>AuthScreen.test.tsx</code> &mdash; UI bilesenlerinde placeholder/rol degisiklikleri nedeniyle 7 test basarisiz.</li>
+  <li><code>ruleEngine.test.tsx</code> &mdash; <code>match_source</code> degerinin "rule" yerine "rule_manual" olmasi bekleniyor (1 test).</li>
+</ul>
+</div>
+
+<h2>11. Olusturulan Dosyalar</h2>
+<table>
+  <tr><th>Dosya Yolu</th><th>Amac</th></tr>
+  <tr><td><code>.github/workflows/gitleaks.yml</code></td><td>Gitleaks ile sir taramasi (her push/PR)</td></tr>
+  <tr><td><code>.github/workflows/codeql.yml</code></td><td>CodeQL SAST analizi (her PR + haftalik)</td></tr>
+  <tr><td><code>.github/workflows/security-audit.yml</code></td><td>npm audit + Bandit + Snyk taramasi</td></tr>
+  <tr><td><code>.github/workflows/owasp-zap.yml</code></td><td>OWASP ZAP DAST taramasi (haftalik)</td></tr>
+  <tr><td><code>.github/dependabot.yml</code></td><td>NPM + Python + Actions bagimlilik guncelleme</td></tr>
+  <tr><td><code>.gitleaks.toml</code></td><td>Gitleaks yapilandirmasi ve izin listesi</td></tr>
+  <tr><td><code>.zap/rules.tsv</code></td><td>OWASP ZAP kural yapilandirmasi</td></tr>
+</table>
+
+<h2>12. Oncelikli Aksiyon Plani</h2>
+<table>
+  <tr><th style="width:8%">Oncelik</th><th style="width:40%">Aksiyon</th><th>Etki</th><th style="width:12%">Tahmini Efor</th></tr>
+  <tr><td><span class="badge badge-critical">P0</span></td><td><code>super-worker</code>'a JWT dogrulamasi ekle</td><td>Yetkisiz API erisimini engeller</td><td>30 dk</td></tr>
+  <tr><td><span class="badge badge-critical">P0</span></td><td>Kredi karti formunu Stripe Elements ile degistir</td><td>PCI-DSS uyumlulugu</td><td>2-4 saat</td></tr>
+  <tr><td><span class="badge badge-high">P1</span></td><td>CORS origin'i <code>fikoai.de</code> ile sinirla</td><td>Cross-origin saldiri engellemesi</td><td>15 dk</td></tr>
+  <tr><td><span class="badge badge-high">P1</span></td><td>Gemini API key'i header'a tasi</td><td>API key log sizintisi onlenmesi</td><td>30 dk</td></tr>
+  <tr><td><span class="badge badge-high">P1</span></td><td><code>npm audit fix</code> calistir</td><td>5 bilinen zafiyeti duzelter</td><td>5 dk</td></tr>
+  <tr><td><span class="badge badge-high">P1</span></td><td>Admin kontrolunu server-side'a tasi</td><td>Yetki yukseltme engellemesi</td><td>1-2 saat</td></tr>
+  <tr><td><span class="badge badge-medium">P2</span></td><td>Edge function'lara rate limiting ekle</td><td>API tuketimi ve DoS korunmasi</td><td>1-2 saat</td></tr>
+  <tr><td><span class="badge badge-medium">P2</span></td><td>localStorage verilerini sifrele</td><td>Yerel veri korunmasi</td><td>2-3 saat</td></tr>
+  <tr><td><span class="badge badge-medium">P2</span></td><td>AI hata yanitlarini filtrele</td><td>Bilgi sizintisi onlenmesi</td><td>30 dk</td></tr>
+  <tr><td><span class="badge badge-low">P3</span></td><td>Sifre politikasini min 8 karaktere cikart</td><td>Hesap guvenligi</td><td>5 dk</td></tr>
+</table>
+
+<div class="footer">
+  <div>FikoAI Guvenlik Raporu &mdash; Gizli / Dahili Kullanim &mdash; &copy; 2026</div>
+  <div>Sayfa 4/4 &mdash; Olusturma: 22.03.2026 &mdash; Claude AI Security Audit v1.0</div>
+</div>
+
+</body>
+</html>

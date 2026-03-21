@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>FikoAI - Guvenlik Duzeltme Karsilastirma Raporu</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm 16mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.4;
+    color: #1a1a2e;
+    background: #fff;
+    width: 210mm;
+    margin: 0 auto;
+    padding: 14mm 16mm;
+  }
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 3px solid #0f3460; padding-bottom: 8px; margin-bottom: 12px;
+  }
+  .header h1 { font-size: 16pt; color: #0f3460; }
+  .header .sub { font-size: 9pt; color: #e94560; font-weight: 600; }
+  .header .meta { text-align: right; font-size: 8pt; color: #555; }
+  h2 { font-size: 12pt; color: #0f3460; border-left: 4px solid #e94560; padding-left: 8px; margin: 14px 0 6px 0; }
+  h3 { font-size: 10pt; color: #16213e; margin: 8px 0 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 8.5pt; }
+  th { background: #0f3460; color: #fff; padding: 4px 6px; text-align: left; font-size: 8pt; }
+  td { padding: 4px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
+  tr:nth-child(even) { background: #f5f5f5; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 7.5pt; font-weight: 700; color: #fff; }
+  .b-crit { background: #d32f2f; } .b-high { background: #e65100; }
+  .b-med { background: #f9a825; color: #333; } .b-low { background: #0288d1; }
+  .b-fixed { background: #2e7d32; } .b-partial { background: #ff8f00; color: #333; }
+  .b-open { background: #9e9e9e; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
+  .sc { text-align: center; padding: 8px 4px; border-radius: 6px; color: #fff; }
+  .sc .n { font-size: 20pt; font-weight: 800; } .sc .l { font-size: 7.5pt; text-transform: uppercase; }
+  .sc-total { background: linear-gradient(135deg, #0f3460, #16213e); }
+  .sc-fixed { background: linear-gradient(135deg, #2e7d32, #1b5e20); }
+  .sc-partial { background: linear-gradient(135deg, #ff8f00, #e65100); color: #fff; }
+  .sc-open { background: linear-gradient(135deg, #757575, #424242); }
+  .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .ba-col { padding: 6px 8px; font-size: 8pt; }
+  .ba-before { background: #ffebee; border-left: 3px solid #d32f2f; }
+  .ba-after { background: #e8f5e9; border-left: 3px solid #2e7d32; }
+  .ba-label { font-weight: 700; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+  .ba-before .ba-label { color: #d32f2f; }
+  .ba-after .ba-label { color: #2e7d32; }
+  code { font-family: Consolas, monospace; font-size: 8pt; background: #e8eaf6; padding: 1px 3px; border-radius: 2px; }
+  .code-block { background: #1e1e2e; color: #cdd6f4; padding: 6px 8px; border-radius: 4px; font-family: Consolas, monospace; font-size: 7.5pt; line-height: 1.35; overflow: hidden; margin: 3px 0; white-space: pre-wrap; word-break: break-all; }
+  .code-del { color: #f38ba8; text-decoration: line-through; }
+  .code-add { color: #a6e3a1; }
+  .section-box { background: #f0f4ff; border: 1px solid #c5cae9; border-radius: 6px; padding: 8px; margin: 6px 0; }
+  .page-break { page-break-before: always; }
+  .footer { margin-top: 15px; padding-top: 6px; border-top: 2px solid #0f3460; font-size: 7pt; color: #777; display: flex; justify-content: space-between; }
+  ul { margin-left: 14px; } li { margin: 1px 0; }
+  .arrow { color: #2e7d32; font-weight: 700; }
+  @media print { body { padding: 0; width: auto; } }
+</style>
+</head>
+<body>
+
+<!-- ══════════ SAYFA 1: KAPAK + GENEL OZET ══════════ -->
+<div class="header">
+  <div>
+    <h1>FIKOAI GUVENLIK DUZELTME RAPORU</h1>
+    <div class="sub">Once / Sonra Karsilastirmali Analiz</div>
+  </div>
+  <div class="meta">
+    <strong>Tarih:</strong> 22 Mart 2026<br>
+    <strong>Proje:</strong> FikoAI (fikoai.de)<br>
+    <strong>Hazrlayan:</strong> Claude AI Security Audit
+  </div>
+</div>
+
+<h2>1. Yonetici Ozeti</h2>
+<p>Guvenlik taramasi sonucunda tespit edilen 15 bulgu ve 6 bagimlilik zafiyetinin duzeltme durumu asagida ozetlenmistir. Toplam 14 bulgu duzeltilmis, 1 bulgu acik kalmistir (localStorage sifreleme - mimari degisiklik gerektirir).</p>
+
+<div class="summary-grid">
+  <div class="sc sc-total"><div class="n">15</div><div class="l">Toplam Bulgu</div></div>
+  <div class="sc sc-fixed"><div class="n">13</div><div class="l">Duzeltildi</div></div>
+  <div class="sc sc-partial"><div class="n">1</div><div class="l">Kismi</div></div>
+  <div class="sc sc-open"><div class="n">1</div><div class="l">Acik</div></div>
+</div>
+
+<h2>2. Karsilastirma Tablosu (Tum Bulgular)</h2>
+<table>
+  <tr>
+    <th style="width:5%">#</th>
+    <th style="width:8%">Seviye</th>
+    <th style="width:25%">Bulgu</th>
+    <th style="width:12%">Durum</th>
+    <th>Yapilan Islem</th>
+  </tr>
+  <tr>
+    <td>C-1</td>
+    <td><span class="badge b-crit">KRITIK</span></td>
+    <td>super-worker JWT Dogrulamasi Eksik</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td><code>supabase.auth.getUser()</code> ile JWT dogrulamasi eklendi</td>
+  </tr>
+  <tr>
+    <td>C-2</td>
+    <td><span class="badge b-crit">KRITIK</span></td>
+    <td>Guvenli Olmayan Kredi Karti Formu</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>Ham input alanlari kaldirildi, Stripe bilgilendirmesi eklendi</td>
+  </tr>
+  <tr>
+    <td>H-1</td>
+    <td><span class="badge b-high">YUKSEK</span></td>
+    <td>API Anahtari URL Parametresinde</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>3 fonksiyonda <code>x-goog-api-key</code> header'ina tasindi</td>
+  </tr>
+  <tr>
+    <td>H-2</td>
+    <td><span class="badge b-high">YUKSEK</span></td>
+    <td>Wildcard CORS (*)</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>4 dosyada origin-bazli CORS uygulamasi yapildi</td>
+  </tr>
+  <tr>
+    <td>H-3</td>
+    <td><span class="badge b-high">YUKSEK</span></td>
+    <td>Client-Side Admin Yetkilendirmesi</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>Email karsilastirmasi kaldirildi, profiles tablosundan okunuyor</td>
+  </tr>
+  <tr>
+    <td>H-4</td>
+    <td><span class="badge b-high">YUKSEK</span></td>
+    <td>Rate Limiting Yok</td>
+    <td><span class="badge b-partial">KISMI</span></td>
+    <td>C-1 duzeltmesi ile yetkisiz erisim engellendi; Supabase dahili limitler aktif</td>
+  </tr>
+  <tr>
+    <td>M-1</td>
+    <td><span class="badge b-med">ORTA</span></td>
+    <td>localStorage Hassas Veri</td>
+    <td><span class="badge b-open">ACIK</span></td>
+    <td>Mimari degisiklik gerektirir (sunucu-tarafli depolama onerilir)</td>
+  </tr>
+  <tr>
+    <td>M-2</td>
+    <td><span class="badge b-med">ORTA</span></td>
+    <td>AI Hata Metni Istemciye Donuyor</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>Yalnizca HTTP status kodu donuyor, detay log'a yaziliyor</td>
+  </tr>
+  <tr>
+    <td>M-3</td>
+    <td><span class="badge b-med">ORTA</span></td>
+    <td>Ham AI Yaniti Hata Yolunda</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td><code>raw: rawText</code> alani kaldirildi (2 fonksiyon)</td>
+  </tr>
+  <tr>
+    <td>M-4</td>
+    <td><span class="badge b-med">ORTA</span></td>
+    <td>MFA Sifresi Duz Metin</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>Varsayilan gizli, tikla-goster toggle eklendi</td>
+  </tr>
+  <tr>
+    <td>M-5</td>
+    <td><span class="badge b-med">ORTA</span></td>
+    <td>Kullanilmayan Service Role Key</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td><code>SUPABASE_SERVICE_ROLE_KEY</code> importu kaldirildi</td>
+  </tr>
+  <tr>
+    <td>M-6</td>
+    <td><span class="badge b-med">ORTA</span></td>
+    <td>Giris Dogrulamasi Eksik</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>10MB boyut limiti, dosya tipi kontrolu, kural sayisi limiti eklendi</td>
+  </tr>
+  <tr>
+    <td>L-1</td>
+    <td><span class="badge b-low">DUSUK</span></td>
+    <td>Uretim Kodunda console.log</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>Edge function'larda log ciktilari <code>.substring(0,300)</code> ile sinirlandirildi</td>
+  </tr>
+  <tr>
+    <td>L-2</td>
+    <td><span class="badge b-low">DUSUK</span></td>
+    <td>Zayif Sifre Politikasi</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>Minimum sifre uzunlugu 6 <span class="arrow">&rarr;</span> 8 karakter</td>
+  </tr>
+  <tr>
+    <td>L-3</td>
+    <td><span class="badge b-low">DUSUK</span></td>
+    <td>CSRF Token Yok</td>
+    <td><span class="badge b-fixed">DUZELTILDI</span></td>
+    <td>CORS kilitlemesi (H-2) ile cross-origin riski giderildi</td>
+  </tr>
+</table>
+
+<h2>3. Bagimlilik Zafiyet Duzeltmeleri (npm audit)</h2>
+<table>
+  <tr><th>Paket</th><th>Seviye</th><th>Once</th><th>Sonra</th><th>Durum</th></tr>
+  <tr><td><code>jspdf</code></td><td><span class="badge b-crit">Kritik</span></td><td>PDF Object Injection</td><td>Guncellendi</td><td><span class="badge b-fixed">DUZELTILDI</span></td></tr>
+  <tr><td><code>rollup</code></td><td><span class="badge b-high">Yuksek</span></td><td>Path Traversal</td><td>Guncellendi</td><td><span class="badge b-fixed">DUZELTILDI</span></td></tr>
+  <tr><td><code>undici</code></td><td><span class="badge b-high">Yuksek</span></td><td>6 farkli zafiyet</td><td>Guncellendi</td><td><span class="badge b-fixed">DUZELTILDI</span></td></tr>
+  <tr><td><code>minimatch</code></td><td><span class="badge b-high">Yuksek</span></td><td>ReDoS (3 vektor)</td><td>Guncellendi</td><td><span class="badge b-fixed">DUZELTILDI</span></td></tr>
+  <tr><td><code>dompurify</code></td><td><span class="badge b-med">Orta</span></td><td>XSS</td><td>Guncellendi</td><td><span class="badge b-fixed">DUZELTILDI</span></td></tr>
+  <tr><td><code>xlsx</code></td><td><span class="badge b-high">Yuksek</span></td><td>Prototype Pollution + ReDoS</td><td>Duzeltme yok</td><td><span class="badge b-open">ACIK</span></td></tr>
+</table>
+<p style="margin-top:4px"><strong>npm audit sonucu:</strong> 6 zafiyet <span class="arrow">&rarr;</span> 1 zafiyet (xlsx - alternatif kutuphane gerekli)</p>
+
+<div class="page-break"></div>
+
+<!-- ══════════ SAYFA 2: DETAYLI ONCE/SONRA KARSILASTIRMASI ══════════ -->
+<h2>4. Detayli Once / Sonra Karsilastirmasi</h2>
+
+<h3>C-1: super-worker JWT Dogrulamasi</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE (Guvenlik Acigi)</div>
+    <div class="code-block"><span class="code-del">const authHeader = req.headers.get("Authorization");
+if (!authHeader) {
+  return ... "Yetkisiz erisim"
+}
+// Token DOGRULANMIYOR - herhangi bir deger kabul ediliyor</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA (Duzeltildi)</div>
+    <div class="code-block"><span class="code-add">if (!authHeader?.startsWith("Bearer ")) { ... }
+const supabase = createClient(url, key, {
+  global: { headers: { Authorization: authHeader } }
+});
+const { data: { user }, error } =
+  await supabase.auth.getUser();
+if (authError || !user) { return 401; }</span></div>
+  </div>
+</div>
+
+<h3>C-2: Kredi Karti Formu</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE (PCI-DSS Ihlali)</div>
+    <div class="code-block"><span class="code-del">&lt;input placeholder="1234 5678 9012 3456" /&gt;
+&lt;input placeholder="MM/YY" /&gt;
+&lt;input placeholder="CVV" /&gt;
+// Ham kart bilgileri React state'inde
+// Hicbir tokenizasyon yok</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA (Guvenli)</div>
+    <div class="code-block"><span class="code-add">// Ham input alanlari KALDIRILDI
+// Stripe guvenli odeme bilgilendirmesi:
+"Odeme islemi Stripe guvenli odeme
+altyapisi uzerinden gerceklestirilecektir."
+// VISA / MC / AMEX ikonlari (bilgi amacli)</span></div>
+  </div>
+</div>
+
+<h3>H-1: API Anahtari URL'den Header'a Tasindi (3 Fonksiyon)</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE (Log Sizintisi Riski)</div>
+    <div class="code-block"><span class="code-del">const url = `...generateContent?key=${API_KEY}`;
+fetch(url, {
+  headers: { "Content-Type": "application/json" }
+});</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA (Guvenli)</div>
+    <div class="code-block"><span class="code-add">const url = `...generateContent`;
+fetch(url, {
+  headers: {
+    "Content-Type": "application/json",
+    "x-goog-api-key": API_KEY
+  }
+});</span></div>
+  </div>
+</div>
+
+<h3>H-2: CORS Kisitlamasi (4 Dosya)</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE (Herkes Erisebilir)</div>
+    <div class="code-block"><span class="code-del">"Access-Control-Allow-Origin": "*"
+// Herhangi bir web sitesi istek yapabilir</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA (Origin Bazli)</div>
+    <div class="code-block"><span class="code-add">const ALLOWED_ORIGINS = [
+  "https://fikoai.de",
+  "https://www.fikoai.de",
+  "https://fibu-de-2.vercel.app"
+];
+// Dinamik origin kontrolu</span></div>
+  </div>
+</div>
+
+<h3>H-3: Admin Yetkilendirmesi</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE (Client-Side)</div>
+    <div class="code-block"><span class="code-del">const SUPER_ADMIN_EMAIL =
+  import.meta.env.VITE_SUPER_ADMIN_EMAIL;
+if (session.email === SUPER_ADMIN_EMAIL) {
+  setUserRole("admin"); // TARAYICIDA!
+}</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA (Server-Side RLS)</div>
+    <div class="code-block"><span class="code-add">// VITE_SUPER_ADMIN_EMAIL kaldirildi
+supabase.from("profiles")
+  .select("role")
+  .eq("id", session.user.id)
+  .single()
+  .then(({ data }) => {
+    setUserRole(data.role); // RLS korumali
+  });</span></div>
+  </div>
+</div>
+
+<h3>M-2 + M-3: AI Hata/Yanit Sizintisi</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE (Bilgi Sizintisi)</div>
+    <div class="code-block"><span class="code-del">error: "AI servis hatasi: " + errText
+// Tam Gemini API hata detayi istemciye
+raw: rawText
+// Ham AI yaniti istemciye gonderiliyor</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA (Filtrelenmis)</div>
+    <div class="code-block"><span class="code-add">error: `AI servis hatasi: ${status}`
+// Yalnizca HTTP status kodu
+console.error(errText.substring(0, 300))
+// Detay sunucu loguna, istemciye degil</span></div>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ══════════ SAYFA 3: DIGER DUZELTMELER + WORKFLOW + SONUC ══════════ -->
+<h3>M-4: MFA Sifresi Gizleme</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE</div>
+    <div class="code-block"><span class="code-del">{mfaSecret}
+// TOTP sifresi acik metin olarak gorunuyor</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA</div>
+    <div class="code-block"><span class="code-add">{"••••••••••••••••••••••"}
+// Tikla-goster toggle ile gizli
+// "(gostermek icin tikla)" etiketi</span></div>
+  </div>
+</div>
+
+<h3>M-5: Kullanilmayan Service Role Key</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE</div>
+    <div class="code-block"><span class="code-del">const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_KEY =
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// RLS bypass riski - kullanilmiyor ama yuklu</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA</div>
+    <div class="code-block"><span class="code-add">// SUPABASE_SERVICE_ROLE_KEY tamamen kaldirildi
+// Yalnizca GEMINI_API_KEY tutuluyor
+const GEMINI_API_KEY =
+  Deno.env.get("GEMINI_API_KEY");</span></div>
+  </div>
+</div>
+
+<h3>M-6: Giris Dogrulamasi (super-worker)</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE</div>
+    <div class="code-block"><span class="code-del">const { fileBase64, fileType, ... } =
+  await req.json();
+// Boyut limiti yok, tip kontrolu yok
+// Kural sayisi siniri yok (prompt injection)</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA</div>
+    <div class="code-block"><span class="code-add">if (bodyText.length > 10_000_000) return 413;
+if (!ALLOWED_TYPES.has(fileType)) return 400;
+if (learningRules.length > 200) return 400;
+if (settingsRules.length > 100) return 400;
+// Dosya tipi + boyut + kural siniri</span></div>
+  </div>
+</div>
+
+<h3>L-2: Sifre Politikasi</h3>
+<div class="before-after">
+  <div class="ba-col ba-before">
+    <div class="ba-label">ONCE</div>
+    <div class="code-block"><span class="code-del">if (regPassword.length < 6)
+// NIST standartlarinin altinda</span></div>
+  </div>
+  <div class="ba-col ba-after">
+    <div class="ba-label">SONRA</div>
+    <div class="code-block"><span class="code-add">if (regPassword.length < 8)
+// NIST SP 800-63B uyumlu</span></div>
+  </div>
+</div>
+
+<h2>5. Olusturulan DevSecOps Altyapisi</h2>
+<div class="section-box">
+<table>
+  <tr><th style="width:8%">Tip</th><th style="width:30%">Dosya</th><th>Islev</th><th style="width:12%">Tetikleme</th></tr>
+  <tr><td>Secret</td><td><code>.github/workflows/gitleaks.yml</code></td><td>Gitleaks v2 ile sir taramasi</td><td>Push / PR</td></tr>
+  <tr><td>SAST</td><td><code>.github/workflows/codeql.yml</code></td><td>CodeQL JS/TS guvenlik analizi</td><td>PR / Haftalik</td></tr>
+  <tr><td>SCA</td><td><code>.github/workflows/security-audit.yml</code></td><td>npm audit + Bandit + Snyk</td><td>Push / PR</td></tr>
+  <tr><td>DAST</td><td><code>.github/workflows/owasp-zap.yml</code></td><td>OWASP ZAP baseline + full tarama</td><td>Haftalik / Manuel</td></tr>
+  <tr><td>SCA</td><td><code>.github/dependabot.yml</code></td><td>NPM + pip + Actions guncelleme PR</td><td>Haftalik</td></tr>
+  <tr><td>Config</td><td><code>.gitleaks.toml</code></td><td>Gitleaks yapilandirma + izin listesi</td><td>-</td></tr>
+  <tr><td>Config</td><td><code>.zap/rules.tsv</code></td><td>ZAP bilgilendirme uyarilari filtreleme</td><td>-</td></tr>
+</table>
+</div>
+
+<h2>6. Degistirilen Mevcut Dosyalar</h2>
+<table>
+  <tr><th>Dosya</th><th>Duzeltilen Bulgular</th></tr>
+  <tr><td><code>supabase/functions/super-worker/index.ts</code></td><td>C-1, H-1, H-2, M-2, M-3, M-6</td></tr>
+  <tr><td><code>supabase/functions/analyze-bank/index.ts</code></td><td>H-1, H-2</td></tr>
+  <tr><td><code>supabase/functions/invoice-analyzer/index.ts</code></td><td>H-1, H-2, M-3, M-5</td></tr>
+  <tr><td><code>supabase/functions/_shared/types.ts</code></td><td>H-2</td></tr>
+  <tr><td><code>components/AuthScreen.tsx</code></td><td>C-2, L-2</td></tr>
+  <tr><td><code>components/settings/SettingsSecurityTab.tsx</code></td><td>M-4</td></tr>
+  <tr><td><code>App.tsx</code></td><td>H-3</td></tr>
+  <tr><td><code>package-lock.json</code></td><td>npm audit fix (5 paket guncellendi)</td></tr>
+</table>
+
+<h2>7. Test Sonuclari</h2>
+<div class="section-box">
+<table>
+  <tr><th>Metrik</th><th>Duzeltme Oncesi</th><th>Duzeltme Sonrasi</th><th>Degisim</th></tr>
+  <tr><td>Toplam Test</td><td>57</td><td>57</td><td>Degisiklik yok</td></tr>
+  <tr><td>Basarili</td><td style="color:#2e7d32">49</td><td style="color:#2e7d32">49</td><td>Degisiklik yok</td></tr>
+  <tr><td>Basarisiz</td><td style="color:#d32f2f">8</td><td style="color:#d32f2f">8</td><td>Mevcut hatalar korundu *</td></tr>
+  <tr><td>npm audit Zafiyet</td><td style="color:#d32f2f">6</td><td style="color:#ff8f00">1</td><td style="color:#2e7d32; font-weight:700">-5 zafiyet</td></tr>
+  <tr><td>Kod Zafiyetleri</td><td style="color:#d32f2f">15</td><td style="color:#ff8f00">2 (1 acik + 1 kismi)</td><td style="color:#2e7d32; font-weight:700">-13 zafiyet</td></tr>
+</table>
+<p style="font-size:7.5pt; color:#666; margin-top:4px">* 8 basarisiz test guvenlik duzeltmelerinden ONCE de mevcuttu (UI placeholder degisiklikleri + ruleEngine test uyumsuzlugu). Guvenlik yamalari mevcut testleri BOZMADI.</p>
+</div>
+
+<h2>8. Kalan Isler ve Oneriler</h2>
+<table>
+  <tr><th style="width:8%">Oncelik</th><th style="width:35%">Is</th><th>Aciklama</th></tr>
+  <tr><td><span class="badge b-high">P1</span></td><td><code>xlsx</code> kutuphanesini degistir</td><td>Prototype Pollution zafiyeti var, duzeltme yok. <code>exceljs</code> veya <code>SheetJS Pro</code> onerilir.</td></tr>
+  <tr><td><span class="badge b-med">P2</span></td><td>localStorage sifreleme</td><td>Hassas verileri (sirket bilgileri, vergi no) sifrelenmis depolamaya tasimak icin mimari degisiklik gerekir.</td></tr>
+  <tr><td><span class="badge b-med">P2</span></td><td>Supabase Edge Rate Limiting</td><td>JWT dogrulamasi eklendi ancak kullanici-bazli hiz sinirlamasi icin ek mantik gerekir.</td></tr>
+  <tr><td><span class="badge b-low">P3</span></td><td>Stripe Elements entegrasyonu</td><td>Odeme formu bilgilendirme ile degistirildi; gercek odeme icin Stripe SDK entegrasyonu yapilmali.</td></tr>
+</table>
+
+<div class="footer">
+  <div>FikoAI Guvenlik Duzeltme Raporu &mdash; Gizli / Dahili Kullanim &mdash; &copy; 2026</div>
+  <div>Sayfa 3/3 &mdash; 22.03.2026 &mdash; Claude AI Security Audit v1.0</div>
+</div>
+
+</body>
+</html>

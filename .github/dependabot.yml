@@ -1,0 +1,49 @@
+# Dependabot - Software Composition Analysis (SCA)
+# NPM ve Python bagimliklarindaki bilinen zafiyetleri otomatik tespit eder
+# ve guncelleme PR'lari olusturur.
+version: 2
+updates:
+  # NPM (Frontend + Supabase Edge Functions)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "cevikhann"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps"
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+      development-dependencies:
+        dependency-type: "development"
+
+  # Python (MCP PDF Reader)
+  - package-ecosystem: "pip"
+    directory: "/mcp_pdf_reader"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "cevikhann"
+    labels:
+      - "dependencies"
+      - "python"
+      - "security"
+    commit-message:
+      prefix: "deps(python)"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "ci"
+      - "dependencies"

@@ -261,12 +261,26 @@ export const SettingsSecurityTab: React.FC<Props> = ({ userId, userEmail, userRo
             <div className="flex justify-center p-4 rounded-md" style={{ background: "white" }}>
               <img src={mfaQr} alt="2FA QR" style={{ width: 180, height: 180 }} />
             </div>
+            {/* [FIX M-4] MFA sırrı varsayılan olarak gizli, tıkla-göster ile açılır */}
             {mfaSecret && (
               <div className="text-center">
                 <span className="text-[10px]" style={{ color: "#3a3f4a" }}>{tr("Manuel giriş:", "Manuelle Eingabe:")}</span>
-                <code className="block text-xs font-mono mt-1 px-3 py-1.5 rounded" style={{ background: "#1c1f27", color: "#06b6d4", wordBreak: "break-all" }}>
-                  {mfaSecret}
-                </code>
+                <div
+                  onClick={(e) => {
+                    const el = e.currentTarget;
+                    const isHidden = el.getAttribute("data-hidden") !== "false";
+                    el.setAttribute("data-hidden", isHidden ? "false" : "true");
+                    el.querySelector("code")!.textContent = isHidden ? mfaSecret : "••••••••••••••••••••••••••••••••";
+                  }}
+                  data-hidden="true"
+                  style={{ cursor: "pointer" }}
+                  title={tr("Göstermek için tıkla", "Klicken zum Anzeigen")}
+                >
+                  <code className="block text-xs font-mono mt-1 px-3 py-1.5 rounded" style={{ background: "#1c1f27", color: "#06b6d4", wordBreak: "break-all" }}>
+                    {"••••••••••••••••••••••••••••••••"}
+                  </code>
+                  <span className="text-[9px]" style={{ color: "#64748b" }}>{tr("(göstermek için tıkla)", "(klicken zum Anzeigen)")}</span>
+                </div>
               </div>
             )}
             <div>

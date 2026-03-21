@@ -1,0 +1,64 @@
+# OWASP ZAP - Dynamic Application Security Testing (DAST)
+# Calisan uygulamaya disaridan atak simulasyonu yaparak zafiyet arar.
+name: OWASP ZAP DAST Scan
+
+on:
+  schedule:
+    - cron: "0 3 * * 0" # Her Pazar 03:00 UTC (haftalik)
+  workflow_dispatch: # Manuel tetikleme
+    inputs:
+      target_url:
+        description: "Target URL to scan"
+        required: true
+        default: "https://fikoai.de"
+
+jobs:
+  zap-baseline:
+    name: ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ github.event.inputs.target_url || 'https://fikoai.de' }}
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-a"
+          allow_issue_writing: true
+          fail_action: false
+
+      - name: Upload ZAP Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: report_html.html
+
+  zap-full-scan:
+    name: ZAP Full Scan (Weekly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: OWASP ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: "https://fikoai.de"
+          rules_file_name: ".zap/rules.tsv"
+          allow_issue_writing: true
+          fail_action: false
+
+      - name: Upload ZAP Full Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-full-report
+          path: report_html.html

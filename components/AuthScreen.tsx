@@ -12,10 +12,13 @@ import {
   CreditCard,
   CheckCircle2,
 } from "lucide-react";
+import { PeriodPicker } from "./PeriodPicker";
+import { UpgradePrompt } from "./UpgradePrompt";
+import { formatPeriodLabel, type Language } from "../services/periodUtils";
 
 interface AuthScreenProps { onAuth: (session: any) => void; }
 
-type ScreenState = "auth" | "register-modal" | "payment";
+type ScreenState = "auth" | "register-modal" | "period-select" | "payment";
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
   const { t, lang, setLang } = useLang();
@@ -32,6 +35,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
   // ─── Plan / Modal ─────────────────────────────────────
   const [screenState, setScreenState] = useState<ScreenState>("auth");
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
   // ─── Registration Modal Fields ────────────────────────
   const [regEmail, setRegEmail] = useState("");
@@ -91,7 +96,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
     setModalError("");
     if (!companyName.trim()) { setModalError(t.companyRequired); return; }
     if (!regEmail.trim()) { setModalError(tr("E-posta gerekli", "E-Mail ist erforderlich")); return; }
-    if (regPassword.length < 6) { setModalError(tr("Şifre en az 6 karakter olmalı", "Passwort muss mindestens 6 Zeichen haben")); return; }
+    // [FIX L-2] Şifre politikası NIST SP 800-63B'ye uygun hale getirildi (min 8 karakter)
+    if (regPassword.length < 8) { setModalError(tr("Şifre en az 8 karakter olmalı", "Passwort muss mindestens 8 Zeichen haben")); return; }
     if (regPassword !== regPassword2) { setModalError(tr("Şifreler eşleşmiyor", "Passwörter stimmen nicht überein")); return; }
 
     setModalLoading(true);
@@ -109,12 +115,80 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
           email: companyEmail.trim() || regEmail,
         });
       }
-      // Go to payment screen regardless of e-mail confirmation
-      setScreenState("payment");
+      // Free plan → direkt payment, diğerleri → dönem seçimi
+      if (selectedPlan?.key === "free") {
+        setScreenState("payment");
+      } else {
+        setScreenState("period-select");
+      }
     } catch (err: any) {
       setModalError(err.message || t.registerError);
     } finally { setModalLoading(false); }
   };
+
+  // ─── Period Selection Screen ──────────────────────────
+  if (screenState === "period-select" && selectedPlan) {
+    return (
+      <div className="min-h-screen flex relative overflow-hidden" style={{ background: "#0d0f15" }}>
+        <div className="absolute inset-0 z-0 pointer-events-auto"><TubesBackground /></div>
+        <div className="absolute inset-0 pointer-events-none z-0" style={{
+          backgroundImage: "linear-gradient(rgba(6,182,212,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,.04) 1px, transparent 1px)",
+          backgroundSize: "40px 40px"
+        }} />
+
+        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 sm:p-6">
+          {/* Seçili plan bilgisi */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{ marginBottom: "24px", textAlign: "center" }}
+          >
+            <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
+              {tr("Seçili Plan:", "Ausgewählter Plan:")}
+            </span>
+            <span style={{
+              fontSize: "15px", fontWeight: 700, color: "#f97316", marginLeft: "8px",
+            }}>
+              {selectedPlan.title} — {selectedPlan.price}€{selectedPlan.period}
+            </span>
+          </motion.div>
+
+          <PeriodPicker
+            planType={selectedPlan.key}
+            purchasedPeriods={[]}
+            onPeriodsSelected={(periods) => {
+              setSelectedPeriods(periods);
+              setScreenState("payment");
+            }}
+            onUpgradeRequest={() => setShowUpgradePrompt(true)}
+          />
+
+          <UpgradePrompt
+            visible={showUpgradePrompt}
+            onClose={() => setShowUpgradePrompt(false)}
+            onSelectPlan={(planKey) => {
+              setShowUpgradePrompt(false);
+              const plan = plans.find(p => p.key === planKey);
+              if (plan) {
+                setSelectedPlan(plan);
+              }
+            }}
+            currentPlanType={selectedPlan.key}
+          />
+
+          <button
+            onClick={() => setScreenState("register-modal")}
+            style={{
+              marginTop: "16px", background: "none", border: "none",
+              color: "rgba(255,255,255,0.3)", fontSize: "12px", cursor: "pointer",
+            }}
+          >
+            ← {tr("Geri dön", "Zurück")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ─── Payment Screen ───────────────────────────────────
   if (screenState === "payment") {
@@ -126,7 +200,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
           backgroundSize: "40px 40px"
         }} />
 
-        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-6">
+        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 sm:p-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -148,8 +222,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
               padding: "32px 36px 28px",
             }}>
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center font-syne font-bold text-white text-sm"
-                  style={{ background: "linear-gradient(135deg,#06b6d4,#0891b2)" }}>F</div>
+                <img src="/logo.png" alt="FikoAI" className="w-8 h-8 rounded-lg object-contain" />
                 <span className="font-syne font-bold text-lg text-slate-100">FikoAI</span>
               </div>
 
@@ -164,39 +237,46 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
                   {selectedPlan?.title} — {selectedPlan?.price === 0 ? tr("Ücretsiz", "Kostenlos") : `${selectedPlan?.price}€${selectedPlan?.period}`}
                 </span>
               </p>
+              {selectedPeriods.length > 0 && (
+                <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)", marginLeft: "32px", marginTop: "4px" }}>
+                  {tr("Dönemler:", "Zeiträume:")}{" "}
+                  <span style={{ color: "#06b6d4" }}>
+                    {selectedPeriods.map(p => formatPeriodLabel(p, lang as Language)).join(", ")}
+                  </span>
+                </p>
+              )}
             </div>
 
             {/* Body */}
             <div style={{ padding: "28px 36px 36px" }}>
-              {/* Stripe-like placeholder */}
+              {/* [FIX C-2] Güvenli ödeme bildirimi — ham kart girişi kaldırıldı */}
               <div style={{
                 borderRadius: "14px",
                 border: "1px solid rgba(255,255,255,0.08)",
                 background: "rgba(255,255,255,0.02)",
                 padding: "20px",
                 marginBottom: "20px",
+                textAlign: "center",
               }}>
                 <p style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: "12px" }}>
                   {tr("Kart Bilgileri", "Kartendaten")}
                 </p>
-                <div style={{ marginBottom: "12px" }}>
-                  <label className="c-label">{tr("Kart Numarası", "Kartennummer")}</label>
-                  <div className="glow-wrap">
-                    <input type="text" className="c-input" placeholder="1234 5678 9012 3456" maxLength={19} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="c-label">{tr("Son Kullanma", "Ablaufdatum")}</label>
-                    <div className="glow-wrap">
-                      <input type="text" className="c-input" placeholder="MM/YY" maxLength={5} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="c-label">CVV</label>
-                    <div className="glow-wrap">
-                      <input type="text" className="c-input" placeholder="•••" maxLength={4} />
-                    </div>
+                <div style={{
+                  padding: "16px",
+                  borderRadius: "10px",
+                  background: "rgba(249,115,22,0.06)",
+                  border: "1px dashed rgba(249,115,22,0.3)",
+                }}>
+                  <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
+                    {tr(
+                      "Odeme islemi Stripe guvenli odeme altyapisi uzerinden gerceklestirilecektir. Kayit olduktan sonra guvenli odeme sayfasina yonlendirileceksiniz.",
+                      "Die Zahlung wird uber die sichere Stripe-Zahlungsinfrastruktur abgewickelt. Nach der Registrierung werden Sie zur sicheren Zahlungsseite weitergeleitet."
+                    )}
+                  </p>
+                  <div style={{ marginTop: "10px", display: "flex", justifyContent: "center", gap: "8px", opacity: 0.4 }}>
+                    <span style={{ fontSize: "20px" }}>VISA</span>
+                    <span style={{ fontSize: "20px" }}>MC</span>
+                    <span style={{ fontSize: "20px" }}>AMEX</span>
                   </div>
                 </div>
               </div>
@@ -304,12 +384,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
       </div>
 
       {/* ── Layout ── */}
-      <div className="relative z-10 flex flex-col lg:flex-row w-full min-h-screen">
+      <div className="relative z-10 flex flex-col lg:flex-row w-full min-h-screen overflow-y-auto">
 
         {/* LEFT: Login form */}
-        <div className="flex items-center justify-center p-6 lg:p-10 lg:w-[420px] xl:w-[460px] flex-shrink-0">
+        <div className="flex items-center justify-center p-4 sm:p-6 lg:p-10 lg:w-[380px] xl:w-[420px] flex-shrink-0">
           <div
-            className="fade-up w-full max-w-[420px] flex flex-col rounded-2xl overflow-hidden shadow-2xl max-h-[95vh]"
+            className="fade-up w-full max-w-[380px] flex flex-col rounded-2xl overflow-hidden shadow-2xl max-h-[95vh]"
             style={{
               border: "1px solid rgba(255,255,255,0.1)",
               background: "rgba(15, 17, 21, 0.82)",
@@ -318,8 +398,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
           >
             <div className="flex-1 p-8 flex flex-col overflow-y-auto">
               <div className="flex items-center gap-3 mb-8">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center font-syne font-bold text-white text-sm"
-                  style={{ background: "linear-gradient(135deg,#06b6d4,#0891b2)" }}>F</div>
+                <img src="/logo.png" alt="FikoAI" className="w-8 h-8 rounded-lg object-contain" />
                 <span className="font-syne font-bold text-lg text-slate-100">FikoAI</span>
               </div>
 
@@ -365,20 +444,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
               </div>
 
               <p className="text-xs text-center mt-4" style={{ color: "rgba(255,255,255,0.25)" }}>
-                {tr("Hesabınız yok mu? Sağdaki bir plan seçin.", "Kein Konto? Wählen Sie rechts einen Plan.")}
+                {tr("Hesabınız yok mu? Bir plan seçin.", "Kein Konto? Wählen Sie einen Plan.")}
               </p>
             </div>
           </div>
         </div>
 
-        {/* RIGHT: Subscription plans */}
-        <div className="flex-1 hidden lg:flex flex-col justify-center px-6 xl:px-10 py-16 overflow-y-auto">
-          <div className="text-center mb-10">
+        {/* CENTER: Subscription plans */}
+        <div className="flex-1 flex flex-col justify-center px-4 xl:px-6 py-8 lg:py-16 overflow-y-auto">
+          <div className="text-center mb-8">
             <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "#06b6d4", letterSpacing: "0.2em" }}>
               {tr("Abonelik Planları", "Abonnementpläne")}
             </p>
             <h2 style={{
-              fontSize: "clamp(22px, 2.8vw, 36px)",
+              fontSize: "clamp(20px, 2.4vw, 32px)",
               fontWeight: 800,
               color: "#fff",
               margin: 0,
@@ -388,10 +467,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
               {tr("Planınızı Seçin", "Wählen Sie Ihren Plan")}
             </h2>
             <p style={{
-              fontSize: "14px",
+              fontSize: "13px",
               color: "rgba(255,255,255,0.4)",
-              marginTop: "10px",
-              maxWidth: "420px",
+              marginTop: "8px",
+              maxWidth: "380px",
               marginLeft: "auto",
               marginRight: "auto",
               lineHeight: 1.6,
@@ -403,11 +482,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
             </p>
           </div>
 
-          <div style={{
+          <div className="auth-plans-grid" style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: "16px",
-            maxWidth: "900px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "14px",
+            maxWidth: "820px",
             margin: "0 auto",
             width: "100%",
           }}>
@@ -425,15 +504,166 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
 
           <p style={{
             textAlign: "center",
-            fontSize: "12px",
+            fontSize: "11px",
             color: "rgba(255,255,255,0.2)",
-            marginTop: "28px",
+            marginTop: "24px",
           }}>
             {tr(
               "Tüm fiyatlara KDV dahildir. İstediğiniz zaman iptal edebilirsiniz.",
               "Alle Preise verstehen sich inkl. MwSt. Jederzeit kündbar."
             )}
           </p>
+        </div>
+
+        {/* RIGHT: Promo card */}
+        <div className="hidden xl:flex items-center justify-center p-6 xl:p-8 xl:w-[380px] flex-shrink-0">
+          <motion.div
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.7, delay: 0.3, ease: [0.23, 1, 0.32, 1] }}
+            style={{
+              width: "100%",
+              maxWidth: "360px",
+              borderRadius: "24px",
+              border: "1px solid rgba(6,182,212,0.2)",
+              background: "rgba(15, 17, 21, 0.85)",
+              backdropFilter: "blur(24px)",
+              overflow: "hidden",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4), 0 0 40px rgba(6,182,212,0.05)",
+            }}
+          >
+            {/* Card header accent */}
+            <div style={{
+              height: "4px",
+              background: "linear-gradient(90deg, #06b6d4, #0891b2, #f97316)",
+            }} />
+
+            <div style={{ padding: "32px 28px" }}>
+              {/* Domain badge */}
+              <div style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 14px",
+                borderRadius: "20px",
+                background: "rgba(6,182,212,0.1)",
+                border: "1px solid rgba(6,182,212,0.2)",
+                marginBottom: "20px",
+              }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#06b6d4", letterSpacing: "0.05em" }}>fikoai.de</span>
+              </div>
+
+              {/* Tagline */}
+              <h3 style={{
+                fontFamily: "'Syne', sans-serif",
+                fontSize: "20px",
+                fontWeight: 800,
+                color: "#fff",
+                lineHeight: 1.3,
+                margin: "0 0 16px 0",
+              }}>
+                {tr(
+                  "Muhasebe artık düşünüyor.",
+                  "Buchhaltung denkt jetzt mit."
+                )}
+              </h3>
+
+              {/* Feature list */}
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                marginBottom: "20px",
+              }}>
+                {[
+                  tr("Faturayı yükle.", "Rechnung hochladen."),
+                  tr("Banka dökümanları ile eşleştir.", "Mit Bankbelegen abgleichen."),
+                  tr("SKR03/SKR04 sınıflandırıldı.", "SKR03/SKR04 klassifiziert."),
+                  tr("DATEV'e aktarıldı.", "An DATEV exportiert."),
+                  tr("Hepsi saniyeler içinde.", "Alles in Sekunden."),
+                ].map((item, i) => (
+                  <div key={i} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}>
+                    <div style={{
+                      width: "5px",
+                      height: "5px",
+                      borderRadius: "50%",
+                      background: i === 4 ? "#f97316" : "#06b6d4",
+                      flexShrink: 0,
+                    }} />
+                    <span style={{
+                      fontSize: "13px",
+                      color: i === 4 ? "rgba(249,115,22,0.9)" : "rgba(255,255,255,0.55)",
+                      fontWeight: i === 4 ? 600 : 400,
+                    }}>{item}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Divider */}
+              <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "16px 0" }} />
+
+              {/* Description */}
+              <p style={{
+                fontSize: "13px",
+                color: "rgba(255,255,255,0.4)",
+                lineHeight: 1.7,
+                margin: "0 0 16px 0",
+              }}>
+                {tr(
+                  "Ön muhasebe dönemi bitti. Evraklarını doğrudan muhasebecine ilet — tam, eksiksiz, yapay zeka destekli.",
+                  "Die Vorbuchhaltung ist vorbei. Belege direkt an den Steuerberater — vollständig, lückenlos, KI-gestützt."
+                )}
+              </p>
+
+              {/* Divider */}
+              <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "16px 0" }} />
+
+              {/* Acronym explanation */}
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                marginBottom: "16px",
+              }}>
+                {[
+                  { key: "fi", val: "Finanzbuchhaltung" },
+                  { key: "ko", val: "Kontierung" },
+                  { key: "ai", val: tr("Yapay Zeka", "Künstliche Intelligenz") },
+                ].map(({ key, val }) => (
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#06b6d4", fontFamily: "'Syne', sans-serif", minWidth: "20px" }}>{key}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>=</span>
+                    <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)" }}>{val}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: "12px 16px",
+                borderRadius: "12px",
+                background: "rgba(249,115,22,0.06)",
+                border: "1px solid rgba(249,115,22,0.12)",
+              }}>
+                <p style={{
+                  fontSize: "11px",
+                  color: "rgba(255,255,255,0.35)",
+                  margin: 0,
+                  lineHeight: 1.6,
+                  textAlign: "center",
+                }}>
+                  {tr(
+                    "Alman KOBİ'leri için tasarlandı. Türk girişimciler tarafından inşa edildi.",
+                    "Für deutsche KMUs entwickelt. Von türkischen Gründern gebaut."
+                  )}
+                </p>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </div>
 
@@ -661,6 +891,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile responsive styles */}
+      <style>{`
+        @media (max-width: 1023px) {
+          .auth-plans-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+          }
+        }
+        @media (max-width: 479px) {
+          .auth-plans-grid {
+            grid-template-columns: 1fr !important;
+            gap: 10px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 };
