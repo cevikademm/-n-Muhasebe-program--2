@@ -14,6 +14,7 @@ import {
   fetchBankStatements,
   deleteBankStatement,
   fetchStatementTransactions,
+  isRefundTransaction,
   BankStatement,
   MatchResult,
   SavedBankStatement,
@@ -31,6 +32,8 @@ import { createUnmatchedNotifications } from "../services/notificationService";
 // ─────────────────────────────────────────────
 interface BankDocumentsPanelProps {
   isSubscriptionExpired?: boolean;
+  subscriptionExpiresAt?: Date | null;
+  subscriptionPlan?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -120,7 +123,7 @@ const parseStmtDate = (s: SavedBankStatement): { year: number; month: number } =
 // ─────────────────────────────────────────────
 //  ANA PANEL
 // ─────────────────────────────────────────────
-export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscriptionExpired }) => {
+export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan }) => {
   const invoices: any[] = [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => (lang === "tr" ? a : b);
@@ -241,6 +244,21 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
   // ── Dosya işle
   const handleFile = async (file: File) => {
     if (!file) return;
+
+    // ── Abonelik Dönem Kontrolü ──
+    if (isSubscriptionExpired) {
+      const expDateStr = subscriptionExpiresAt
+        ? subscriptionExpiresAt.toLocaleDateString("tr-TR")
+        : "—";
+      setError(
+        tr(
+          `Abonelik süreniz dolmuş (Son geçerlilik: ${expDateStr}). Banka dökümanı yükleyebilmek için aboneliğinizi yenileyin.`,
+          `Ihr Abonnement ist abgelaufen (Gültig bis: ${expDateStr}). Bitte erneuern Sie Ihr Abonnement.`
+        )
+      );
+      return;
+    }
+
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       setError(tr("Sadece PDF dosyası yükleyebilirsiniz.", "Nur PDF-Dateien werden unterstützt."));
       return;
@@ -490,6 +508,30 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
         </div>
         <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={handleFileChange} />
       </div>
+
+      {/* Abonelik Uyarı Bannerı */}
+      {isSubscriptionExpired && (
+        <div style={{
+          padding: "12px 22px",
+          background: "rgba(239,68,68,.12)",
+          borderBottom: "1px solid rgba(239,68,68,.25)",
+          display: "flex", alignItems: "center", gap: "10px",
+          flexShrink: 0,
+        }}>
+          <AlertCircle size={18} style={{ color: "#ef4444", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "#fca5a5", margin: 0 }}>
+              {tr("Abonelik Süresi Doldu", "Abonnement abgelaufen")}
+            </p>
+            <p style={{ fontSize: "11px", color: "#f87171", margin: "2px 0 0" }}>
+              {tr(
+                `Aboneliğiniz ${subscriptionExpiresAt ? subscriptionExpiresAt.toLocaleDateString("tr-TR") : "—"} tarihinde sona ermiştir. Banka dökümanı yükleyebilmek için lütfen aboneliğinizi yenileyin.`,
+                `Ihr Abonnement ist am ${subscriptionExpiresAt ? subscriptionExpiresAt.toLocaleDateString("de-DE") : "—"} abgelaufen. Bitte erneuern Sie Ihr Abonnement.`
+              )}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* İÇERİK */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
@@ -797,7 +839,7 @@ const TxTable: React.FC<{
               {isIncome ? `${fmtDE(tx.amount)} €` : ""}
             </div>
             <div style={{ width: "80px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
-              <StatusBadge hasMatch={hasMatch} score={match?.score} tr={tr} />
+              <StatusBadge hasMatch={hasMatch} score={match?.score} tr={tr} isIncome={isIncome} isRefund={isIncome && isRefundTransaction(tx)} />
             </div>
             <div style={{ width: "18px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
               <ChevronDown size={11} style={{ color: "#374151", transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
@@ -809,7 +851,7 @@ const TxTable: React.FC<{
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "10px" }}>
                 {[
                   { l: tr("Tarih", "Datum"), v: fmtDate(tx.date) },
-                  { l: tr("Tür", "Art"), v: isIncome ? tr("Gelir", "Einnahme") : tr("Gider", "Ausgabe") },
+                  { l: tr("Tür", "Art"), v: isIncome ? (isRefundTransaction(tx) ? tr("İade", "Erstattung") : tr("Gelir", "Einnahme")) : tr("Gider", "Ausgabe") },
                   { l: tr("Tutar", "Betrag"), v: `${isIncome ? "+" : "-"}${fmtDE(Math.abs(tx.amount))} €` },
                   tx.counterpart ? { l: tr("Karşı Taraf", "Gegenpartei"), v: tx.counterpart } : null,
                   tx.reference ? { l: tr("Referans", "Referenz"), v: tx.reference } : null,
@@ -1026,7 +1068,7 @@ const SavedTxTable: React.FC<{
                 {isIncome ? `${fmtDE(tx.amount || 0)} €` : ""}
               </div>
               <div style={{ width: "80px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
-                <StatusBadge hasMatch={hasMatch} score={tx.match_score ?? undefined} tr={tr} />
+                <StatusBadge hasMatch={hasMatch} score={tx.match_score ?? undefined} tr={tr} isIncome={isIncome} isRefund={isIncome && isRefundTransaction(tx)} />
               </div>
               <div style={{ width: "18px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
                 {hasMatch && (
@@ -1189,20 +1231,45 @@ const ManualMatchSelector: React.FC<{
   );
 };
 
-const StatusBadge: React.FC<{ hasMatch: boolean; score?: number; tr: (a: string, b: string) => string }> = ({ hasMatch, score, tr }) => (
-  hasMatch ? (
-    <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)" }}>
-      <CheckCircle2 size={8} style={{ color: "#6366f1" }} />
-      <span style={{ fontSize: "8px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif" }}>
-        {tr("EŞLEŞTİ", "ABGL.")}
-      </span>
-    </div>
-  ) : (
-    <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "#0d0f15", border: "1px solid #1c1f27" }}>
-      <AlertCircle size={8} style={{ color: "#374151" }} />
-      <span style={{ fontSize: "8px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>{tr("Yok", "Kein")}</span>
-    </div>
-  )
+const StatusBadge: React.FC<{
+  hasMatch: boolean;
+  score?: number;
+  tr: (a: string, b: string) => string;
+  isIncome?: boolean;
+  isRefund?: boolean;
+}> = ({ hasMatch, score, tr, isIncome, isRefund }) => (
+  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+    {/* Gelir/İade etiketi — sadece gelir işlemlerinde göster */}
+    {isIncome && (
+      isRefund ? (
+        <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(249,115,22,.12)", border: "1px solid rgba(249,115,22,.25)" }}>
+          <span style={{ fontSize: "8px", fontWeight: 700, color: "#f97316", fontFamily: "'DM Sans',sans-serif" }}>
+            {tr("İADE", "ERST.")}
+          </span>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(16,185,129,.12)", border: "1px solid rgba(16,185,129,.25)" }}>
+          <span style={{ fontSize: "8px", fontWeight: 700, color: "#10b981", fontFamily: "'DM Sans',sans-serif" }}>
+            {tr("GELİR", "EINN.")}
+          </span>
+        </div>
+      )
+    )}
+    {/* Eşleşme durumu */}
+    {hasMatch ? (
+      <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)" }}>
+        <CheckCircle2 size={8} style={{ color: "#6366f1" }} />
+        <span style={{ fontSize: "8px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif" }}>
+          {tr("EŞLEŞTİ", "ABGL.")}
+        </span>
+      </div>
+    ) : (
+      <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "#0d0f15", border: "1px solid #1c1f27" }}>
+        <AlertCircle size={8} style={{ color: "#374151" }} />
+        <span style={{ fontSize: "8px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>{tr("Yok", "Kein")}</span>
+      </div>
+    )}
+  </div>
 );
 
 const MatchDetail: React.FC<{

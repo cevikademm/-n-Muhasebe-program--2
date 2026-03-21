@@ -211,8 +211,8 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
           pointerEvents: "none",
         }} />
 
-        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
-          <div>
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             {/* Eyebrow */}
             <div style={{
               display: "inline-flex", alignItems: "center", gap: "6px",
@@ -228,7 +228,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
               </span>
             </div>
 
-            <h1 style={{
+            <h1 className="dp-title" style={{
               fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800,
               fontSize: "28px", color: "#f1f5f9", lineHeight: 1.1,
               margin: 0,
@@ -238,13 +238,14 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             }}>
               {tr("Muhasebe Merkezi", "Buchhaltungs-Hub")}
             </h1>
-            <p style={{ fontSize: "13px", color: "#2a3040", marginTop: "6px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            <p className="hidden sm:block" style={{ fontSize: "13px", color: "#2a3040", marginTop: "6px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
               {tr("Tüm finansal verileriniz tek ekranda", "Alle Finanzdaten auf einen Blick")}
             </p>
           </div>
 
           <button
             onClick={() => onNavigate("bankDocuments")}
+            className="dp-hero-btn"
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: "11px 20px",
@@ -272,7 +273,8 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             }}
           >
             <Upload size={15} />
-            {tr("Banka Dökümanı", "Bankdokumente")}
+            <span className="hidden xs:inline">{tr("Banka Dökümanı", "Bankdokumente")}</span>
+            <span className="xs:hidden">{tr("Yükle", "Laden")}</span>
           </button>
         </div>
       </div>
@@ -953,9 +955,11 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
 
         /* ── Mobile responsive ── */
         @media (max-width: 767px) {
-          .dp-hero  { padding: 18px 16px 14px !important; }
-          .dp-content { padding: 14px !important; gap: 14px !important; }
-          .dp-kpi   { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+          .dp-hero  { padding: 16px 14px 12px !important; }
+          .dp-title { font-size: 20px !important; }
+          .dp-hero-btn { padding: 9px 14px !important; font-size: 12px !important; }
+          .dp-content { padding: 12px !important; gap: 12px !important; padding-bottom: 80px !important; }
+          .dp-kpi   { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
           .dp-chart { grid-template-columns: 1fr !important; }
           .dp-bottom { grid-template-columns: 1fr !important; }
           .dp-actions { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }

@@ -116,6 +116,46 @@ export const analyzeBankStatement = async (
 };
 
 // ─────────────────────────────────────────────
+//  İADE (REFUND) TESPİT FONKSİYONU
+//  Gelir işleminin gerçek gelir mi yoksa iade mi
+//  olduğunu açıklama/karşı taraf/referans alanlarından tespit eder.
+// ─────────────────────────────────────────────
+const REFUND_KEYWORDS = [
+  // Almanca
+  "erstattung", "rückerstattung", "rückzahlung", "rueckerstattung",
+  "rueckzahlung", "storno", "stornier", "gutschrift",
+  "rücklastschrift", "ruecklastschrift", "rückbuchung", "rueckbuchung",
+  "korrektur", "retoure", "rücksendung", "ruecksendung",
+  // Türkçe
+  "iade", "geri ödeme", "geri odeme", "iptal", "cayma",
+  // İngilizce
+  "refund", "reversal", "chargeback", "return", "reimburse",
+  "reimbursement", "credit note", "cancellation",
+];
+
+/**
+ * Gelir (income) işleminin iade olup olmadığını tespit eder.
+ * description, counterpart ve reference alanlarını kontrol eder.
+ */
+export const isRefundTransaction = (tx: {
+  description?: string | null;
+  counterpart?: string | null;
+  reference?: string | null;
+  type?: string | null;
+}): boolean => {
+  // Sadece gelir işlemlerinde kontrol et
+  if (tx.type !== "income") return false;
+
+  const text = [
+    tx.description || "",
+    tx.counterpart || "",
+    tx.reference || "",
+  ].join(" ").toLowerCase();
+
+  return REFUND_KEYWORDS.some(kw => text.includes(kw));
+};
+
+// ─────────────────────────────────────────────
 //  EŞLEŞTİRME YARDIMCI FONKSİYONLARI
 // ─────────────────────────────────────────────
 

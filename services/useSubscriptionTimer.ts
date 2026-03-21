@@ -1,10 +1,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseService";
+import { getCurrentPeriod, getPeriodStatus, getExpiresAtFromPeriods } from "./periodUtils";
 
 export interface SubscriptionInfo {
     isActive: boolean;
     isExpired: boolean;
     plan: string;
+    purchasedPeriods: string[];
+    currentPeriod: string;
+    remainingMonths: number;
     expiresAt: Date | null;
 }
 
@@ -13,17 +17,25 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
         isActive: false,
         isExpired: false,
         plan: "free",
+        purchasedPeriods: [],
+        currentPeriod: getCurrentPeriod(),
+        remainingMonths: 0,
         expiresAt: null,
     });
 
     const fetchSubscription = async () => {
         if (!session?.user?.id) return;
+
+        // Admin sınırsız erişim
         if (userRole === "admin") {
-            // Admins never expire for testing
+            const current = getCurrentPeriod();
             setSubInfo({
                 isActive: true,
                 isExpired: false,
                 plan: "yearly",
+                purchasedPeriods: [current],
+                currentPeriod: current,
+                remainingMonths: 12,
                 expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
             });
             return;
@@ -31,60 +43,82 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
 
         try {
             const { data } = await supabase
-                .from("subscriptions")
-                .select("id, status, plan, updated_at")
+                .from("subscription_periods")
+                .select("period_year, period_month, plan_type")
                 .eq("user_id", session.user.id)
-                .in("status", ["active", "trialing"])
-                .maybeSingle();
+                .order("period_year", { ascending: true })
+                .order("period_month", { ascending: true });
 
-            if (data) {
-                // Calculate expiresAt depending on plan and updated_at
-                let expiresAt = new Date(data.updated_at || Date.now());
-                if (data.plan === "yearly") {
-                    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-                } else if (data.plan === "quarterly") {
-                    expiresAt.setMonth(expiresAt.getMonth() + 3);
-                } else {
-                    // default monthly or free trial
-                    expiresAt.setMonth(expiresAt.getMonth() + 1);
-                }
+            if (data && data.length > 0) {
+                const periods = data.map((d: any) =>
+                    `${d.period_year}-${String(d.period_month).padStart(2, "0")}`
+                );
+                const lastPlanType = data[data.length - 1].plan_type || "monthly";
+                const status = getPeriodStatus(periods);
 
-                // --- MOCK TESTER for Developer ---
-                const fakeTest = localStorage.getItem("fibu_expires_test");
-                if (fakeTest) {
-                    expiresAt = new Date(fakeTest);
-                }
-
-                const isExpired = Date.now() > expiresAt.getTime();
                 setSubInfo({
-                    isActive: true,
-                    isExpired,
-                    plan: data.plan || "monthly",
-                    expiresAt,
+                    isActive: status.isActive,
+                    isExpired: status.isExpired,
+                    plan: lastPlanType,
+                    purchasedPeriods: periods,
+                    currentPeriod: status.currentPeriod,
+                    remainingMonths: status.remainingMonths,
+                    expiresAt: getExpiresAtFromPeriods(periods),
                 });
             } else {
-                const localPlan = localStorage.getItem(`plan_${session.user.id}`);
-                if (localPlan) {
-                    // simulate 30 days from now but we can't reliably know when they actually paid without DB
-                    // Let's create a faux date or read from DB again..
-                    let expiresAt = new Date();
-                    expiresAt.setMonth(expiresAt.getMonth() + 1);
+                // localStorage fallback
+                const stored = localStorage.getItem(`periods_${session.user.id}`);
+                if (stored) {
+                    try {
+                        const parsed = JSON.parse(stored);
+                        const periods: string[] = parsed.periods || [];
+                        const planType = parsed.plan || "monthly";
+                        const status = getPeriodStatus(periods);
 
-                    const fakeTest = localStorage.getItem("fibu_expires_test");
-                    if (fakeTest) expiresAt = new Date(fakeTest);
-
-                    const isExpired = Date.now() > expiresAt.getTime();
-                    setSubInfo({
-                        isActive: true,
-                        isExpired,
-                        plan: localPlan,
-                        expiresAt,
-                    });
+                        setSubInfo({
+                            isActive: status.isActive,
+                            isExpired: status.isExpired,
+                            plan: planType,
+                            purchasedPeriods: periods,
+                            currentPeriod: status.currentPeriod,
+                            remainingMonths: status.remainingMonths,
+                            expiresAt: getExpiresAtFromPeriods(periods),
+                        });
+                    } catch {
+                        setSubInfo({
+                            isActive: false, isExpired: false, plan: "free",
+                            purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
+                            remainingMonths: 0, expiresAt: null,
+                        });
+                    }
                 } else {
-                    setSubInfo({ isActive: false, isExpired: false, plan: "free", expiresAt: null });
+                    setSubInfo({
+                        isActive: false, isExpired: false, plan: "free",
+                        purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
+                        remainingMonths: 0, expiresAt: null,
+                    });
                 }
             }
-        } catch { }
+        } catch {
+            // DB hatası — localStorage fallback dene
+            const stored = localStorage.getItem(`periods_${session.user.id}`);
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    const periods: string[] = parsed.periods || [];
+                    const status = getPeriodStatus(periods);
+                    setSubInfo({
+                        isActive: status.isActive,
+                        isExpired: status.isExpired,
+                        plan: parsed.plan || "monthly",
+                        purchasedPeriods: periods,
+                        currentPeriod: status.currentPeriod,
+                        remainingMonths: status.remainingMonths,
+                        expiresAt: getExpiresAtFromPeriods(periods),
+                    });
+                } catch { /* ignore */ }
+            }
+        }
     };
 
     useEffect(() => {

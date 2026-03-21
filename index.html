@@ -15,6 +15,9 @@
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- CSP disabled for production compatibility -->
   <title>FikoAI</title>
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -710,6 +713,12 @@
 
     .glow-icon {
       z-index: 3 !important;
+    }
+
+    /* ── Mobile sidebar slide-in ── */
+    @keyframes slideInLeft {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(0); }
     }
   </style>
 </head>

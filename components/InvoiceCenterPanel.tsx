@@ -16,6 +16,9 @@ interface InvoiceCenterPanelProps {
   onUpload: (files: File[]) => void;
   fetchItems: (invoiceId: string) => Promise<InvoiceItem[]>;
   onAccountClick?: (item: any) => void;
+  isSubscriptionExpired?: boolean;
+  subscriptionExpiresAt?: Date | null;
+  subscriptionPlan?: string;
 }
 
 const fmtEur = (n: number) =>
@@ -29,6 +32,7 @@ const STATUS_MAP: Record<string, { label: [string, string]; color: string; bg: s
 
 export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
   invoices, loading, uploading, selectedInvoice, onSelectInvoice, onUpload, fetchItems, onAccountClick,
+  isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -101,35 +105,77 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
     }
   };
 
+  const uploadBlocked = isSubscriptionExpired === true;
+  const subExpDateStr = subscriptionExpiresAt
+    ? subscriptionExpiresAt.toLocaleDateString("tr-TR")
+    : null;
+
+  const PLAN_LABELS: Record<string, [string, string]> = {
+    monthly: ["Aylik", "Monatlich"],
+    quarterly: ["3 Aylik", "Vierteljährlich"],
+    yearly: ["Yillik", "Jährlich"],
+    free: ["Ücretsiz", "Kostenlos"],
+  };
+  const planLabel = PLAN_LABELS[subscriptionPlan || "free"] || PLAN_LABELS.free;
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ background: "#111318" }}>
+
+      {/* Abonelik Uyarı Bannerı */}
+      {uploadBlocked && (
+        <div style={{
+          padding: "12px 16px",
+          background: "rgba(239,68,68,.12)",
+          borderBottom: "1px solid rgba(239,68,68,.25)",
+          display: "flex", alignItems: "center", gap: "10px",
+        }}>
+          <AlertTriangle size={18} style={{ color: "#ef4444", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "#fca5a5", margin: 0 }}>
+              {tr("Abonelik Süresi Doldu", "Abonnement abgelaufen")}
+            </p>
+            <p style={{ fontSize: "11px", color: "#f87171", margin: "2px 0 0" }}>
+              {tr(
+                `${planLabel[0]} planınızın süresi ${subExpDateStr || "—"} tarihinde dolmuştur. Fatura yükleyebilmek için aboneliğinizi yenileyin.`,
+                `Ihr ${planLabel[1]}-Plan ist am ${subExpDateStr || "—"} abgelaufen. Bitte erneuern Sie Ihr Abonnement.`
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,.06)", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-          <div>
-            <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'Space Grotesk', sans-serif", margin: 0 }}>
+      <div className="inv-header" style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,.06)", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", gap: "8px" }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'Space Grotesk', sans-serif", margin: 0 }}>
               {tr("Faturalar", "Rechnungen")}
             </h2>
-            <p style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>
+            <p style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "3px" }}>
               {filteredInvoices.length} {tr("fatura", "Rechnung")} &middot; {fmtEur(totalAmount)}
             </p>
           </div>
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || uploadBlocked}
+            title={uploadBlocked ? tr("Abonelik süresi dolmuş — yükleme yapılamaz", "Abonnement abgelaufen") : ""}
             style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "10px 18px", borderRadius: "10px",
-              background: uploading ? "rgba(6,182,212,.08)" : "linear-gradient(135deg, #06b6d4, #0891b2)",
-              border: "none", cursor: uploading ? "wait" : "pointer",
-              color: "#fff", fontSize: "13px", fontWeight: 600,
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "9px 14px", borderRadius: "10px",
+              background: (uploading || uploadBlocked) ? "rgba(6,182,212,.08)" : "linear-gradient(135deg, #06b6d4, #0891b2)",
+              border: "none", cursor: uploadBlocked ? "not-allowed" : uploading ? "wait" : "pointer",
+              opacity: uploadBlocked ? 0.5 : 1,
+              color: "#fff", fontSize: "12px", fontWeight: 600,
               fontFamily: "'Plus Jakarta Sans', sans-serif",
               boxShadow: uploading ? "none" : "0 4px 16px rgba(6,182,212,.3)",
               transition: "all .2s",
+              flexShrink: 0,
+              whiteSpace: "nowrap" as const,
             }}
           >
-            {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-            {uploading ? tr("Analiz ediliyor...", "Wird analysiert...") : tr("Fatura Yukle", "Rechnung hochladen")}
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            <span className="hidden xs:inline">{uploading ? tr("Analiz ediliyor...", "Wird analysiert...") : tr("Fatura Yükle", "Rechnung hochladen")}</span>
+            <span className="xs:hidden">{uploading ? "..." : tr("Yükle", "Laden")}</span>
           </button>
           <input ref={fileRef} type="file" multiple accept="image/*,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
         </div>
@@ -202,7 +248,16 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
       </div>
 
       {/* Invoice List - scrollable */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+      <div className="inv-list" style={{ flex: 1, overflowY: "auto", padding: "10px 12px", paddingBottom: "80px" }}>
+        <style>{`
+          @media (max-width: 639px) {
+            .inv-parties { grid-template-columns: 1fr !important; }
+          }
+          @media (min-width: 640px) {
+            .inv-header { padding: 20px 24px 16px !important; }
+            .inv-list { padding: 12px 16px !important; }
+          }
+        `}</style>
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "200px", gap: "12px" }}>
             <Loader2 size={24} className="animate-spin" style={{ color: "#06b6d4" }} />
@@ -319,7 +374,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                       <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
 
                         {/* --- Satici / Alici Row --- */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                        <div className="inv-parties" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                           {/* Satici */}
                           <div style={{
                             padding: "10px 12px", borderRadius: "8px",
@@ -383,7 +438,8 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                               borderRadius: "8px", overflow: "hidden",
                               border: "1px solid rgba(255,255,255,.06)",
                             }}>
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+                              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", minWidth: "420px" }}>
                                 <thead>
                                   <tr style={{ background: "rgba(255,255,255,.03)" }}>
                                     <th style={thStyle}>{tr("Urun/Hizmet", "Artikel")}</th>
@@ -422,6 +478,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                                   ))}
                                 </tbody>
                               </table>
+                              </div>
                             </div>
                           )}
                         </div>

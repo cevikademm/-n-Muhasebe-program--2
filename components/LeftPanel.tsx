@@ -129,18 +129,48 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   useEffect(() => {
     if (userRole !== "admin") return;
     (async () => {
-      const [{ data: comps }, { data: subs }] = await Promise.all([
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+
+      const [{ data: comps }, { data: subs }, { data: periods }] = await Promise.all([
         supabase.from("companies").select("user_id, company_name").order("created_at", { ascending: false }),
         supabase.from("subscriptions").select("user_id, status, plan"),
+        supabase.from("subscription_periods").select("user_id, period_year, period_month, plan_type"),
       ]);
       if (!comps) return;
       const subMap = new Map((subs || []).map((s: any) => [s.user_id, s]));
-      setCustomers(comps.map((c: any) => ({
-        company_name: c.company_name,
-        user_id: c.user_id,
-        status: subMap.get(c.user_id)?.status ?? null,
-        plan: subMap.get(c.user_id)?.plan ?? null,
-      })));
+
+      // Dönem bazlı aktiflik: kullanıcının mevcut ayı satın alıp almadığını kontrol et
+      const periodMap = new Map<string, { hasCurrentPeriod: boolean; planType: string }>();
+      (periods || []).forEach((p: any) => {
+        const existing = periodMap.get(p.user_id);
+        const isCurrent = p.period_year === currentYear && p.period_month === currentMonth;
+        if (!existing) {
+          periodMap.set(p.user_id, { hasCurrentPeriod: isCurrent, planType: p.plan_type });
+        } else if (isCurrent) {
+          existing.hasCurrentPeriod = true;
+          existing.planType = p.plan_type;
+        }
+      });
+
+      setCustomers(comps.map((c: any) => {
+        const periodInfo = periodMap.get(c.user_id);
+        const subData = subMap.get(c.user_id);
+
+        // Dönem bazlı durum: mevcut ayı satın almışsa aktif
+        const status = periodInfo?.hasCurrentPeriod
+          ? "active"
+          : subData?.status ?? null;
+        const plan = periodInfo?.planType || subData?.plan || null;
+
+        return {
+          company_name: c.company_name,
+          user_id: c.user_id,
+          status,
+          plan,
+        };
+      }));
     })();
   }, [userRole]);
 
@@ -723,16 +753,9 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           borderBottom: "1px solid rgba(255,255,255,.06)",
           flexShrink: 0, position: "relative",
         }}>
-          <div style={{
-            width: "36px", height: "36px", borderRadius: "10px",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: "15px", color: "#fff",
-            background: "linear-gradient(135deg, #06b6d4 0%, #0891b2 60%, #0e7490 100%)",
-            boxShadow: "0 4px 16px rgba(6,182,212,.35), inset 0 1px 0 rgba(255,255,255,.15)",
-            flexShrink: 0,
-          }}>
-            F
-          </div>
+          <img src="/logo.png" alt="FikoAI" style={{
+            width: "36px", height: "36px", borderRadius: "10px", objectFit: "contain", flexShrink: 0,
+          }} />
           <div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "15px", color: "#f1f5f9", lineHeight: 1 }}>
               FikoAI
@@ -770,7 +793,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         {/* Timer fixed above footer */}
         {subInfo && subInfo.plan !== 'free' && (
           <div style={{ paddingBottom: "12px" }}>
-            <SubscriptionCountdown plan={subInfo.plan} expiresAt={subInfo.expiresAt} />
+            <SubscriptionCountdown
+              plan={subInfo.plan}
+              purchasedPeriods={subInfo.purchasedPeriods || []}
+              currentPeriod={subInfo.currentPeriod || ""}
+              remainingMonths={subInfo.remainingMonths || 0}
+              isExpired={subInfo.isExpired}
+            />
           </div>
         )}
 
@@ -809,19 +838,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       </aside>
 
       {/* ══ MOBILE TOP BAR ══ */}
-      <div className="md:hidden shrink-0 flex items-center justify-between px-4"
-        style={{ height: "52px", background: "var(--sidebar)", borderBottom: "1px solid rgba(255,255,255,.06)", zIndex: 30 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{
-            width: "30px", height: "30px", borderRadius: "9px",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: "13px",
-            color: "#fff", background: "linear-gradient(135deg,#06b6d4,#0891b2)",
-            boxShadow: "0 2px 10px rgba(6,182,212,.3)",
-          }}>F</div>
+      <div className="md:hidden shrink-0 flex items-center justify-between px-3 pt-safe"
+        style={{ height: "48px", background: "var(--sidebar)", borderBottom: "1px solid rgba(255,255,255,.06)", zIndex: 30 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <img src="/logo.png" alt="FikoAI" style={{ width: "28px", height: "28px", borderRadius: "8px", objectFit: "contain" }} />
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#f1f5f9" }}>FikoAI</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <button onClick={() => setLang(lang === "tr" ? "de" : "tr")} style={{
             fontSize: "10px", fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
             padding: "4px 10px", borderRadius: "7px", cursor: "pointer",
@@ -829,14 +852,19 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           }}>
             {lang.toUpperCase()}
           </button>
+          <NotificationBell
+            userId={notifUserId}
+            onClick={() => setNotifOpen(v => !v)}
+            isOpen={notifOpen}
+          />
           <button onClick={() => setMobileOpen(v => !v)} style={{
-            width: "34px", height: "34px", borderRadius: "9px",
+            width: "32px", height: "32px", borderRadius: "8px",
             display: "flex", flexDirection: "column", alignItems: "center",
             justifyContent: "center", gap: "4px", cursor: "pointer",
             border: "none", background: mobileOpen ? "rgba(6,182,212,.12)" : "rgba(255,255,255,.05)",
             transition: "background .15s",
           }}>
-            {[16, 10, 16].map((w, i) => (
+            {[14, 9, 14].map((w, i) => (
               <span key={i} style={{
                 display: "block", width: `${w}px`, height: "1.5px", borderRadius: "2px",
                 background: mobileOpen ? "#06b6d4" : "var(--text-3)", transition: "background .15s",
@@ -857,7 +885,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", height: "62px", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "30px", height: "30px", borderRadius: "9px", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: "13px", color: "#fff", background: "linear-gradient(135deg,#06b6d4,#0891b2)" }}>F</div>
+                <img src="/logo.png" alt="FikoAI" style={{ width: "30px", height: "30px", borderRadius: "9px", objectFit: "contain" }} />
                 <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#f1f5f9" }}>FikoAI</span>
               </div>
               <button onClick={() => setMobileOpen(false)} style={{ width: "28px", height: "28px", borderRadius: "7px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "rgba(255,255,255,.05)", color: "var(--text-3)", fontSize: "12px" }}>✕</button>

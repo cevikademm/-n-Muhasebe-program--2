@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { useLang } from "../LanguageContext";
-import { InvoiceItem } from "../types";
+import { Invoice, InvoiceItem } from "../types";
 import { SuSaReport } from "./SuSaReport";
-import { LayoutDashboard, Tags, Truck, Percent, FileText, Printer, Download } from "lucide-react";
+import { LayoutDashboard, Tags, Truck, Percent, FileText, Printer, Download, Menu, X } from "lucide-react";
 import {
   CATEGORIES, getCategoryForItem, fmt, MONTHS_TR, MONTHS_DE,
   EnrichedItem, CategoryDataItem, CategoryCompareItem, MonthlyDataItem, StatsData, SupplierDataItem, VatData,
@@ -16,18 +16,51 @@ import { ReportsSKR03Tab } from "./reports/ReportsSKR03Tab";
 import { BookOpen } from "lucide-react";
 
 interface ReportsPanelProps {
+  invoices?: Invoice[];
 }
 
 type Tab = "overview" | "categories" | "skr03" | "suppliers" | "vat" | "susa" | "export";
 
-export const ReportsPanel: React.FC<ReportsPanelProps> = () => {
-  const invoices: any[] = [];
-  const invoiceItems: any[] = [];
+export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices: rawInvoices = [] }) => {
+  // ── Fatura verilerini raporlama formatına dönüştür ──
+  const invoices = useMemo(() =>
+    rawInvoices.map(inv => ({
+      ...inv,
+      invoice_date: inv.tarih || null,
+      total_net: inv.ara_toplam || 0,
+      total_vat: inv.toplam_kdv || 0,
+      total_gross: inv.genel_toplam || 0,
+      supplier_name: inv.satici_adi || inv.raw_ai_response?.header?.supplier_name || inv.raw_ai_response?.fatura_bilgileri?.satici_adi || inv.satici_vkn || null,
+    })),
+    [rawInvoices]
+  );
+
+  // ── Fatura kalemlerini raw_ai_response'dan çıkar ──
+  const invoiceItems = useMemo(() => {
+    const items: any[] = [];
+    rawInvoices.forEach(inv => {
+      const rawItems = inv.raw_ai_response?.items || inv.raw_ai_response?.kalemler || [];
+      rawItems.forEach((item: any) => {
+        items.push({
+          ...item,
+          invoice_id: inv.id,
+          net_amount: item.net_amount ?? item.satir_toplami ?? 0,
+          vat_amount: item.vat_amount ?? ((item.net_amount ?? item.satir_toplami ?? 0) * ((item.vat_rate ?? item.kdv_orani ?? 0) / 100)),
+          vat_rate: item.vat_rate ?? item.kdv_orani ?? 0,
+          description: item.description ?? item.urun_adi ?? "",
+          account_code: item.account_code ?? item.hesap_kodu ?? null,
+          account_name: item.account_name ?? item.account_name_tr ?? null,
+        });
+      });
+    });
+    return items;
+  }, [rawInvoices]);
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const MONTHS = lang === "tr" ? MONTHS_TR : MONTHS_DE;
 
   const [tab, setTab] = useState<Tab>("overview");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [yearA, setYearA] = useState(new Date().getFullYear());
   const [yearB, setYearB] = useState(new Date().getFullYear() - 1);
   const [compare, setCompare] = useState(false);
@@ -424,97 +457,157 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = () => {
     { key: "export", icon: <Download size={15} />, label: tr("Dışa Aktar", "Export"), sublabel: tr("CSV / Excel export", "CSV / Excel Export") },
   ];
 
+  const SidebarContent = ({ onSelect }: { onSelect?: () => void }) => (
+    <>
+      {/* Sidebar header */}
+      <div style={{
+        padding: "16px 14px 12px",
+        borderBottom: "1px solid rgba(255,255,255,.06)",
+        flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+          <div style={{
+            width: "30px", height: "30px", borderRadius: "8px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(6,182,212,.12)", border: "1px solid rgba(6,182,212,.25)",
+          }}>
+            <LayoutDashboard size={14} style={{ color: "#06b6d4" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#f1f5f9" }}>
+              {tr("Raporlar", "Berichte")}
+            </div>
+            <div style={{ fontSize: "9px", color: "#475569" }}>
+              {tr("& Analizler", "& Analysen")}
+            </div>
+          </div>
+        </div>
+        <div style={{
+          fontSize: "9px", color: "#374151", padding: "4px 6px", borderRadius: "5px",
+          background: "rgba(6,182,212,.06)", border: "1px solid rgba(6,182,212,.1)",
+        }}>
+          {filteredInvoices.length} {tr("fatura", "Rechnungen")} · {fmt(stats.totalGross)}
+        </div>
+      </div>
+
+      {/* Tab list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          {tabs.map(t => {
+            const isActive = tab === t.key;
+            const color = "#06b6d4";
+            return (
+              <button
+                key={t.key}
+                onClick={() => { setTab(t.key); onSelect?.(); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: "9px",
+                  padding: "9px 9px", borderRadius: "9px",
+                  cursor: "pointer", textAlign: "left", width: "100%",
+                  background: isActive ? `${color}12` : "rgba(255,255,255,.02)",
+                  border: `1px solid ${isActive ? color + "38" : "rgba(255,255,255,.05)"}`,
+                  transition: "all .15s",
+                }}
+              >
+                <div style={{
+                  width: "28px", height: "28px", borderRadius: "7px", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: isActive ? `${color}20` : "rgba(255,255,255,.04)",
+                  border: `1px solid ${isActive ? color + "40" : "rgba(255,255,255,.06)"}`,
+                  color: isActive ? color : "#475569",
+                }}>
+                  {t.icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: "11px", fontWeight: isActive ? 700 : 500,
+                    color: isActive ? color : "#94a3b8",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
+                    {t.label}
+                  </div>
+                  <div style={{
+                    fontSize: "9px", color: "#374151", marginTop: "1px",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
+                    {t.sublabel}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <div className={`flex h-full overflow-hidden ${printMode ? "print-mode" : ""}`}
-      style={{ background: "#111318" }}>
+      style={{ background: "#111318", position: "relative" }}>
 
-      {/* ══ LEFT SIDEBAR ══ */}
-      <aside style={{
+      {/* ══ MOBILE HAMBURGER ══ */}
+      <button
+        onClick={() => setMobileSidebarOpen(true)}
+        className="md:hidden"
+        style={{
+          position: "absolute", top: "10px", left: "10px", zIndex: 30,
+          width: "36px", height: "36px", borderRadius: "9px",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(6,182,212,.12)", border: "1px solid rgba(6,182,212,.25)",
+          cursor: "pointer", color: "#06b6d4",
+        }}
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* ══ MOBILE SIDEBAR OVERLAY ══ */}
+      {mobileSidebarOpen && (
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 40,
+            background: "rgba(0,0,0,.6)", backdropFilter: "blur(4px)",
+          }}
+          onClick={() => setMobileSidebarOpen(false)}
+        >
+          <div
+            style={{
+              width: "260px", height: "100%",
+              background: "#0d1017",
+              borderRight: "1px solid rgba(255,255,255,.08)",
+              display: "flex", flexDirection: "column",
+              overflow: "hidden",
+              animation: "slideInLeft .2s ease",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 10px 0" }}>
+              <button
+                onClick={() => setMobileSidebarOpen(false)}
+                style={{
+                  width: "28px", height: "28px", borderRadius: "7px",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "rgba(255,255,255,.06)", border: "none",
+                  cursor: "pointer", color: "#64748b",
+                }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <SidebarContent onSelect={() => setMobileSidebarOpen(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* ══ DESKTOP SIDEBAR ══ */}
+      <aside className="hidden md:flex" style={{
         width: "210px", minWidth: "210px",
         background: "#0d1017",
         borderRight: "1px solid rgba(255,255,255,.06)",
-        display: "flex", flexDirection: "column",
+        flexDirection: "column",
         overflow: "hidden",
       }}>
-        {/* Sidebar header */}
-        <div style={{
-          padding: "16px 14px 12px",
-          borderBottom: "1px solid rgba(255,255,255,.06)",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-            <div style={{
-              width: "30px", height: "30px", borderRadius: "8px",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: "rgba(6,182,212,.12)", border: "1px solid rgba(6,182,212,.25)",
-            }}>
-              <LayoutDashboard size={14} style={{ color: "#06b6d4" }} />
-            </div>
-            <div>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "#f1f5f9" }}>
-                {tr("Raporlar", "Berichte")}
-              </div>
-              <div style={{ fontSize: "9px", color: "#475569" }}>
-                {tr("& Analizler", "& Analysen")}
-              </div>
-            </div>
-          </div>
-          <div style={{
-            fontSize: "9px", color: "#374151", padding: "4px 6px", borderRadius: "5px",
-            background: "rgba(6,182,212,.06)", border: "1px solid rgba(6,182,212,.1)",
-          }}>
-            {filteredInvoices.length} {tr("fatura", "Rechnungen")} · {fmt(stats.totalGross)}
-          </div>
-        </div>
-
-        {/* Tab list — alt alta */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-            {tabs.map(t => {
-              const isActive = tab === t.key;
-              const color = "#06b6d4";
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "9px",
-                    padding: "9px 9px", borderRadius: "9px",
-                    cursor: "pointer", textAlign: "left", width: "100%",
-                    background: isActive ? `${color}12` : "rgba(255,255,255,.02)",
-                    border: `1px solid ${isActive ? color + "38" : "rgba(255,255,255,.05)"}`,
-                    transition: "all .15s",
-                  }}
-                >
-                  <div style={{
-                    width: "28px", height: "28px", borderRadius: "7px", flexShrink: 0,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: isActive ? `${color}20` : "rgba(255,255,255,.04)",
-                    border: `1px solid ${isActive ? color + "40" : "rgba(255,255,255,.06)"}`,
-                    color: isActive ? color : "#475569",
-                  }}>
-                    {t.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: "11px", fontWeight: isActive ? 700 : 500,
-                      color: isActive ? color : "#94a3b8",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {t.label}
-                    </div>
-                    <div style={{
-                      fontSize: "9px", color: "#374151", marginTop: "1px",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {t.sublabel}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <SidebarContent />
       </aside>
 
       {/* ══ RIGHT CONTENT ══ */}

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useLang } from "../LanguageContext";
 import { supabase } from "../services/supabaseService";
+import { PeriodPicker } from "./PeriodPicker";
+import { UpgradePrompt } from "./UpgradePrompt";
+import { ArrowLeft } from "lucide-react";
 
 // ─── Sabit ana fiyatlar ───────────────────────────────────────
 const BASE_PRICES: Record<string, number> = {
@@ -59,7 +62,7 @@ export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanD
       price: monthlyDisc ? Math.max(0, 40 - monthlyDisc.discount_amount) : 40,
       discount: monthlyDisc,
       period: tr("/ay", "/Monat"),
-      desc: tr("Tam erişim, aylık ödeme", "Voller Zugriff, monatliche Zahlung"),
+      desc: tr("Sadece mevcut ay için erişim", "Zugriff nur auf den aktuellen Monat"),
       highlight: false,
       features: [
         { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
@@ -69,6 +72,8 @@ export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanD
         { text: tr("Kurallar", "Regeln"), included: true },
         { text: tr("Export", "Exportieren"), included: true },
         { text: tr("Online Destek", "Online-Support"), included: true },
+        { text: tr("Sadece Mevcut Ay", "Nur aktueller Monat"), included: true },
+        { text: tr("Geçmiş Dönemlere Erişim", "Zugriff auf vergangene Zeiträume"), included: false },
       ],
       buttonText: tr("Planı Seç", "Plan wählen"),
       badge: null,
@@ -80,7 +85,7 @@ export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanD
       price: quarterlyDisc ? Math.max(0, 120 - quarterlyDisc.discount_amount) : 120,
       discount: quarterlyDisc,
       period: tr("/3 ay", "/3 Mon."),
-      desc: tr("3 aylık erişim, tek ödeme", "3 Monate Zugriff, Einmalzahlung"),
+      desc: tr("Çeyrek içi geçmiş dönemlere erişim", "Zugriff auf vergangene Monate im Quartal"),
       highlight: false,
       features: [
         { text: tr("Sınırsız Fatura İşleme", "Unbegrenzte Rechnungen"), included: true },
@@ -90,6 +95,7 @@ export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanD
         { text: tr("Kurallar", "Regeln"), included: true },
         { text: tr("Export", "Exportieren"), included: true },
         { text: tr("Online Destek", "Online-Support"), included: true },
+        { text: tr("Çeyrek İçi Geçmiş Dönemlere Erişim", "Zugriff auf vergangene Quartalsmonate"), included: true },
       ],
       buttonText: tr("Planı Seç", "Plan wählen"),
       badge: null,
@@ -111,6 +117,7 @@ export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanD
         { text: tr("Kurallar", "Regeln"), included: true },
         { text: tr("Export", "Exportieren"), included: true },
         { text: tr("Online Destek", "Online-Support"), included: true },
+        { text: tr("Yıl İçi Tüm Geçmiş Dönemlere Erişim", "Zugriff auf alle vergangenen Jahresmonate"), included: true },
       ],
       buttonText: tr("Planı Seç", "Plan wählen"),
       badge: tr("En Popüler", "Beliebtest"),
@@ -184,7 +191,7 @@ export const PlanCard = ({ plan, index, tr, onSelect, lang }: { key?: React.Key;
           gap: "4px",
           zIndex: 2,
         }}>
-          🎉 {campaignLabel}
+          {campaignLabel}
         </div>
       )}
 
@@ -221,7 +228,6 @@ export const PlanCard = ({ plan, index, tr, onSelect, lang }: { key?: React.Key;
         </h2>
 
         <div style={{ marginTop: "16px", display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
-          {/* Eğer indirim varsa eski fiyatı üstü çizili göster */}
           {hasDiscount && (
             <span style={{
               fontSize: "22px",
@@ -249,7 +255,6 @@ export const PlanCard = ({ plan, index, tr, onSelect, lang }: { key?: React.Key;
           )}
         </div>
 
-        {/* İndirim tutarı rozeti */}
         {hasDiscount && (
           <div style={{
             display: "inline-flex",
@@ -264,7 +269,7 @@ export const PlanCard = ({ plan, index, tr, onSelect, lang }: { key?: React.Key;
             padding: "3px 10px",
             borderRadius: "8px",
           }}>
-            -{plan.discount.discount_amount}€ {tr("indirim", "Rabatt")}
+          -{plan.discount.discount_amount}€ {tr("indirim", "Rabatt")}
           </div>
         )}
 
@@ -380,7 +385,6 @@ export const useCampaignDiscounts = () => {
   useEffect(() => {
     fetchDiscounts();
 
-    // CampaignsPanel kaydettiğinde bu event fırlatılır
     const handler = () => fetchDiscounts();
     window.addEventListener("campaigns-updated", handler);
     return () => window.removeEventListener("campaigns-updated", handler);
@@ -389,27 +393,50 @@ export const useCampaignDiscounts = () => {
   return discounts;
 };
 
-export const SubscriptionPanel: React.FC<{ onPlanSelected?: (plan?: any) => void }> = ({ onPlanSelected }) => {
+// ─── Ana Bileşen ────────────────────────────────────────────────
+export const SubscriptionPanel: React.FC<{
+  onPlanSelected?: (plan?: any, selectedPeriods?: string[]) => void;
+  purchasedPeriods?: string[];
+}> = ({ onPlanSelected, purchasedPeriods = [] }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const discounts = useCampaignDiscounts();
   const plans = getPlans(tr, discounts);
 
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [step, setStep] = useState<"plan" | "period" | "processing">("plan");
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
   const handleSelectPlan = (plan: any) => {
-    if (plan.price > 0) {
-      setPaymentProcessing(true);
-      setTimeout(() => {
-        setPaymentProcessing(false);
-        if (onPlanSelected) onPlanSelected(plan);
-      }, 2500);
-    } else {
-      if (onPlanSelected) onPlanSelected(plan);
+    if (plan.key === "free") {
+      // Free plan — dönem seçimi yok, direkt devam
+      if (onPlanSelected) onPlanSelected(plan, []);
+      return;
+    }
+    setSelectedPlan(plan);
+    setStep("period");
+  };
+
+  const handlePeriodsSelected = (periods: string[]) => {
+    setStep("processing");
+    // Ödeme simülasyonu
+    setTimeout(() => {
+      setStep("plan");
+      if (onPlanSelected) onPlanSelected(selectedPlan, periods);
+    }, 2500);
+  };
+
+  const handleUpgradeSelect = (planKey: string) => {
+    setShowUpgradePrompt(false);
+    const plan = plans.find(p => p.key === planKey);
+    if (plan) {
+      setSelectedPlan(plan);
+      setStep("period");
     }
   };
 
-  if (paymentProcessing) {
+  // Ödeme işleniyor ekranı
+  if (step === "processing") {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: "linear-gradient(180deg, #0a0a0f 0%, #111118 50%, #0a0a0f 100%)" }}>
         <div className="text-center p-8 rounded-2xl" style={{ border: "1px solid rgba(255,255,255,0.1)", background: "rgba(15, 17, 21, 0.75)", backdropFilter: "blur(20px)" }}>
@@ -431,6 +458,90 @@ export const SubscriptionPanel: React.FC<{ onPlanSelected?: (plan?: any) => void
     );
   }
 
+  // Dönem seçimi adımı
+  if (step === "period" && selectedPlan) {
+    return (
+      <div style={{
+        flex: 1,
+        overflowY: "auto",
+        background: "linear-gradient(180deg, #0a0a0f 0%, #111118 50%, #0a0a0f 100%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "40px 24px",
+        fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
+      }}>
+        {/* Geri butonu */}
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          whileHover={{ scale: 1.05 }}
+          onClick={() => { setStep("plan"); setSelectedPlan(null); }}
+          style={{
+            position: "absolute",
+            top: "24px",
+            left: "24px",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "10px",
+            padding: "8px 14px",
+            cursor: "pointer",
+            color: "rgba(255,255,255,0.6)",
+            fontSize: "13px",
+            fontWeight: 500,
+          }}
+        >
+          <ArrowLeft size={16} />
+          {tr("Geri", "Zurück")}
+        </motion.button>
+
+        {/* Seçili plan bilgisi */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            marginBottom: "24px",
+            textAlign: "center",
+          }}
+        >
+          <span style={{
+            fontSize: "13px",
+            color: "rgba(255,255,255,0.4)",
+          }}>
+            {tr("Seçili Plan:", "Ausgewählter Plan:")}
+          </span>
+          <span style={{
+            fontSize: "15px",
+            fontWeight: 700,
+            color: "#f97316",
+            marginLeft: "8px",
+          }}>
+            {selectedPlan.title} — {selectedPlan.price}€{selectedPlan.period}
+          </span>
+        </motion.div>
+
+        <PeriodPicker
+          planType={selectedPlan.key}
+          purchasedPeriods={purchasedPeriods}
+          onPeriodsSelected={handlePeriodsSelected}
+          onUpgradeRequest={() => setShowUpgradePrompt(true)}
+        />
+
+        <UpgradePrompt
+          visible={showUpgradePrompt}
+          onClose={() => setShowUpgradePrompt(false)}
+          onSelectPlan={handleUpgradeSelect}
+          currentPlanType={selectedPlan.key}
+        />
+      </div>
+    );
+  }
+
+  // Plan seçimi adımı (varsayılan)
   return (
     <div style={{
       flex: 1,
@@ -480,7 +591,10 @@ export const SubscriptionPanel: React.FC<{ onPlanSelected?: (plan?: any) => void
             marginRight: "auto",
             lineHeight: 1.6,
           }}>
-            {tr("İhtiyacınıza uygun planı seçin, hemen kullanmaya başlayın.", "Wählen Sie den Plan, der Ihren Bedürfnissen entspricht, und legen Sie sofort los.")}
+            {tr(
+              "Muhasebe dönemlerinize uygun planı seçin, ilgili ayların verilerini girin.",
+              "Wählen Sie den Plan passend zu Ihren Buchhaltungszeiträumen und geben Sie die Daten der relevanten Monate ein."
+            )}
           </p>
 
           {/* Active campaigns banner */}
@@ -503,7 +617,7 @@ export const SubscriptionPanel: React.FC<{ onPlanSelected?: (plan?: any) => void
                 color: "#10b981",
               }}
             >
-              🎉 {tr("Aktif kampanya mevcut! İndirimli fiyatlardan yararlanın.", "Aktive Kampagne! Profitieren Sie von reduzierten Preisen.")}
+              {tr("Aktif kampanya mevcut! İndirimli fiyatlardan yararlanın.", "Aktive Kampagne! Profitieren Sie von reduzierten Preisen.")}
             </motion.div>
           )}
         </motion.div>
@@ -527,7 +641,10 @@ export const SubscriptionPanel: React.FC<{ onPlanSelected?: (plan?: any) => void
             marginTop: "40px",
           }}
         >
-          {tr("Tüm fiyatlara KDV dahildir. İstediğiniz zaman iptal edebilirsiniz.", "Alle Preise verstehen sich inklusive MwSt. Sie können jederzeit kündigen.")}
+          {tr(
+            "Tüm fiyatlara KDV dahildir. Dönemsel abonelik modeli — satın aldığınız aylara erişim sağlarsınız.",
+            "Alle Preise verstehen sich inklusive MwSt. Periodisches Abonnementmodell — Sie erhalten Zugang zu den gekauften Monaten."
+          )}
         </motion.p>
       </div>
     </div>

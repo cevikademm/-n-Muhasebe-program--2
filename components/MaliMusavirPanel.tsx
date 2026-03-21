@@ -5,10 +5,11 @@ import {
   Briefcase, FileText, BookOpen, AlertTriangle,
   TrendingUp, Building2, Download, ChevronRight,
   Calendar, Printer, CheckCircle2, XCircle, Clock, FileOutput, Sigma,
+  Menu, X as XIcon,
 } from "lucide-react";
 import { SuSaReport } from "./SuSaReport";
 import { supabase } from "../services/supabaseService";
-import { SavedTransaction, fetchUserIncomeTransactions } from "../services/bankService";
+import { SavedTransaction, fetchUserIncomeTransactions, isRefundTransaction } from "../services/bankService";
 
 interface Props {
   invoices: Invoice[];
@@ -197,9 +198,9 @@ const EingangsbuchDoc: React.FC<{
   period: string;
   tr: (a: string, b: string) => string;
 }> = ({ invoices, items, period, tr }) => {
-  const totalNet = invoices.reduce((s, i) => s + (i.total_net || 0), 0);
-  const totalVat = invoices.reduce((s, i) => s + (i.total_vat || 0), 0);
-  const totalGross = invoices.reduce((s, i) => s + (i.total_gross || 0), 0);
+  const totalNet = invoices.reduce((s, i) => s + (i.ara_toplam || i.total_net || 0), 0);
+  const totalVat = invoices.reduce((s, i) => s + (i.toplam_kdv || i.total_vat || 0), 0);
+  const totalGross = invoices.reduce((s, i) => s + (i.genel_toplam || i.total_gross || 0), 0);
 
   return (
     <div style={DOC}>
@@ -457,25 +458,33 @@ const OposDoc: React.FC<{
   tr: (a: string, b: string) => string;
 }> = ({ invoices, period, tr }) => {
   const today = new Date();
+  const getDate = (inv: Invoice) => inv.tarih || inv.invoice_date;
+  const getGross = (inv: Invoice) => inv.genel_toplam || inv.total_gross || 0;
+  const getName = (inv: Invoice) => inv.satici_adi || inv.supplier_name || inv.raw_ai_response?.header?.supplier_name || "—";
+  const getNo = (inv: Invoice) => inv.fatura_no || inv.invoice_number || "—";
+
   const overdue = invoices.filter(inv => {
-    if (!inv.invoice_date) return false;
-    const due = new Date(inv.invoice_date);
-    due.setDate(due.getDate() + 30); // 30-day payment term
+    const d = getDate(inv);
+    if (!d) return false;
+    const due = new Date(d);
+    due.setDate(due.getDate() + 30);
     return due < today;
   });
   const pending = invoices.filter(inv => {
-    if (!inv.invoice_date) return false;
-    const due = new Date(inv.invoice_date);
+    const d = getDate(inv);
+    if (!d) return false;
+    const due = new Date(d);
     due.setDate(due.getDate() + 30);
     return due >= today;
   });
 
-  const totalOverdue = overdue.reduce((s, i) => s + (i.total_gross || 0), 0);
-  const totalPending = pending.reduce((s, i) => s + (i.total_gross || 0), 0);
+  const totalOverdue = overdue.reduce((s, i) => s + getGross(i), 0);
+  const totalPending = pending.reduce((s, i) => s + getGross(i), 0);
 
   const daysPastDue = (inv: Invoice) => {
-    if (!inv.invoice_date) return 0;
-    const due = new Date(inv.invoice_date);
+    const d = getDate(inv);
+    if (!d) return 0;
+    const due = new Date(d);
     due.setDate(due.getDate() + 30);
     return Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
   };
@@ -525,10 +534,10 @@ const OposDoc: React.FC<{
             <tbody>
               {overdue.sort((a, b) => daysPastDue(b) - daysPastDue(a)).map((inv, idx) => (
                 <tr key={inv.id} style={{ background: idx % 2 === 0 ? "#fff5f5" : "#fef2f2" }}>
-                  <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(inv.invoice_date)}</td>
-                  <td style={{ ...TD, fontWeight: 600 }}>{inv.invoice_number || "—"}</td>
-                  <td style={TD}>{inv.supplier_name || "—"}</td>
-                  <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", color: "#dc2626", fontWeight: 600 }}>{fmt(inv.total_gross || 0)}</td>
+                  <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(getDate(inv))}</td>
+                  <td style={{ ...TD, fontWeight: 600 }}>{getNo(inv)}</td>
+                  <td style={TD}>{getName(inv)}</td>
+                  <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", color: "#dc2626", fontWeight: 600 }}>{fmt(getGross(inv))}</td>
                   <td style={{ ...TD, textAlign: "right", color: "#dc2626", fontWeight: 700 }}>
                     +{daysPastDue(inv)} {tr("gün", "Tage")}
                   </td>
@@ -556,14 +565,14 @@ const OposDoc: React.FC<{
             </thead>
             <tbody>
               {pending.map((inv, idx) => {
-                const due = new Date(inv.invoice_date!);
+                const due = new Date(getDate(inv)!);
                 due.setDate(due.getDate() + 30);
                 return (
                   <tr key={inv.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fffbeb" }}>
-                    <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(inv.invoice_date)}</td>
-                    <td style={{ ...TD, fontWeight: 600 }}>{inv.invoice_number || "—"}</td>
-                    <td style={TD}>{inv.supplier_name || "—"}</td>
-                    <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(inv.total_gross || 0)}</td>
+                    <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(getDate(inv))}</td>
+                    <td style={{ ...TD, fontWeight: 600 }}>{getNo(inv)}</td>
+                    <td style={TD}>{getName(inv)}</td>
+                    <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(getGross(inv))}</td>
                     <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", color: "#d97706" }}>
                       {due.toLocaleDateString("de-DE")}
                     </td>
@@ -585,9 +594,9 @@ const BwaDoc: React.FC<{
   period: string;
   tr: (a: string, b: string) => string;
 }> = ({ invoices, items, period, tr }) => {
-  const totalNet = invoices.reduce((s, i) => s + (i.total_net || 0), 0);
-  const totalVat = invoices.reduce((s, i) => s + (i.total_vat || 0), 0);
-  const totalGross = invoices.reduce((s, i) => s + (i.total_gross || 0), 0);
+  const totalNet = invoices.reduce((s, i) => s + (i.ara_toplam || i.total_net || 0), 0);
+  const totalVat = invoices.reduce((s, i) => s + (i.toplam_kdv || i.total_vat || 0), 0);
+  const totalGross = invoices.reduce((s, i) => s + (i.genel_toplam || i.total_gross || 0), 0);
 
   // Group by account code ranges (SKR03)
   const groups: { label: string; labelDe: string; range: [number, number]; color: string }[] = [
@@ -780,9 +789,9 @@ const FehlendeDoc: React.FC<{
               const inv = invoices.find(i => i.id === it.invoice_id);
               return (
                 <tr key={it.id} style={{ background: idx % 2 === 0 ? "#fff5f5" : "#fff1f2" }}>
-                  <td style={{ ...TD, fontWeight: 600 }}>{inv?.invoice_number || "—"}</td>
-                  <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(inv?.invoice_date)}</td>
-                  <td style={TD}>{inv?.supplier_name || "—"}</td>
+                  <td style={{ ...TD, fontWeight: 600 }}>{inv?.fatura_no || inv?.invoice_number || "—"}</td>
+                  <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px" }}>{fmtDateShort(inv?.tarih || inv?.invoice_date)}</td>
+                  <td style={TD}>{inv?.satici_adi || inv?.supplier_name || inv?.raw_ai_response?.header?.supplier_name || "—"}</td>
                   <td style={{ ...TD, color: "#64748b" }}>{it.description || "—"}</td>
                   <td style={{ ...TD, textAlign: "right", fontFamily: "monospace" }}>{fmt(it.gross_amount || 0)}</td>
                   <td style={TD}>
@@ -815,27 +824,27 @@ const DatevExportDoc: React.FC<{
   const readyInvoices = invoices.filter(inv =>
     items.some(it => it.invoice_id === inv.id && it.account_code)
   );
-  const totalGross = invoices.reduce((s, i) => s + (i.total_gross || 0), 0);
+  const totalGross = invoices.reduce((s, i) => s + (i.genel_toplam || i.total_gross || 0), 0);
   const completeness = items.length > 0 ? Math.round((withCode.length / items.length) * 100) : 0;
 
   const checks: { label: string; labelDe: string; ok: boolean; detail?: string }[] = [
     {
       label: "Fatura tarihleri mevcut",
       labelDe: "Rechnungsdaten vorhanden",
-      ok: invoices.every(i => !!i.invoice_date),
-      detail: `${invoices.filter(i => !i.invoice_date).length} eksik tarih`,
+      ok: invoices.every(i => !!(i.tarih || i.invoice_date)),
+      detail: `${invoices.filter(i => !(i.tarih || i.invoice_date)).length} eksik tarih`,
     },
     {
       label: "Fatura numaraları mevcut",
       labelDe: "Rechnungsnummern vorhanden",
-      ok: invoices.every(i => !!i.invoice_number),
-      detail: `${invoices.filter(i => !i.invoice_number).length} eksik numara`,
+      ok: invoices.every(i => !!(i.fatura_no || i.invoice_number)),
+      detail: `${invoices.filter(i => !(i.fatura_no || i.invoice_number)).length} eksik numara`,
     },
     {
       label: "Tedarikçi adları mevcut",
       labelDe: "Lieferantennamen vorhanden",
-      ok: invoices.every(i => !!i.supplier_name),
-      detail: `${invoices.filter(i => !i.supplier_name).length} eksik ad`,
+      ok: invoices.every(i => !!(i.satici_adi || i.supplier_name || i.raw_ai_response?.header?.supplier_name)),
+      detail: `${invoices.filter(i => !(i.satici_adi || i.supplier_name || i.raw_ai_response?.header?.supplier_name)).length} eksik ad`,
     },
     {
       label: `Hesap kodu ataması (${completeness}%)`,
@@ -846,8 +855,8 @@ const DatevExportDoc: React.FC<{
     {
       label: "Brüt tutarlar mevcut",
       labelDe: "Bruttobeträge vorhanden",
-      ok: invoices.every(i => (i.total_gross || 0) > 0),
-      detail: `${invoices.filter(i => !(i.total_gross || 0)).length} eksik tutar`,
+      ok: invoices.every(i => (i.genel_toplam || i.total_gross || 0) > 0),
+      detail: `${invoices.filter(i => !(i.genel_toplam || i.total_gross || 0)).length} eksik tutar`,
     },
   ];
 
@@ -958,31 +967,32 @@ const TeslimRaporuDoc: React.FC<{
   period: string;
   tr: (a: string, b: string) => string;
 }> = ({ invoices, items, bankIncomes, companyInfo, period, tr }) => {
-  const totalNet = invoices.reduce((s, i) => s + (i.total_net || 0), 0);
-  const totalVat = invoices.reduce((s, i) => s + (i.total_vat || 0), 0);
-  const totalGross = invoices.reduce((s, i) => s + (i.total_gross || 0), 0);
+  const totalNet = invoices.reduce((s, i) => s + (i.ara_toplam || i.total_net || 0), 0);
+  const totalVat = invoices.reduce((s, i) => s + (i.toplam_kdv || i.total_vat || 0), 0);
+  const totalGross = invoices.reduce((s, i) => s + (i.genel_toplam || i.total_gross || 0), 0);
   const totalBankIncome = bankIncomes.reduce((s, tx) => s + (tx.amount || 0), 0);
 
   const today = new Date();
   const overdueInvoices = invoices.filter(inv => {
-    if (!inv.invoice_date) return false;
-    const due = new Date(inv.invoice_date);
+    const dateStr = inv.tarih || inv.invoice_date;
+    if (!dateStr) return false;
+    const due = new Date(dateStr);
     due.setDate(due.getDate() + 30);
     return due < today;
   });
-  const totalOverdue = overdueInvoices.reduce((s, i) => s + (i.total_gross || 0), 0);
+  const totalOverdue = overdueInvoices.reduce((s, i) => s + (i.genel_toplam || i.total_gross || 0), 0);
 
   const missingItems = items.filter(it => !it.account_code || it.account_code.trim() === "");
   const withCode = items.filter(it => it.account_code && it.account_code.trim() !== "");
   const completeness = items.length > 0 ? Math.round((withCode.length / items.length) * 100) : 0;
   const datevReady = completeness >= 80
-    && invoices.every(i => !!i.invoice_date)
-    && invoices.every(i => !!i.invoice_number);
+    && invoices.every(i => !!(i.tarih || i.invoice_date))
+    && invoices.every(i => !!(i.fatura_no || i.invoice_number));
 
   const supplierMap = new Map<string, number>();
   invoices.forEach(inv => {
-    const name = inv.supplier_name || tr("Bilinmiyor", "Unbekannt");
-    supplierMap.set(name, (supplierMap.get(name) || 0) + (inv.total_gross || 0));
+    const name = inv.satici_adi || inv.supplier_name || inv.raw_ai_response?.header?.supplier_name || tr("Bilinmiyor", "Unbekannt");
+    supplierMap.set(name, (supplierMap.get(name) || 0) + (inv.genel_toplam || inv.total_gross || 0));
   });
   const top5 = Array.from(supplierMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
@@ -1238,13 +1248,31 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
     load();
   }, []);
 
-  // Kalemleri yukle
+  // Kalemleri yukle — önce raw_ai_response'dan çıkar, yoksa DB'den çek
   useEffect(() => {
     const loadItems = async () => {
       const allItems: InvoiceItem[] = [];
       for (const inv of invoices) {
-        const items = await fetchItems(inv.id);
-        allItems.push(...items);
+        // raw_ai_response içinden çıkar (mock invoices)
+        const rawItems = inv.raw_ai_response?.items || inv.raw_ai_response?.kalemler || [];
+        if (rawItems.length > 0) {
+          rawItems.forEach((item: any) => {
+            allItems.push({
+              ...item,
+              invoice_id: inv.id,
+              net_amount: item.net_amount ?? item.satir_toplami ?? 0,
+              vat_amount: item.vat_amount ?? ((item.net_amount ?? item.satir_toplami ?? 0) * ((item.vat_rate ?? item.kdv_orani ?? 0) / 100)),
+              vat_rate: item.vat_rate ?? item.kdv_orani ?? 0,
+              description: item.description ?? item.urun_adi ?? "",
+              account_code: item.account_code ?? item.hesap_kodu ?? null,
+              account_name: item.account_name ?? item.account_name_tr ?? null,
+            });
+          });
+        } else {
+          // DB'den çek (Supabase invoices)
+          const items = await fetchItems(inv.id);
+          allItems.push(...items);
+        }
       }
       setInvoiceItems(allItems);
     };
@@ -1266,6 +1294,7 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null); // null = full year
   const [activeReport, setActiveReport] = useState<ReportKey>("teslim");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const MONTHS = lang === "tr" ? MONTHS_TR : MONTHS_DE;
 
@@ -1286,13 +1315,15 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
     return invoiceItems.filter(it => ids.has(it.invoice_id));
   }, [filteredInvoices, invoiceItems]);
 
-  // Seçilen döneme göre filtrelenmiş banka gelir işlemleri
+  // Seçilen döneme göre filtrelenmiş banka gelir işlemleri (iadeler hariç)
   const filteredBankIncomes = useMemo(() => {
     return bankIncomes.filter(tx => {
       if (!tx.transaction_date) return false;
       const d = new Date(tx.transaction_date);
       if (d.getFullYear() !== selectedYear) return false;
       if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+      // İade işlemlerini mali müşavir raporlarından hariç tut
+      if (isRefundTransaction(tx)) return false;
       return true;
     });
   }, [bankIncomes, selectedYear, selectedMonth]);
@@ -1434,173 +1465,233 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
 
   const activeRpt = REPORTS.find(r => r.key === activeReport)!;
 
-  return (
-    <div className="flex h-full" style={{ background: "#111318" }}>
+  const MaliSidebarContent = ({ onSelect }: { onSelect?: () => void }) => (
+    <>
+      {/* Header */}
+      <div style={{
+        padding: "16px 16px 12px",
+        borderBottom: "1px solid rgba(255,255,255,.06)",
+        flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+          <div style={{
+            width: "32px", height: "32px", borderRadius: "9px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(167,139,250,.15)", border: "1px solid rgba(167,139,250,.3)",
+          }}>
+            <Briefcase size={15} style={{ color: "#a78bfa" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>
+              {tr("Mali Müşavir", "Steuerberater")}
+            </div>
+            <div style={{ fontSize: "9px", color: "#475569" }}>
+              {tr("Steuerberater Raporlama", "Rechnungswesen Berichte")}
+            </div>
+          </div>
+        </div>
 
-      {/* ══ LEFT PANEL — Report List ══ */}
-      <aside style={{
+        {/* Year selector */}
+        <div style={{ display: "flex", gap: "4px", marginBottom: "8px", flexWrap: "wrap" }}>
+          {allYears.map(y => (
+            <button
+              key={y}
+              onClick={() => setSelectedYear(y)}
+              style={{
+                padding: "3px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600,
+                cursor: "pointer", fontFamily: "monospace",
+                background: selectedYear === y ? "rgba(167,139,250,.2)" : "rgba(255,255,255,.04)",
+                color: selectedYear === y ? "#a78bfa" : "#64748b",
+                border: `1px solid ${selectedYear === y ? "rgba(167,139,250,.4)" : "rgba(255,255,255,.07)"}`,
+              }}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+
+        {/* Month selector */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "3px" }}>
+          <button
+            onClick={() => setSelectedMonth(null)}
+            style={{
+              gridColumn: "span 4",
+              padding: "4px 6px", borderRadius: "6px", fontSize: "10px", fontWeight: 600,
+              cursor: "pointer",
+              background: selectedMonth === null ? "rgba(167,139,250,.15)" : "rgba(255,255,255,.03)",
+              color: selectedMonth === null ? "#a78bfa" : "#475569",
+              border: `1px solid ${selectedMonth === null ? "rgba(167,139,250,.3)" : "rgba(255,255,255,.06)"}`,
+              marginBottom: "2px",
+            }}
+          >
+            {tr(`Tüm Yıl ${selectedYear}`, `Gesamtjahr ${selectedYear}`)}
+          </button>
+          {MONTHS.map((m, idx) => {
+            const cnt = monthCount(idx);
+            return (
+              <button
+                key={m}
+                onClick={() => setSelectedMonth(idx)}
+                style={{
+                  padding: "4px 2px", borderRadius: "5px", fontSize: "9px", fontWeight: 600,
+                  cursor: "pointer", position: "relative",
+                  background: selectedMonth === idx ? "rgba(167,139,250,.15)" : "rgba(255,255,255,.02)",
+                  color: selectedMonth === idx ? "#a78bfa" : cnt > 0 ? "#94a3b8" : "#374151",
+                  border: `1px solid ${selectedMonth === idx ? "rgba(167,139,250,.3)" : "rgba(255,255,255,.05)"}`,
+                  textAlign: "center",
+                }}
+              >
+                {m.slice(0, 3)}
+                {cnt > 0 && (
+                  <span style={{
+                    position: "absolute", top: "-4px", right: "-3px",
+                    width: "14px", height: "14px", borderRadius: "50%",
+                    fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                    background: selectedMonth === idx ? "#a78bfa" : "#334155",
+                    color: selectedMonth === idx ? "#fff" : "#94a3b8",
+                  }}>
+                    {cnt > 9 ? "9+" : cnt}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Report list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
+        <div style={{
+          fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase",
+          color: "#374151", padding: "4px 6px 8px",
+        }}>
+          {tr("Raporlar", "Berichte")} · {filteredInvoices.length} {tr("fatura", "Rechnungen")}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {REPORTS.map(rpt => {
+            const isActive = activeReport === rpt.key;
+            return (
+              <button
+                key={rpt.key}
+                onClick={() => { setActiveReport(rpt.key); onSelect?.(); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: "10px",
+                  padding: "10px 10px", borderRadius: "10px",
+                  cursor: "pointer", textAlign: "left", width: "100%",
+                  background: isActive ? `${rpt.color}15` : "rgba(255,255,255,.02)",
+                  border: `1px solid ${isActive ? rpt.color + "40" : "rgba(255,255,255,.06)"}`,
+                  transition: "all .15s",
+                }}
+              >
+                <div style={{
+                  width: "32px", height: "32px", borderRadius: "8px", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: isActive ? `${rpt.color}25` : "rgba(255,255,255,.04)",
+                  border: `1px solid ${isActive ? rpt.color + "50" : "rgba(255,255,255,.07)"}`,
+                  color: isActive ? rpt.color : "#475569",
+                }}>
+                  {rpt.icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: "11px", fontWeight: isActive ? 700 : 500, lineHeight: 1.3,
+                    color: isActive ? rpt.color : "#94a3b8",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
+                    {lang === "tr" ? rpt.titleTr : rpt.titleDe}
+                  </div>
+                  <div style={{
+                    fontSize: "9px", color: "#374151", marginTop: "1px",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
+                    {lang === "tr" ? rpt.subtitleTr : rpt.subtitleDe}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0 }}>
+                  <span style={{
+                    fontSize: "8px", fontWeight: 700, padding: "1px 5px", borderRadius: "4px",
+                    background: isActive ? `${rpt.color}25` : "rgba(255,255,255,.04)",
+                    color: isActive ? rpt.color : "#374151",
+                    border: `1px solid ${isActive ? rpt.color + "40" : "rgba(255,255,255,.06)"}`,
+                  }}>
+                    {rpt.badge}
+                  </span>
+                  {isActive && <ChevronRight size={11} style={{ color: rpt.color }} />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex h-full" style={{ background: "#111318", position: "relative" }}>
+
+      {/* ══ MOBILE HAMBURGER ══ */}
+      <button
+        onClick={() => setMobileSidebarOpen(true)}
+        className="md:hidden"
+        style={{
+          position: "absolute", top: "10px", left: "10px", zIndex: 30,
+          width: "36px", height: "36px", borderRadius: "9px",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(167,139,250,.12)", border: "1px solid rgba(167,139,250,.25)",
+          cursor: "pointer", color: "#a78bfa",
+        }}
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* ══ MOBILE SIDEBAR OVERLAY ══ */}
+      {mobileSidebarOpen && (
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 40,
+            background: "rgba(0,0,0,.6)", backdropFilter: "blur(4px)",
+          }}
+          onClick={() => setMobileSidebarOpen(false)}
+        >
+          <div
+            style={{
+              width: "280px", height: "100%",
+              background: "#0d1017",
+              borderRight: "1px solid rgba(255,255,255,.08)",
+              display: "flex", flexDirection: "column",
+              overflow: "hidden",
+              animation: "slideInLeft .2s ease",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 10px 0" }}>
+              <button
+                onClick={() => setMobileSidebarOpen(false)}
+                style={{
+                  width: "28px", height: "28px", borderRadius: "7px",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "rgba(255,255,255,.06)", border: "none",
+                  cursor: "pointer", color: "#64748b",
+                }}
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
+            <MaliSidebarContent onSelect={() => setMobileSidebarOpen(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* ══ DESKTOP SIDEBAR ══ */}
+      <aside className="hidden md:flex" style={{
         width: "280px", minWidth: "280px",
         background: "#0d1017",
         borderRight: "1px solid rgba(255,255,255,.06)",
-        display: "flex", flexDirection: "column",
+        flexDirection: "column",
         overflow: "hidden",
       }}>
-        {/* Header */}
-        <div style={{
-          padding: "16px 16px 12px",
-          borderBottom: "1px solid rgba(255,255,255,.06)",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-            <div style={{
-              width: "32px", height: "32px", borderRadius: "9px",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: "rgba(167,139,250,.15)", border: "1px solid rgba(167,139,250,.3)",
-            }}>
-              <Briefcase size={15} style={{ color: "#a78bfa" }} />
-            </div>
-            <div>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>
-                {tr("Mali Müşavir", "Steuerberater")}
-              </div>
-              <div style={{ fontSize: "9px", color: "#475569" }}>
-                {tr("Steuerberater Raporlama", "Rechnungswesen Berichte")}
-              </div>
-            </div>
-          </div>
-
-          {/* Year selector */}
-          <div style={{ display: "flex", gap: "4px", marginBottom: "8px", flexWrap: "wrap" }}>
-            {allYears.map(y => (
-              <button
-                key={y}
-                onClick={() => setSelectedYear(y)}
-                style={{
-                  padding: "3px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600,
-                  cursor: "pointer", fontFamily: "monospace",
-                  background: selectedYear === y ? "rgba(167,139,250,.2)" : "rgba(255,255,255,.04)",
-                  color: selectedYear === y ? "#a78bfa" : "#64748b",
-                  border: `1px solid ${selectedYear === y ? "rgba(167,139,250,.4)" : "rgba(255,255,255,.07)"}`,
-                }}
-              >
-                {y}
-              </button>
-            ))}
-          </div>
-
-          {/* Month selector */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "3px" }}>
-            <button
-              onClick={() => setSelectedMonth(null)}
-              style={{
-                gridColumn: "span 4",
-                padding: "4px 6px", borderRadius: "6px", fontSize: "10px", fontWeight: 600,
-                cursor: "pointer",
-                background: selectedMonth === null ? "rgba(167,139,250,.15)" : "rgba(255,255,255,.03)",
-                color: selectedMonth === null ? "#a78bfa" : "#475569",
-                border: `1px solid ${selectedMonth === null ? "rgba(167,139,250,.3)" : "rgba(255,255,255,.06)"}`,
-                marginBottom: "2px",
-              }}
-            >
-              {tr(`Tüm Yıl ${selectedYear}`, `Gesamtjahr ${selectedYear}`)}
-            </button>
-            {MONTHS.map((m, idx) => {
-              const cnt = monthCount(idx);
-              return (
-                <button
-                  key={m}
-                  onClick={() => setSelectedMonth(idx)}
-                  style={{
-                    padding: "4px 2px", borderRadius: "5px", fontSize: "9px", fontWeight: 600,
-                    cursor: "pointer", position: "relative",
-                    background: selectedMonth === idx ? "rgba(167,139,250,.15)" : "rgba(255,255,255,.02)",
-                    color: selectedMonth === idx ? "#a78bfa" : cnt > 0 ? "#94a3b8" : "#374151",
-                    border: `1px solid ${selectedMonth === idx ? "rgba(167,139,250,.3)" : "rgba(255,255,255,.05)"}`,
-                    textAlign: "center",
-                  }}
-                >
-                  {m.slice(0, 3)}
-                  {cnt > 0 && (
-                    <span style={{
-                      position: "absolute", top: "-4px", right: "-3px",
-                      width: "14px", height: "14px", borderRadius: "50%",
-                      fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
-                      background: selectedMonth === idx ? "#a78bfa" : "#334155",
-                      color: selectedMonth === idx ? "#fff" : "#94a3b8",
-                    }}>
-                      {cnt > 9 ? "9+" : cnt}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Report list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
-          <div style={{
-            fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase",
-            color: "#374151", padding: "4px 6px 8px",
-          }}>
-            {tr("Raporlar", "Berichte")} · {filteredInvoices.length} {tr("fatura", "Rechnungen")}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            {REPORTS.map(rpt => {
-              const isActive = activeReport === rpt.key;
-              return (
-                <button
-                  key={rpt.key}
-                  onClick={() => setActiveReport(rpt.key)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "10px",
-                    padding: "10px 10px", borderRadius: "10px",
-                    cursor: "pointer", textAlign: "left", width: "100%",
-                    background: isActive ? `${rpt.color}15` : "rgba(255,255,255,.02)",
-                    border: `1px solid ${isActive ? rpt.color + "40" : "rgba(255,255,255,.06)"}`,
-                    transition: "all .15s",
-                  }}
-                >
-                  <div style={{
-                    width: "32px", height: "32px", borderRadius: "8px", flexShrink: 0,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: isActive ? `${rpt.color}25` : "rgba(255,255,255,.04)",
-                    border: `1px solid ${isActive ? rpt.color + "50" : "rgba(255,255,255,.07)"}`,
-                    color: isActive ? rpt.color : "#475569",
-                  }}>
-                    {rpt.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: "11px", fontWeight: isActive ? 700 : 500, lineHeight: 1.3,
-                      color: isActive ? rpt.color : "#94a3b8",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {lang === "tr" ? rpt.titleTr : rpt.titleDe}
-                    </div>
-                    <div style={{
-                      fontSize: "9px", color: "#374151", marginTop: "1px",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {lang === "tr" ? rpt.subtitleTr : rpt.subtitleDe}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0 }}>
-                    <span style={{
-                      fontSize: "8px", fontWeight: 700, padding: "1px 5px", borderRadius: "4px",
-                      background: isActive ? `${rpt.color}25` : "rgba(255,255,255,.04)",
-                      color: isActive ? rpt.color : "#374151",
-                      border: `1px solid ${isActive ? rpt.color + "40" : "rgba(255,255,255,.06)"}`,
-                    }}>
-                      {rpt.badge}
-                    </span>
-                    {isActive && <ChevronRight size={11} style={{ color: rpt.color }} />}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <MaliSidebarContent />
       </aside>
 
       {/* ══ RIGHT PANEL — Report Viewer ══ */}

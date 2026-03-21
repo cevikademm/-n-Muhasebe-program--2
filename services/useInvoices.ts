@@ -3,7 +3,14 @@ import { supabase } from "./supabaseService";
 import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
 import { getLearningRules } from "./learningEngine";
 
-export function useInvoices(session: any) {
+export interface SubscriptionCheck {
+  isActive: boolean;
+  isExpired: boolean;
+  plan: string;
+  expiresAt: Date | null;
+}
+
+export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -38,6 +45,19 @@ export function useInvoices(session: any) {
   }, []);
 
   const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
+    // ── Abonelik Dönem Kontrolü ──
+    if (subscriptionInfo) {
+      if (!subscriptionInfo.isActive || subscriptionInfo.isExpired) {
+        const expDateStr = subscriptionInfo.expiresAt
+          ? subscriptionInfo.expiresAt.toLocaleDateString("tr-TR")
+          : "—";
+        throw new Error(
+          `Abonelik süreniz dolmuş veya aktif değil (Son geçerlilik: ${expDateStr}). ` +
+          `Fatura yükleyebilmek için lütfen aboneliğinizi yenileyin.`
+        );
+      }
+    }
+
     // Oturum kontrolu - expire olmussa refresh
     let { data: { session: currentSession } } = await supabase.auth.getSession();
     if (currentSession?.expires_at && currentSession.expires_at * 1000 < Date.now() + 30000) {
