@@ -67,58 +67,17 @@ export interface BankStatement {
   transactions: BankTransaction[];
 }
 
+import { analyzeBankStatementLocal } from './bankAnalyzerLocal';
+
 // ─────────────────────────────────────────────
-//  GEMINI BANKA EKSTRESİ ANALİZ FONKSİYONU
+//  LOKAL BANKA EKSTRESİ ANALİZ FONKSİYONU (AI Bypassed)
 // ─────────────────────────────────────────────
 export const analyzeBankStatement = async (
   fileBase64: string,
   fileType: string
 ): Promise<BankStatement> => {
-  const jsonText = await fetchBankAnalysis(fileBase64, fileType || "application/pdf");
-
-  let clean = jsonText.replace(/```json|```/g, "").trim();
-  const f = clean.indexOf("{");
-  const l = clean.lastIndexOf("}");
-  if (f !== -1 && l > f) clean = clean.substring(f, l + 1);
-
-  if (!clean) throw new Error("Gemini boş yanıt döndürdü");
-
-  const raw = JSON.parse(clean);
-
-  // Normalize + ID ata
-  // RESERV (Reservierung / Vormerkung) girişleri gerçek işlem değildir — hariç tut
-  const RESERV_PATTERN = /\bRESERV|\bVORMERK|\bPREAUTH|\bBLOKAJ/i;
-
-  const transactions: BankTransaction[] = (raw.transactions || [])
-    .filter((tx: any) => {
-      const desc = String(tx.description || "");
-      const ref = String(tx.reference || "");
-      const cp = String(tx.counterpart || "");
-      return !RESERV_PATTERN.test(desc) && !RESERV_PATTERN.test(ref) && !RESERV_PATTERN.test(cp);
-    })
-    .map((tx: any, idx: number) => ({
-      id: `tx_${idx}_${Date.now()}`,
-      date: String(tx.date || ""),
-      description: String(tx.description || ""),
-      amount: Number(tx.amount) || 0,
-      type: (tx.type === "income" ? "income" : "expense") as "income" | "expense",
-      reference: String(tx.reference || ""),
-      counterpart: String(tx.counterpart || ""),
-      category: String(tx.category || "Sonstige"),
-      category_tr: String(tx.category_tr || "Diğer"),
-      balance: tx.balance != null ? Number(tx.balance) : undefined,
-    }));
-
-  return {
-    period: String(raw.period || ""),
-    accountNumber: String(raw.accountNumber || ""),
-    bankName: String(raw.bankName || ""),
-    openingBalance: Number(raw.openingBalance) || 0,
-    closingBalance: Number(raw.closingBalance) || 0,
-    totalIncome: Number(raw.totalIncome) || transactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0),
-    totalExpense: Math.abs(Number(raw.totalExpense) || transactions.filter(t => t.type === "expense").reduce((s, t) => s + Math.abs(t.amount), 0)),
-    transactions,
-  };
+  console.log("[BankService] using local PDF parsing logic instead of Edge Function.");
+  return await analyzeBankStatementLocal(fileBase64);
 };
 
 // ─────────────────────────────────────────────

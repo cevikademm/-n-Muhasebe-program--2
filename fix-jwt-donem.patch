@@ -1,0 +1,3015 @@
+diff --git a/App.tsx b/App.tsx
+index f6a5c25..db05191 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -1,531 +1,553 @@
+-import React, { useState, useEffect } from "react";
+-import { supabase } from "./services/supabaseService";
+-import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
+-import { translations } from "./constants";
+-import {
+-  LayoutDashboard, FileText, BarChart3, Building2, Settings2, Briefcase,
+-} from "lucide-react";
+-import { AuthScreen } from "./components/AuthScreen";
+-import { LeftPanel } from "./components/LeftPanel";
+-import { CenterPanel } from "./components/CenterPanel";
+-import { RightPanel } from "./components/RightPanel";
+-import { CompanyCenterPanel } from "./components/CompanyCenterPanel";
+-import { CompanyRightPanel } from "./components/CompanyRightPanel";
+-import { LangContext } from "./LanguageContext";
+-import { DashboardPanel } from "./components/DashboardPanel";
+-import { SettingsPanel } from "./components/SettingsPanel";
+-import { ReportsPanel } from "./components/ReportsPanel";
+-import { FormsPanel } from "./components/FormsPanel";
+-import { BankDocumentsPanel } from "./components/BankDocumentsPanel";
+-import { MaliMusavirPanel } from "./components/MaliMusavirPanel";
+-import { AdminPanel } from "./components/AdminPanel";
+-import { SubscriptionPanel } from "./components/SubscriptionPanel";
+-import { CampaignsPanel } from "./components/CampaignsPanel";
+-import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
+-import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
+-import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
+-import { ToastProvider } from "./contexts/ToastContext";
+-import { useAccountPlans } from "./services/useAccountPlans";
+-import { useCompanies } from "./services/useCompanies";
+-import { useSubscriptionTimer } from "./services/useSubscriptionTimer";
+-import { useInvoices } from "./services/useInvoices";
+-
+-export default function App() {
+-  const [lang, setLang] = useState<Language>("tr");
+-  const [session, setSession] = useState<any>(null);
+-  const [loading, setLoading] = useState(true);
+-
+-  // UI States
+-  const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
+-  const [hasSubscription, setHasSubscription] = useState(false);
+-  const [userRole, setUserRole] = useState("user");
+-
+-  // Selection States
+-  const [selectedRow, setSelectedRow] = useState<AccountRow | null>(null);
+-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+-  const [searchTerm, setSearchTerm] = useState("");
+-  const [companySearchTerm, setCompanySearchTerm] = useState("");
+-  const [pendingCustomerUserId, setPendingCustomerUserId] = useState<string | null>(null);
+-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+-  const [selectedDetailItem, setSelectedDetailItem] = useState<any>(null);
+-
+-  // ⚠ GÜVENLİK: Admin rolü artık YALNIZCA veritabanı "profiles" tablosundan belirlenir.
+-  // VITE_SUPER_ADMIN_EMAIL env var bypass'ı kaldırıldı (YKS-03 düzeltmesi).
+-
+-  const t = translations[lang];
+-
+-  // ─── Custom Hooks ─────────────────────────────────────────────────
+-  const { data, dataLoading, fetchData } = useAccountPlans(session, activeMenu, userRole);
+-
+-  const { companies, companiesLoading, fetchCompanies } = useCompanies(
+-    session,
+-    activeMenu,
+-    userRole
+-  );
+-
+-  const subInfo = useSubscriptionTimer(session, userRole);
+-
+-  const {
+-    invoices, loading: invoicesLoading, uploading: invoiceUploading,
+-    uploadAndAnalyze, deleteInvoice, fetchInvoiceItems,
+-    updateInvoice, updateInvoiceItems,
+-  } = useInvoices(session, subInfo);
+-
+-  // ─── Auth & Session ───────────────────────────────────────────────
+-  useEffect(() => {
+-    supabase.auth
+-      .getSession()
+-      .then(({ data: { session } }) => {
+-        setSession(session);
+-        setLoading(false);
+-      })
+-      .catch((err) => {
+-        console.error("Supabase connection error:", err);
+-        setLoading(false);
+-      });
+-
+-    const {
+-      data: { subscription },
+-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+-      setSession(newSession);
+-    });
+-
+-    return () => subscription.unsubscribe();
+-  }, []);
+-
+-  // ─── User Role Logic ────────────────────────────────────────────────
+-  // [FIX H-3] Admin rolü artık yalnızca profiles tablosundan (server-side RLS) okunuyor
+-  useEffect(() => {
+-    if (session?.user) {
+-      // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
+-      supabase
+-        .from("profiles")
+-        .select("role")
+-        .eq("id", session.user.id)
+-        .single()
+-        .then(({ data, error }) => {
+-          if (!error && data?.role) {
+-            setUserRole(data.role);
+-            if (data.role === "admin") {
+-              setHasSubscription(true);
+-            }
+-          } else {
+-            setUserRole("user");
+-          }
+-        });
+-
+-      // Abonelik durumu kontrolü (useSubscriptionTimer içinde ele alınıyor)
+-      if (userRole !== "admin") {
+-        if (!subInfo.isActive) {
+-          setActiveMenu("subscription");
+-        } else if (activeMenu === "subscription" && subInfo.isActive) {
+-          setActiveMenu("dashboard");
+-        }
+-      }
+-    }
+-  }, [session]);
+-
+-  // Sol panelden müşteri seçilince companies sayfasına geç ve company'yi otomatik seç
+-  useEffect(() => {
+-    if (!pendingCustomerUserId || companies.length === 0) return;
+-    const found = companies.find((c) => c.user_id === pendingCustomerUserId);
+-    if (found) {
+-      setSelectedCompany(found);
+-      setPendingCustomerUserId(null);
+-    }
+-  }, [companies, pendingCustomerUserId]);
+-
+-  const handleSelectCustomer = (userId: string) => {
+-    setActiveMenu("companies");
+-    setSelectedCompany(null);
+-    setPendingCustomerUserId(userId);
+-  };
+-
+-  // Redirect standard users from admin-only pages
+-  useEffect(() => {
+-    if (userRole === "user") {
+-      if (
+-        activeMenu === "accountPlans" ||
+-        activeMenu === "hesapPlanlari2" ||
+-        activeMenu === "companies" ||
+-        activeMenu === "adminView"
+-      ) {
+-        setActiveMenu("dashboard");
+-      }
+-    }
+-  }, [userRole, activeMenu]);
+-
+-  // ─── Logout ───────────────────────────────────────────────────────
+-  const handleLogout = async () => {
+-    await supabase.auth.signOut();
+-    setSession(null);
+-  };
+-
+-  const handleMenuChange = (menu: MenuKey) => {
+-    setActiveMenu(menu);
+-    setSelectedRow(null);
+-    setSelectedCompany(null);
+-    setSelectedInvoice(null);
+-    setSelectedDetailItem(null);
+-    setSearchTerm("");
+-    setCompanySearchTerm("");
+-  };
+-
+-  // ─── Loading Screen ───────────────────────────────────────────────
+-  if (loading) {
+-    return (
+-      <div className="flex items-center justify-center h-screen bg-slate-900">
+-        <div className="w-10 h-10 border-4 border-slate-700 border-t-cyan-500 rounded-full animate-spin" />
+-      </div>
+-    );
+-  }
+-
+-  // ─── Render Logic ─────────────────────────────────────────────────
+-  const isRightPanelOpen = selectedRow || selectedCompany || selectedInvoice;
+-
+-  const renderCenterPanel = () => {
+-    if (activeMenu === "companies" && userRole === "admin") {
+-      return (
+-        <CompanyCenterPanel
+-          companies={companies}
+-          loading={companiesLoading}
+-          selectedCompany={selectedCompany}
+-          onSelectCompany={setSelectedCompany}
+-          searchTerm={companySearchTerm}
+-          setSearchTerm={setCompanySearchTerm}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "accountPlans" && userRole === "admin") {
+-      return (
+-        <CenterPanel
+-          data={data}
+-          loading={dataLoading}
+-          selectedRow={selectedRow}
+-          onSelectRow={setSelectedRow}
+-          searchTerm={searchTerm}
+-          setSearchTerm={setSearchTerm}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "dashboard") {
+-      return (
+-        <DashboardPanel
+-          onNavigate={(menu) => handleMenuChange(menu as any)}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "settings") {
+-      return (
+-        <SettingsPanel
+-          userEmail={session?.user?.email}
+-          userRole={userRole}
+-          userId={session?.user?.id}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "adminView" && userRole === "admin") {
+-      return <AdminPanel accountPlans={data} />;
+-    }
+-
+-    if (activeMenu === "reports") {
+-      return (
+-        <ReportsPanel invoices={invoices} />
+-      );
+-    }
+-
+-    if (activeMenu === "forms") {
+-      return (
+-        <FormsPanel
+-          accountPlans={data}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "bankDocuments") {
+-      return (
+-        <BankDocumentsPanel
+-          isSubscriptionExpired={subInfo.isExpired}
+-          subscriptionExpiresAt={subInfo.expiresAt}
+-          subscriptionPlan={subInfo.plan}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "invoices") {
+-      return (
+-        <InvoiceCenterPanel
+-          invoices={invoices}
+-          loading={invoicesLoading}
+-          uploading={invoiceUploading}
+-          selectedInvoice={selectedInvoice}
+-          onSelectInvoice={setSelectedInvoice}
+-          isSubscriptionExpired={subInfo.isExpired}
+-          subscriptionExpiresAt={subInfo.expiresAt}
+-          subscriptionPlan={subInfo.plan}
+-          onUpload={async (files) => {
+-            for (const file of files) {
+-              try {
+-                await uploadAndAnalyze(file);
+-              } catch (err: any) {
+-                console.error(`[App] Invoice upload error for ${file.name}:`, err);
+-                alert(`Hata (${file.name}): ${err.message || 'Bilinmeyen hata'}`);
+-              }
+-            }
+-          }}
+-          fetchItems={fetchInvoiceItems}
+-          onAccountClick={(item: any) => setSelectedDetailItem(item)}
+-          onUpdateInvoice={updateInvoice}
+-          onUpdateInvoiceItems={updateInvoiceItems}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "maliMusavir") {
+-      return (
+-        <MaliMusavirPanel 
+-          invoices={invoices} 
+-          fetchItems={fetchInvoiceItems} 
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "campaigns" && userRole === "admin") {
+-      return <CampaignsPanel />;
+-    }
+-
+-    if (activeMenu === "hesapPlanlari2" && userRole === "admin") {
+-      return <HesapPlanlari2Panel />;
+-    }
+-
+-    if (activeMenu === "subscription") {
+-      return (
+-        <SubscriptionPanel
+-          purchasedPeriods={subInfo.purchasedPeriods}
+-          onPlanSelected={async (plan: any, selectedPeriods?: string[]) => {
+-            if (session?.user?.id) {
+-              // ⚠ GÜVENLİK (YKS-04): Abonelik kaydı Supabase'e yazılır.
+-              // Ödeme entegrasyonu (Stripe vb.) tamamlanınca bu kayıt
+-              // webhook üzerinden sunucu tarafında oluşturulmalıdır.
+-              try {
+-                if (selectedPeriods && selectedPeriods.length > 0) {
+-                  // Dönemsel kayıtlar oluştur
+-                  const rows = selectedPeriods.map(p => {
+-                    const [year, month] = p.split("-").map(Number);
+-                    return {
+-                      user_id: session.user.id,
+-                      period_year: year,
+-                      period_month: month,
+-                      plan_type: plan?.key || "monthly",
+-                      price_paid: (plan?.price || 0) / selectedPeriods.length,
+-                    };
+-                  });
+-                  await supabase.from("subscription_periods")
+-                    .upsert(rows, { onConflict: "user_id,period_year,period_month" });
+-                }
+-                // Geriye uyumluluk: eski subscriptions tablosuna da özet kayıt
+-                await supabase.from("subscriptions").upsert({
+-                  user_id: session.user.id,
+-                  status: "active",
+-                  plan: plan?.key || "monthly",
+-                  updated_at: new Date().toISOString(),
+-                }, { onConflict: "user_id" });
+-              } catch (e) {
+-                // localStorage fallback
+-                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
+-                  periods: selectedPeriods || [],
+-                  plan: plan?.key || "monthly",
+-                }));
+-              }
+-              window.dispatchEvent(new Event("subscription_updated"));
+-              setHasSubscription(true);
+-              setActiveMenu("dashboard");
+-            }
+-          }}
+-        />
+-      );
+-    }
+-
+-    return (
+-      <div
+-        className="flex-1 flex flex-col items-center justify-center"
+-        style={{ background: "#111318" }}
+-      >
+-        <div className="text-center">
+-          <div className="font-mono text-4xl mb-4" style={{ color: "#1c1f27" }}>
+-            ⊘
+-          </div>
+-          <div className="text-sm font-syne font-semibold" style={{ color: "#3a3f4a" }}>
+-            {t[activeMenu as keyof typeof t] as string}
+-          </div>
+-          {(activeMenu === "accountPlans" || activeMenu === "companies") && (
+-            <div
+-              className="text-xs mt-2 px-3 py-1.5 rounded-full inline-block"
+-              style={{
+-                background: "rgba(255,255,255,.04)",
+-                color: "#3a3f4a",
+-                border: "1px solid #1c1f27",
+-              }}
+-            >
+-              Admin erişimi gerekiyor
+-            </div>
+-          )}
+-        </div>
+-      </div>
+-    );
+-  };
+-
+-  const renderRightPanel = () => {
+-    if (!isRightPanelOpen) return null;
+-
+-    if (activeMenu === "companies" && userRole === "admin") {
+-      return (
+-        <CompanyRightPanel
+-          selectedCompany={selectedCompany}
+-          userRole={userRole}
+-          onCompanyUpdated={fetchCompanies}
+-          onCompanyDeleted={() => {
+-            setSelectedCompany(null);
+-            fetchCompanies();
+-          }}
+-        />
+-      );
+-    }
+-
+-    if (activeMenu === "invoices" && selectedInvoice) {
+-      return (
+-        <InvoiceRightPanel
+-          selectedInvoice={selectedInvoice}
+-          onClose={() => { setSelectedInvoice(null); setSelectedDetailItem(null); }}
+-          onDelete={async (inv) => {
+-            await deleteInvoice(inv.id);
+-            setSelectedInvoice(null);
+-            setSelectedDetailItem(null);
+-          }}
+-          detailItem={selectedDetailItem}
+-          onClearDetailItem={() => setSelectedDetailItem(null)}
+-        />
+-      );
+-    }
+-
+-    return <RightPanel selectedRow={selectedRow} activeMenu={activeMenu} />;
+-  };
+-
+-  return (
+-    <ToastProvider>
+-      <LangContext.Provider value={{ t, lang, setLang }}>
+-        {!session ? (
+-          <AuthScreen onAuth={setSession} />
+-        ) : (
+-          <div
+-            className="flex h-screen overflow-hidden flex-col md:flex-row"
+-            style={{
+-              background: "#111318",
+-              color: "#e2e8f0",
+-              fontFamily: "'Plus Jakarta Sans', sans-serif",
+-            }}
+-          >
+-            <LeftPanel
+-              activeMenu={activeMenu}
+-              setActiveMenu={handleMenuChange}
+-              userEmail={session.user.email}
+-              userRole={userRole}
+-              onLogout={handleLogout}
+-              onSelectCustomer={userRole === "admin" ? handleSelectCustomer : undefined}
+-              subInfo={subInfo}
+-            />
+-
+-            <div
+-              className={`flex-1 flex flex-col overflow-hidden pb-0 ${isRightPanelOpen ? "hidden md:flex" : "flex"
+-                }`}
+-              style={{ minWidth: 0, minHeight: 0 }}
+-            >
+-              {renderCenterPanel()}
+-            </div>
+-
+-            <div
+-              className={`${isRightPanelOpen
+-                ? "fixed inset-0 z-50 md:static md:w-auto md:block"
+-                : "hidden md:block"
+-                }`}
+-              style={{ background: "#111318", flexShrink: 0 }}
+-            >
+-              {renderRightPanel()}
+-            </div>
+-
+-            {/* ══ MOBILE BOTTOM NAV ══ */}
+-            {!isRightPanelOpen && (
+-              <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe flex items-stretch justify-around"
+-                style={{
+-                  background: "rgba(7,10,16,.96)",
+-                  backdropFilter: "blur(20px)",
+-                  borderTop: "1px solid rgba(255,255,255,.07)",
+-                  padding: "0",
+-                  height: "56px",
+-                }}>
+-                {([
+-                  { key: "dashboard" as MenuKey, icon: <LayoutDashboard size={18} />, label: t.dashboard },
+-                  { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
+-                  { key: "reports" as MenuKey, icon: <BarChart3 size={18} />, label: t.reports },
+-                  { key: "bankDocuments" as MenuKey, icon: <Building2 size={18} />, label: t.bankDocuments },
+-                  { key: "maliMusavir" as MenuKey, icon: <Briefcase size={18} />, label: t.maliMusavir },
+-                  { key: "settings" as MenuKey, icon: <Settings2 size={18} />, label: t.settings },
+-                ] as const).map(item => {
+-                  const isActive = activeMenu === item.key;
+-                  return (
+-                    <button
+-                      key={item.key}
+-                      onClick={() => handleMenuChange(item.key)}
+-                      style={{
+-                        flex: 1,
+-                        display: "flex",
+-                        flexDirection: "column",
+-                        alignItems: "center",
+-                        justifyContent: "center",
+-                        gap: "2px",
+-                        background: "transparent",
+-                        border: "none",
+-                        cursor: "pointer",
+-                        color: isActive ? "#06b6d4" : "var(--text-dim)",
+-                        position: "relative",
+-                        transition: "color .15s",
+-                        padding: "4px 0",
+-                      }}
+-                    >
+-                      {isActive && (
+-                        <span style={{
+-                          position: "absolute", top: 0, left: "25%", right: "25%", height: "2px",
+-                          borderRadius: "0 0 2px 2px",
+-                          background: "#06b6d4",
+-                          boxShadow: "0 0 8px rgba(6,182,212,.6)",
+-                        }} />
+-                      )}
+-                      {item.icon}
+-                      <span style={{
+-                        fontSize: "9px",
+-                        fontWeight: isActive ? 700 : 500,
+-                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+-                        letterSpacing: ".02em",
+-                        lineHeight: 1,
+-                        maxWidth: "56px",
+-                        overflow: "hidden",
+-                        textOverflow: "ellipsis",
+-                        whiteSpace: "nowrap",
+-                      }}>
+-                        {item.label}
+-                      </span>
+-                    </button>
+-                  );
+-                })}
+-              </nav>
+-            )}
+-          </div>
+-        )}
+-      </LangContext.Provider>
+-    </ToastProvider>
+-  );
+-}
++import React, { useState, useEffect } from "react";
++import { supabase } from "./services/supabaseService";
++import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
++import { translations } from "./constants";
++import {
++  LayoutDashboard, FileText, BarChart3, Building2, Settings2, Briefcase,
++} from "lucide-react";
++import { AuthScreen } from "./components/AuthScreen";
++import { LeftPanel } from "./components/LeftPanel";
++import { CenterPanel } from "./components/CenterPanel";
++import { RightPanel } from "./components/RightPanel";
++import { CompanyCenterPanel } from "./components/CompanyCenterPanel";
++import { CompanyRightPanel } from "./components/CompanyRightPanel";
++import { LangContext } from "./LanguageContext";
++import { DashboardPanel } from "./components/DashboardPanel";
++import { SettingsPanel } from "./components/SettingsPanel";
++import { ReportsPanel } from "./components/ReportsPanel";
++import { FormsPanel } from "./components/FormsPanel";
++import { BankDocumentsPanel } from "./components/BankDocumentsPanel";
++import { MaliMusavirPanel } from "./components/MaliMusavirPanel";
++import { AdminPanel } from "./components/AdminPanel";
++import { SubscriptionPanel } from "./components/SubscriptionPanel";
++import { CampaignsPanel } from "./components/CampaignsPanel";
++import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
++import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
++import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
++import { ToastProvider } from "./contexts/ToastContext";
++import { useAccountPlans } from "./services/useAccountPlans";
++import { useCompanies } from "./services/useCompanies";
++import { useSubscriptionTimer } from "./services/useSubscriptionTimer";
++import { useInvoices } from "./services/useInvoices";
++
++export default function App() {
++  const [lang, setLang] = useState<Language>("tr");
++  const [session, setSession] = useState<any>(null);
++  const [loading, setLoading] = useState(true);
++
++  // UI States
++  const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
++  const [hasSubscription, setHasSubscription] = useState(false);
++  const [userRole, setUserRole] = useState("user");
++
++  // Selection States
++  const [selectedRow, setSelectedRow] = useState<AccountRow | null>(null);
++  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
++  const [searchTerm, setSearchTerm] = useState("");
++  const [companySearchTerm, setCompanySearchTerm] = useState("");
++  const [pendingCustomerUserId, setPendingCustomerUserId] = useState<string | null>(null);
++  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
++  const [selectedDetailItem, setSelectedDetailItem] = useState<any>(null);
++
++  // ⚠ GÜVENLİK: Admin rolü artık YALNIZCA veritabanı "profiles" tablosundan belirlenir.
++  // VITE_SUPER_ADMIN_EMAIL env var bypass'ı kaldırıldı (YKS-03 düzeltmesi).
++
++  const t = translations[lang];
++
++  // ─── Custom Hooks ─────────────────────────────────────────────────
++  const { data, dataLoading, fetchData } = useAccountPlans(session, activeMenu, userRole);
++
++  const { companies, companiesLoading, fetchCompanies } = useCompanies(
++    session,
++    activeMenu,
++    userRole
++  );
++
++  const subInfo = useSubscriptionTimer(session, userRole);
++
++  const {
++    invoices, loading: invoicesLoading, uploading: invoiceUploading,
++    uploadAndAnalyze, deleteInvoice, fetchInvoiceItems,
++    updateInvoice, updateInvoiceItems,
++  } = useInvoices(session, subInfo);
++
++  // ─── Auth & Session ───────────────────────────────────────────────
++  useEffect(() => {
++    supabase.auth
++      .getSession()
++      .then(({ data: { session } }) => {
++        setSession(session);
++        setLoading(false);
++      })
++      .catch((err) => {
++        console.error("Supabase connection error:", err);
++        setLoading(false);
++      });
++
++    const {
++      data: { subscription },
++    } = supabase.auth.onAuthStateChange((_event, newSession) => {
++      setSession(newSession);
++    });
++
++    return () => subscription.unsubscribe();
++  }, []);
++
++  // ─── User Role Logic ────────────────────────────────────────────────
++  // [FIX H-3] Admin rolü artık yalnızca profiles tablosundan (server-side RLS) okunuyor
++  useEffect(() => {
++    if (session?.user) {
++      // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
++      supabase
++        .from("profiles")
++        .select("role")
++        .eq("id", session.user.id)
++        .single()
++        .then(({ data, error }) => {
++          if (!error && data?.role) {
++            setUserRole(data.role);
++            if (data.role === "admin") {
++              setHasSubscription(true);
++            }
++          } else {
++            setUserRole("user");
++          }
++        });
++
++      // Abonelik durumu kontrolü (useSubscriptionTimer içinde ele alınıyor)
++      if (userRole !== "admin") {
++        if (!subInfo.isActive) {
++          setActiveMenu("subscription");
++        } else if (activeMenu === "subscription" && subInfo.isActive) {
++          setActiveMenu("dashboard");
++        }
++      }
++    }
++  }, [session]);
++
++  // Sol panelden müşteri seçilince companies sayfasına geç ve company'yi otomatik seç
++  useEffect(() => {
++    if (!pendingCustomerUserId || companies.length === 0) return;
++    const found = companies.find((c) => c.user_id === pendingCustomerUserId);
++    if (found) {
++      setSelectedCompany(found);
++      setPendingCustomerUserId(null);
++    }
++  }, [companies, pendingCustomerUserId]);
++
++  const handleSelectCustomer = (userId: string) => {
++    setActiveMenu("companies");
++    setSelectedCompany(null);
++    setPendingCustomerUserId(userId);
++  };
++
++  // Redirect standard users from admin-only pages
++  useEffect(() => {
++    if (userRole === "user") {
++      if (
++        activeMenu === "accountPlans" ||
++        activeMenu === "hesapPlanlari2" ||
++        activeMenu === "companies" ||
++        activeMenu === "adminView"
++      ) {
++        setActiveMenu("dashboard");
++      }
++    }
++  }, [userRole, activeMenu]);
++
++  // ─── Logout ───────────────────────────────────────────────────────
++  const handleLogout = async () => {
++    await supabase.auth.signOut();
++    setSession(null);
++  };
++
++  const handleMenuChange = (menu: MenuKey) => {
++    setActiveMenu(menu);
++    setSelectedRow(null);
++    setSelectedCompany(null);
++    setSelectedInvoice(null);
++    setSelectedDetailItem(null);
++    setSearchTerm("");
++    setCompanySearchTerm("");
++  };
++
++  // ─── Loading Screen ───────────────────────────────────────────────
++  if (loading) {
++    return (
++      <div className="flex items-center justify-center h-screen bg-slate-900">
++        <div className="w-10 h-10 border-4 border-slate-700 border-t-cyan-500 rounded-full animate-spin" />
++      </div>
++    );
++  }
++
++  // ─── Render Logic ─────────────────────────────────────────────────
++  const isRightPanelOpen = selectedRow || selectedCompany || selectedInvoice;
++
++  const renderCenterPanel = () => {
++    if (activeMenu === "companies" && userRole === "admin") {
++      return (
++        <CompanyCenterPanel
++          companies={companies}
++          loading={companiesLoading}
++          selectedCompany={selectedCompany}
++          onSelectCompany={setSelectedCompany}
++          searchTerm={companySearchTerm}
++          setSearchTerm={setCompanySearchTerm}
++        />
++      );
++    }
++
++    if (activeMenu === "accountPlans" && userRole === "admin") {
++      return (
++        <CenterPanel
++          data={data}
++          loading={dataLoading}
++          selectedRow={selectedRow}
++          onSelectRow={setSelectedRow}
++          searchTerm={searchTerm}
++          setSearchTerm={setSearchTerm}
++        />
++      );
++    }
++
++    if (activeMenu === "dashboard") {
++      return (
++        <DashboardPanel
++          onNavigate={(menu) => handleMenuChange(menu as any)}
++        />
++      );
++    }
++
++    if (activeMenu === "settings") {
++      return (
++        <SettingsPanel
++          userEmail={session?.user?.email}
++          userRole={userRole}
++          userId={session?.user?.id}
++        />
++      );
++    }
++
++    if (activeMenu === "adminView" && userRole === "admin") {
++      return <AdminPanel accountPlans={data} />;
++    }
++
++    if (activeMenu === "reports") {
++      return (
++        <ReportsPanel invoices={invoices} />
++      );
++    }
++
++    if (activeMenu === "forms") {
++      return (
++        <FormsPanel
++          accountPlans={data}
++        />
++      );
++    }
++
++    if (activeMenu === "bankDocuments") {
++      return (
++        <BankDocumentsPanel
++          isSubscriptionExpired={subInfo.isExpired}
++          subscriptionExpiresAt={subInfo.expiresAt}
++          subscriptionPlan={subInfo.plan}
++        />
++      );
++    }
++
++    if (activeMenu === "invoices") {
++      return (
++        <InvoiceCenterPanel
++          invoices={invoices}
++          loading={invoicesLoading}
++          uploading={invoiceUploading}
++          selectedInvoice={selectedInvoice}
++          onSelectInvoice={setSelectedInvoice}
++          isSubscriptionExpired={subInfo.isExpired}
++          subscriptionExpiresAt={subInfo.expiresAt}
++          subscriptionPlan={subInfo.plan}
++          onUpload={async (files) => {
++            for (const file of files) {
++              try {
++                await uploadAndAnalyze(file);
++              } catch (err: any) {
++                console.error(`[App] Invoice upload error for ${file.name}:`, err);
++                alert(`Hata (${file.name}): ${err.message || 'Bilinmeyen hata'}`);
++              }
++            }
++          }}
++          fetchItems={fetchInvoiceItems}
++          onAccountClick={(item: any) => setSelectedDetailItem(item)}
++          onUpdateInvoice={updateInvoice}
++          onUpdateInvoiceItems={updateInvoiceItems}
++        />
++      );
++    }
++
++    if (activeMenu === "maliMusavir") {
++      return (
++        <MaliMusavirPanel 
++          invoices={invoices} 
++          fetchItems={fetchInvoiceItems} 
++        />
++      );
++    }
++
++    if (activeMenu === "campaigns" && userRole === "admin") {
++      return <CampaignsPanel />;
++    }
++
++    if (activeMenu === "hesapPlanlari2" && userRole === "admin") {
++      return <HesapPlanlari2Panel />;
++    }
++
++    if (activeMenu === "subscription") {
++      return (
++        <SubscriptionPanel
++          purchasedPeriods={subInfo.purchasedPeriods}
++          onPlanSelected={async (plan: any, selectedPeriods?: string[]) => {
++            if (session?.user?.id) {
++              // ⚠ GÜVENLİK (YKS-04): Abonelik kaydı Supabase'e yazılır.
++              // Ödeme entegrasyonu (Stripe vb.) tamamlanınca bu kayıt
++              // webhook üzerinden sunucu tarafında oluşturulmalıdır.
++              try {
++                let dbSuccess = false;
++                if (selectedPeriods && selectedPeriods.length > 0) {
++                  // Dönemsel kayıtlar oluştur
++                  const rows = selectedPeriods.map(p => {
++                    const [year, month] = p.split("-").map(Number);
++                    return {
++                      user_id: session.user.id,
++                      period_year: year,
++                      period_month: month,
++                      plan_type: plan?.key || "monthly",
++                      price_paid: (plan?.price || 0) / selectedPeriods.length,
++                    };
++                  });
++                  const { error: upsertError } = await supabase
++                    .from("subscription_periods")
++                    .upsert(rows, { onConflict: "user_id,period_year,period_month" });
++
++                  if (upsertError) {
++                    console.warn("[App] subscription_periods upsert hatası:", upsertError.message);
++                  } else {
++                    dbSuccess = true;
++                  }
++                }
++
++                // Geriye uyumluluk: eski subscriptions tablosuna da özet kayıt
++                try {
++                  await supabase.from("subscriptions").upsert({
++                    user_id: session.user.id,
++                    status: "active",
++                    plan: plan?.key || "monthly",
++                    updated_at: new Date().toISOString(),
++                  }, { onConflict: "user_id" });
++                } catch { /* eski tablo yoksa görmezden gel */ }
++
++                // Her durumda localStorage'ı da güncelle (DB + localStorage senkron)
++                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
++                  periods: selectedPeriods || [],
++                  plan: plan?.key || "monthly",
++                }));
++
++                if (!dbSuccess) {
++                  console.warn("[App] DB yazılamadı, localStorage fallback aktif");
++                }
++              } catch (e) {
++                console.error("[App] Abonelik kayıt hatası:", e);
++                // localStorage fallback — her durumda kaydet
++                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
++                  periods: selectedPeriods || [],
++                  plan: plan?.key || "monthly",
++                }));
++              }
++              window.dispatchEvent(new Event("subscription_updated"));
++              setHasSubscription(true);
++              setActiveMenu("dashboard");
++            }
++          }}
++        />
++      );
++    }
++
++    return (
++      <div
++        className="flex-1 flex flex-col items-center justify-center"
++        style={{ background: "#111318" }}
++      >
++        <div className="text-center">
++          <div className="font-mono text-4xl mb-4" style={{ color: "#1c1f27" }}>
++            ⊘
++          </div>
++          <div className="text-sm font-syne font-semibold" style={{ color: "#3a3f4a" }}>
++            {t[activeMenu as keyof typeof t] as string}
++          </div>
++          {(activeMenu === "accountPlans" || activeMenu === "companies") && (
++            <div
++              className="text-xs mt-2 px-3 py-1.5 rounded-full inline-block"
++              style={{
++                background: "rgba(255,255,255,.04)",
++                color: "#3a3f4a",
++                border: "1px solid #1c1f27",
++              }}
++            >
++              Admin erişimi gerekiyor
++            </div>
++          )}
++        </div>
++      </div>
++    );
++  };
++
++  const renderRightPanel = () => {
++    if (!isRightPanelOpen) return null;
++
++    if (activeMenu === "companies" && userRole === "admin") {
++      return (
++        <CompanyRightPanel
++          selectedCompany={selectedCompany}
++          userRole={userRole}
++          onCompanyUpdated={fetchCompanies}
++          onCompanyDeleted={() => {
++            setSelectedCompany(null);
++            fetchCompanies();
++          }}
++        />
++      );
++    }
++
++    if (activeMenu === "invoices" && selectedInvoice) {
++      return (
++        <InvoiceRightPanel
++          selectedInvoice={selectedInvoice}
++          onClose={() => { setSelectedInvoice(null); setSelectedDetailItem(null); }}
++          onDelete={async (inv) => {
++            await deleteInvoice(inv.id);
++            setSelectedInvoice(null);
++            setSelectedDetailItem(null);
++          }}
++          detailItem={selectedDetailItem}
++          onClearDetailItem={() => setSelectedDetailItem(null)}
++        />
++      );
++    }
++
++    return <RightPanel selectedRow={selectedRow} activeMenu={activeMenu} />;
++  };
++
++  return (
++    <ToastProvider>
++      <LangContext.Provider value={{ t, lang, setLang }}>
++        {!session ? (
++          <AuthScreen onAuth={setSession} />
++        ) : (
++          <div
++            className="flex h-screen overflow-hidden flex-col md:flex-row"
++            style={{
++              background: "#111318",
++              color: "#e2e8f0",
++              fontFamily: "'Plus Jakarta Sans', sans-serif",
++            }}
++          >
++            <LeftPanel
++              activeMenu={activeMenu}
++              setActiveMenu={handleMenuChange}
++              userEmail={session.user.email}
++              userRole={userRole}
++              onLogout={handleLogout}
++              onSelectCustomer={userRole === "admin" ? handleSelectCustomer : undefined}
++              subInfo={subInfo}
++            />
++
++            <div
++              className={`flex-1 flex flex-col overflow-hidden pb-0 ${isRightPanelOpen ? "hidden md:flex" : "flex"
++                }`}
++              style={{ minWidth: 0, minHeight: 0 }}
++            >
++              {renderCenterPanel()}
++            </div>
++
++            <div
++              className={`${isRightPanelOpen
++                ? "fixed inset-0 z-50 md:static md:w-auto md:block"
++                : "hidden md:block"
++                }`}
++              style={{ background: "#111318", flexShrink: 0 }}
++            >
++              {renderRightPanel()}
++            </div>
++
++            {/* ══ MOBILE BOTTOM NAV ══ */}
++            {!isRightPanelOpen && (
++              <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe flex items-stretch justify-around"
++                style={{
++                  background: "rgba(7,10,16,.96)",
++                  backdropFilter: "blur(20px)",
++                  borderTop: "1px solid rgba(255,255,255,.07)",
++                  padding: "0",
++                  height: "56px",
++                }}>
++                {([
++                  { key: "dashboard" as MenuKey, icon: <LayoutDashboard size={18} />, label: t.dashboard },
++                  { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
++                  { key: "reports" as MenuKey, icon: <BarChart3 size={18} />, label: t.reports },
++                  { key: "bankDocuments" as MenuKey, icon: <Building2 size={18} />, label: t.bankDocuments },
++                  { key: "maliMusavir" as MenuKey, icon: <Briefcase size={18} />, label: t.maliMusavir },
++                  { key: "settings" as MenuKey, icon: <Settings2 size={18} />, label: t.settings },
++                ] as const).map(item => {
++                  const isActive = activeMenu === item.key;
++                  return (
++                    <button
++                      key={item.key}
++                      onClick={() => handleMenuChange(item.key)}
++                      style={{
++                        flex: 1,
++                        display: "flex",
++                        flexDirection: "column",
++                        alignItems: "center",
++                        justifyContent: "center",
++                        gap: "2px",
++                        background: "transparent",
++                        border: "none",
++                        cursor: "pointer",
++                        color: isActive ? "#06b6d4" : "var(--text-dim)",
++                        position: "relative",
++                        transition: "color .15s",
++                        padding: "4px 0",
++                      }}
++                    >
++                      {isActive && (
++                        <span style={{
++                          position: "absolute", top: 0, left: "25%", right: "25%", height: "2px",
++                          borderRadius: "0 0 2px 2px",
++                          background: "#06b6d4",
++                          boxShadow: "0 0 8px rgba(6,182,212,.6)",
++                        }} />
++                      )}
++                      {item.icon}
++                      <span style={{
++                        fontSize: "9px",
++                        fontWeight: isActive ? 700 : 500,
++                        fontFamily: "'Plus Jakarta Sans', sans-serif",
++                        letterSpacing: ".02em",
++                        lineHeight: 1,
++                        maxWidth: "56px",
++                        overflow: "hidden",
++                        textOverflow: "ellipsis",
++                        whiteSpace: "nowrap",
++                      }}>
++                        {item.label}
++                      </span>
++                    </button>
++                  );
++                })}
++              </nav>
++            )}
++          </div>
++        )}
++      </LangContext.Provider>
++    </ToastProvider>
++  );
++}
+diff --git a/components/PeriodPicker.tsx b/components/PeriodPicker.tsx
+index c018c66..9dd033f 100644
+--- a/components/PeriodPicker.tsx
++++ b/components/PeriodPicker.tsx
+@@ -1,342 +1,342 @@
+-import React, { useState, useMemo } from "react";
+-import { motion } from "motion/react";
+-import { useLang } from "../LanguageContext";
+-import { ChevronLeft, ChevronRight, Lock, Check } from "lucide-react";
+-import {
+-  getMonthAbbr,
+-  getCurrentPeriod,
+-  getSelectablePeriods,
+-  isPeriodPast,
+-  type Language,
+-} from "../services/periodUtils";
+-
+-interface PeriodPickerProps {
+-  planType: string; // "monthly" | "quarterly" | "yearly"
+-  purchasedPeriods: string[]; // zaten satın alınmış dönemler
+-  onPeriodsSelected: (periods: string[]) => void;
+-  onUpgradeRequest?: () => void; // aylık kullanıcı kilitli aya tıklayınca
+-}
+-
+-export const PeriodPicker: React.FC<PeriodPickerProps> = ({
+-  planType,
+-  purchasedPeriods,
+-  onPeriodsSelected,
+-  onUpgradeRequest,
+-}) => {
+-  const { lang } = useLang();
+-  const tr = (a: string, b: string) => (lang === "tr" ? a : b);
+-
+-  const now = new Date();
+-  const [viewYear, setViewYear] = useState(now.getFullYear());
+-
+-  const currentPeriod = getCurrentPeriod();
+-  const currentYear = now.getFullYear();
+-
+-  // Plan tipine göre seçilebilir dönemler
+-  const selectablePeriods = useMemo(() => getSelectablePeriods(planType), [planType]);
+-
+-  // Seçili dönemler (otomatik hesaplanır)
+-  const selectedPeriods = useMemo(() => {
+-    // Sadece görüntülenen yıla ait seçilebilir dönemleri filtrele
+-    return selectablePeriods.filter(p => {
+-      const y = parseInt(p.split("-")[0], 10);
+-      return y === viewYear && !purchasedPeriods.includes(p);
+-    });
+-  }, [selectablePeriods, viewYear, purchasedPeriods]);
+-
+-  const handleConfirm = () => {
+-    if (selectedPeriods.length > 0) {
+-      onPeriodsSelected(selectedPeriods);
+-    }
+-  };
+-
+-  const getMonthStatus = (monthIndex: number): "purchased" | "selected" | "locked" | "available" | "future" => {
+-    const period = `${viewYear}-${String(monthIndex + 1).padStart(2, "0")}`;
+-
+-    if (purchasedPeriods.includes(period)) return "purchased";
+-    if (selectedPeriods.includes(period)) return "selected";
+-
+-    // Geçmiş ay kontrolü
+-    if (isPeriodPast(period)) {
+-      if (planType === "monthly") return "locked";
+-      if (selectablePeriods.includes(period)) return "selected";
+-      return "locked";
+-    }
+-
+-    // Gelecek ay: mevcut plan kapsamında mı?
+-    if (selectablePeriods.includes(period)) return "selected";
+-
+-    return "future";
+-  };
+-
+-  const getCellStyle = (status: string) => {
+-    const base: React.CSSProperties = {
+-      display: "flex",
+-      flexDirection: "column",
+-      alignItems: "center",
+-      justifyContent: "center",
+-      gap: "4px",
+-      padding: "12px 8px",
+-      borderRadius: "12px",
+-      cursor: status === "locked" ? "pointer" : status === "purchased" ? "default" : "default",
+-      transition: "all 0.2s ease",
+-      position: "relative",
+-    };
+-
+-    switch (status) {
+-      case "purchased":
+-        return {
+-          ...base,
+-          background: "rgba(16, 185, 129, 0.15)",
+-          border: "1px solid rgba(16, 185, 129, 0.3)",
+-        };
+-      case "selected":
+-        return {
+-          ...base,
+-          background: "rgba(249, 115, 22, 0.15)",
+-          border: "2px solid rgba(249, 115, 22, 0.5)",
+-          boxShadow: "0 0 12px rgba(249, 115, 22, 0.1)",
+-        };
+-      case "locked":
+-        return {
+-          ...base,
+-          background: "rgba(255, 255, 255, 0.02)",
+-          border: "1px solid rgba(255, 255, 255, 0.06)",
+-          opacity: 0.5,
+-        };
+-      case "future":
+-        return {
+-          ...base,
+-          background: "rgba(255, 255, 255, 0.03)",
+-          border: "1px solid rgba(255, 255, 255, 0.06)",
+-          opacity: 0.4,
+-        };
+-      default:
+-        return {
+-          ...base,
+-          background: "rgba(255, 255, 255, 0.04)",
+-          border: "1px solid rgba(255, 255, 255, 0.08)",
+-        };
+-    }
+-  };
+-
+-  const planLabels: Record<string, string> = {
+-    monthly: tr("Aylık Plan — Mevcut Ay", "Monatsplan — Aktueller Monat"),
+-    quarterly: tr("3 Aylık Plan — Mevcut Çeyrek", "Quartalsplan — Aktuelles Quartal"),
+-    yearly: tr("Yıllık Plan — Tüm Yıl", "Jahresplan — Gesamtes Jahr"),
+-  };
+-
+-  return (
+-    <motion.div
+-      initial={{ opacity: 0, y: 20 }}
+-      animate={{ opacity: 1, y: 0 }}
+-      transition={{ duration: 0.4 }}
+-      style={{
+-        maxWidth: "480px",
+-        margin: "0 auto",
+-        padding: "32px",
+-        borderRadius: "20px",
+-        background: "rgba(18, 18, 24, 0.95)",
+-        border: "1px solid rgba(255, 255, 255, 0.08)",
+-        backdropFilter: "blur(20px)",
+-      }}
+-    >
+-      {/* Başlık */}
+-      <div style={{ textAlign: "center", marginBottom: "24px" }}>
+-        <h2 style={{
+-          fontSize: "20px", fontWeight: 700, color: "#fff", margin: "0 0 8px 0",
+-        }}>
+-          {tr("Dönem Seçin", "Zeitraum wählen")}
+-        </h2>
+-        <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)", margin: 0 }}>
+-          {planLabels[planType] || ""}
+-        </p>
+-      </div>
+-
+-      {/* Yıl Navigasyonu */}
+-      <div style={{
+-        display: "flex", alignItems: "center", justifyContent: "center",
+-        gap: "16px", marginBottom: "20px",
+-      }}>
+-        <button
+-          onClick={() => setViewYear(v => v - 1)}
+-          disabled={viewYear <= currentYear}
+-          style={{
+-            background: "rgba(255,255,255,0.06)",
+-            border: "1px solid rgba(255,255,255,0.1)",
+-            borderRadius: "8px",
+-            padding: "6px",
+-            cursor: viewYear <= currentYear ? "not-allowed" : "pointer",
+-            opacity: viewYear <= currentYear ? 0.3 : 1,
+-            color: "#fff",
+-            display: "flex",
+-          }}
+-        >
+-          <ChevronLeft size={18} />
+-        </button>
+-
+-        <span style={{
+-          fontSize: "18px", fontWeight: 700, color: "#fff",
+-          minWidth: "60px", textAlign: "center",
+-        }}>
+-          {viewYear}
+-        </span>
+-
+-        <button
+-          onClick={() => setViewYear(v => v + 1)}
+-          style={{
+-            background: "rgba(255,255,255,0.06)",
+-            border: "1px solid rgba(255,255,255,0.1)",
+-            borderRadius: "8px",
+-            padding: "6px",
+-            cursor: "pointer",
+-            color: "#fff",
+-            display: "flex",
+-          }}
+-        >
+-          <ChevronRight size={18} />
+-        </button>
+-      </div>
+-
+-      {/* 12 Aylık Grid */}
+-      <div style={{
+-        display: "grid",
+-        gridTemplateColumns: "repeat(3, 1fr)",
+-        gap: "8px",
+-        marginBottom: "24px",
+-      }}>
+-        {Array.from({ length: 12 }, (_, i) => {
+-          const status = getMonthStatus(i);
+-          const period = `${viewYear}-${String(i + 1).padStart(2, "0")}`;
+-          const isCurrent = period === currentPeriod;
+-
+-          return (
+-            <motion.div
+-              key={i}
+-              whileHover={status === "locked" ? { scale: 1.02 } : {}}
+-              onClick={() => {
+-                if (status === "locked" && onUpgradeRequest) {
+-                  onUpgradeRequest();
+-                }
+-              }}
+-              style={getCellStyle(status)}
+-            >
+-              {/* Durum ikonu */}
+-              {status === "purchased" && (
+-                <Check size={14} color="#10b981" />
+-              )}
+-              {status === "locked" && (
+-                <Lock size={12} color="rgba(255,255,255,0.3)" />
+-              )}
+-
+-              <span style={{
+-                fontSize: "13px",
+-                fontWeight: isCurrent ? 700 : 500,
+-                color: status === "purchased" ? "#10b981"
+-                  : status === "selected" ? "#f97316"
+-                  : "rgba(255,255,255,0.5)",
+-              }}>
+-                {getMonthAbbr(i, lang as Language)}
+-              </span>
+-
+-              {isCurrent && (
+-                <div style={{
+-                  width: "4px", height: "4px", borderRadius: "50%",
+-                  background: "#06b6d4",
+-                }} />
+-              )}
+-
+-              {status === "locked" && (
+-                <span style={{
+-                  fontSize: "8px", color: "rgba(255,255,255,0.25)",
+-                  textTransform: "uppercase", letterSpacing: "0.5px",
+-                }}>
+-                  {tr("Kilitli", "Gesperrt")}
+-                </span>
+-              )}
+-            </motion.div>
+-          );
+-        })}
+-      </div>
+-
+-      {/* Lejant */}
+-      <div style={{
+-        display: "flex", gap: "16px", justifyContent: "center",
+-        marginBottom: "24px", flexWrap: "wrap",
+-      }}>
+-        {[
+-          { color: "#10b981", label: tr("Satın Alınmış", "Gekauft") },
+-          { color: "#f97316", label: tr("Seçili", "Ausgewählt") },
+-          { color: "rgba(255,255,255,0.2)", label: tr("Kilitli", "Gesperrt") },
+-        ].map((item, i) => (
+-          <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+-            <div style={{
+-              width: "8px", height: "8px", borderRadius: "50%",
+-              background: item.color,
+-            }} />
+-            <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>
+-              {item.label}
+-            </span>
+-          </div>
+-        ))}
+-      </div>
+-
+-      {/* Seçili dönem özeti */}
+-      {selectedPeriods.length > 0 && (
+-        <div style={{
+-          padding: "12px 16px",
+-          borderRadius: "12px",
+-          background: "rgba(249, 115, 22, 0.08)",
+-          border: "1px solid rgba(249, 115, 22, 0.2)",
+-          marginBottom: "20px",
+-          fontSize: "13px",
+-          color: "rgba(255,255,255,0.7)",
+-        }}>
+-          <span style={{ fontWeight: 600, color: "#f97316" }}>
+-            {selectedPeriods.length} {tr("dönem seçildi", "Zeiträume ausgewählt")}
+-          </span>
+-        </div>
+-      )}
+-
+-      {/* Onay Butonu */}
+-      <motion.button
+-        whileHover={{ scale: 1.02 }}
+-        whileTap={{ scale: 0.98 }}
+-        onClick={handleConfirm}
+-        disabled={selectedPeriods.length === 0}
+-        style={{
+-          width: "100%",
+-          padding: "14px 0",
+-          borderRadius: "12px",
+-          border: "none",
+-          background: selectedPeriods.length > 0
+-            ? "linear-gradient(135deg, #f97316, #ea580c)"
+-            : "rgba(255,255,255,0.06)",
+-          color: selectedPeriods.length > 0 ? "#fff" : "rgba(255,255,255,0.3)",
+-          fontSize: "15px",
+-          fontWeight: 600,
+-          cursor: selectedPeriods.length > 0 ? "pointer" : "not-allowed",
+-          transition: "all 0.25s ease",
+-        }}
+-      >
+-        {tr("Devam Et", "Weiter")}
+-      </motion.button>
+-
+-      {/* Aylık plan uyarısı */}
+-      {planType === "monthly" && (
+-        <p style={{
+-          textAlign: "center",
+-          fontSize: "11px",
+-          color: "rgba(255,255,255,0.25)",
+-          marginTop: "16px",
+-          lineHeight: 1.5,
+-        }}>
+-          {tr(
+-            "Geçmiş dönemlere erişmek için 3 Aylık veya Yıllık plana geçin.",
+-            "Für Zugriff auf vergangene Zeiträume wechseln Sie zum Quartals- oder Jahresplan."
+-          )}
+-        </p>
+-      )}
+-    </motion.div>
+-  );
+-};
++import React, { useState, useMemo } from "react";
++import { motion } from "motion/react";
++import { useLang } from "../LanguageContext";
++import { ChevronLeft, ChevronRight, Lock, Check } from "lucide-react";
++import {
++  getMonthAbbr,
++  getCurrentPeriod,
++  getSelectablePeriods,
++  isPeriodPast,
++  type Language,
++} from "../services/periodUtils";
++
++interface PeriodPickerProps {
++  planType: string; // "monthly" | "quarterly" | "yearly"
++  purchasedPeriods: string[]; // zaten satın alınmış dönemler
++  onPeriodsSelected: (periods: string[]) => void;
++  onUpgradeRequest?: () => void; // aylık kullanıcı kilitli aya tıklayınca
++}
++
++export const PeriodPicker: React.FC<PeriodPickerProps> = ({
++  planType,
++  purchasedPeriods,
++  onPeriodsSelected,
++  onUpgradeRequest,
++}) => {
++  const { lang } = useLang();
++  const tr = (a: string, b: string) => (lang === "tr" ? a : b);
++
++  const now = new Date();
++  const [viewYear, setViewYear] = useState(now.getFullYear());
++
++  const currentPeriod = getCurrentPeriod();
++  const currentYear = now.getFullYear();
++
++  // Plan tipine göre seçilebilir dönemler (satın alınmış geçmiş dönemler dahil)
++  const selectablePeriods = useMemo(() => getSelectablePeriods(planType, purchasedPeriods), [planType, purchasedPeriods]);
++
++  // Seçili dönemler (otomatik hesaplanır)
++  const selectedPeriods = useMemo(() => {
++    // Sadece görüntülenen yıla ait seçilebilir dönemleri filtrele
++    return selectablePeriods.filter(p => {
++      const y = parseInt(p.split("-")[0], 10);
++      return y === viewYear && !purchasedPeriods.includes(p);
++    });
++  }, [selectablePeriods, viewYear, purchasedPeriods]);
++
++  const handleConfirm = () => {
++    if (selectedPeriods.length > 0) {
++      onPeriodsSelected(selectedPeriods);
++    }
++  };
++
++  const getMonthStatus = (monthIndex: number): "purchased" | "selected" | "locked" | "available" | "future" => {
++    const period = `${viewYear}-${String(monthIndex + 1).padStart(2, "0")}`;
++
++    if (purchasedPeriods.includes(period)) return "purchased";
++    if (selectedPeriods.includes(period)) return "selected";
++
++    // Geçmiş ay kontrolü
++    if (isPeriodPast(period)) {
++      if (planType === "monthly") return "locked";
++      if (selectablePeriods.includes(period)) return "selected";
++      return "locked";
++    }
++
++    // Gelecek ay: mevcut plan kapsamında mı?
++    if (selectablePeriods.includes(period)) return "selected";
++
++    return "future";
++  };
++
++  const getCellStyle = (status: string) => {
++    const base: React.CSSProperties = {
++      display: "flex",
++      flexDirection: "column",
++      alignItems: "center",
++      justifyContent: "center",
++      gap: "4px",
++      padding: "12px 8px",
++      borderRadius: "12px",
++      cursor: status === "locked" ? "pointer" : status === "purchased" ? "default" : "default",
++      transition: "all 0.2s ease",
++      position: "relative",
++    };
++
++    switch (status) {
++      case "purchased":
++        return {
++          ...base,
++          background: "rgba(16, 185, 129, 0.15)",
++          border: "1px solid rgba(16, 185, 129, 0.3)",
++        };
++      case "selected":
++        return {
++          ...base,
++          background: "rgba(249, 115, 22, 0.15)",
++          border: "2px solid rgba(249, 115, 22, 0.5)",
++          boxShadow: "0 0 12px rgba(249, 115, 22, 0.1)",
++        };
++      case "locked":
++        return {
++          ...base,
++          background: "rgba(255, 255, 255, 0.02)",
++          border: "1px solid rgba(255, 255, 255, 0.06)",
++          opacity: 0.5,
++        };
++      case "future":
++        return {
++          ...base,
++          background: "rgba(255, 255, 255, 0.03)",
++          border: "1px solid rgba(255, 255, 255, 0.06)",
++          opacity: 0.4,
++        };
++      default:
++        return {
++          ...base,
++          background: "rgba(255, 255, 255, 0.04)",
++          border: "1px solid rgba(255, 255, 255, 0.08)",
++        };
++    }
++  };
++
++  const planLabels: Record<string, string> = {
++    monthly: tr("Aylık Plan — Mevcut Ay", "Monatsplan — Aktueller Monat"),
++    quarterly: tr("3 Aylık Plan — Mevcut Çeyrek", "Quartalsplan — Aktuelles Quartal"),
++    yearly: tr("Yıllık Plan — Tüm Yıl", "Jahresplan — Gesamtes Jahr"),
++  };
++
++  return (
++    <motion.div
++      initial={{ opacity: 0, y: 20 }}
++      animate={{ opacity: 1, y: 0 }}
++      transition={{ duration: 0.4 }}
++      style={{
++        maxWidth: "480px",
++        margin: "0 auto",
++        padding: "32px",
++        borderRadius: "20px",
++        background: "rgba(18, 18, 24, 0.95)",
++        border: "1px solid rgba(255, 255, 255, 0.08)",
++        backdropFilter: "blur(20px)",
++      }}
++    >
++      {/* Başlık */}
++      <div style={{ textAlign: "center", marginBottom: "24px" }}>
++        <h2 style={{
++          fontSize: "20px", fontWeight: 700, color: "#fff", margin: "0 0 8px 0",
++        }}>
++          {tr("Dönem Seçin", "Zeitraum wählen")}
++        </h2>
++        <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)", margin: 0 }}>
++          {planLabels[planType] || ""}
++        </p>
++      </div>
++
++      {/* Yıl Navigasyonu */}
++      <div style={{
++        display: "flex", alignItems: "center", justifyContent: "center",
++        gap: "16px", marginBottom: "20px",
++      }}>
++        <button
++          onClick={() => setViewYear(v => v - 1)}
++          disabled={viewYear <= currentYear - 2}
++          style={{
++            background: "rgba(255,255,255,0.06)",
++            border: "1px solid rgba(255,255,255,0.1)",
++            borderRadius: "8px",
++            padding: "6px",
++            cursor: viewYear <= currentYear - 2 ? "not-allowed" : "pointer",
++            opacity: viewYear <= currentYear - 2 ? 0.3 : 1,
++            color: "#fff",
++            display: "flex",
++          }}
++        >
++          <ChevronLeft size={18} />
++        </button>
++
++        <span style={{
++          fontSize: "18px", fontWeight: 700, color: "#fff",
++          minWidth: "60px", textAlign: "center",
++        }}>
++          {viewYear}
++        </span>
++
++        <button
++          onClick={() => setViewYear(v => v + 1)}
++          style={{
++            background: "rgba(255,255,255,0.06)",
++            border: "1px solid rgba(255,255,255,0.1)",
++            borderRadius: "8px",
++            padding: "6px",
++            cursor: "pointer",
++            color: "#fff",
++            display: "flex",
++          }}
++        >
++          <ChevronRight size={18} />
++        </button>
++      </div>
++
++      {/* 12 Aylık Grid */}
++      <div style={{
++        display: "grid",
++        gridTemplateColumns: "repeat(3, 1fr)",
++        gap: "8px",
++        marginBottom: "24px",
++      }}>
++        {Array.from({ length: 12 }, (_, i) => {
++          const status = getMonthStatus(i);
++          const period = `${viewYear}-${String(i + 1).padStart(2, "0")}`;
++          const isCurrent = period === currentPeriod;
++
++          return (
++            <motion.div
++              key={i}
++              whileHover={status === "locked" ? { scale: 1.02 } : {}}
++              onClick={() => {
++                if (status === "locked" && onUpgradeRequest) {
++                  onUpgradeRequest();
++                }
++              }}
++              style={getCellStyle(status)}
++            >
++              {/* Durum ikonu */}
++              {status === "purchased" && (
++                <Check size={14} color="#10b981" />
++              )}
++              {status === "locked" && (
++                <Lock size={12} color="rgba(255,255,255,0.3)" />
++              )}
++
++              <span style={{
++                fontSize: "13px",
++                fontWeight: isCurrent ? 700 : 500,
++                color: status === "purchased" ? "#10b981"
++                  : status === "selected" ? "#f97316"
++                  : "rgba(255,255,255,0.5)",
++              }}>
++                {getMonthAbbr(i, lang as Language)}
++              </span>
++
++              {isCurrent && (
++                <div style={{
++                  width: "4px", height: "4px", borderRadius: "50%",
++                  background: "#06b6d4",
++                }} />
++              )}
++
++              {status === "locked" && (
++                <span style={{
++                  fontSize: "8px", color: "rgba(255,255,255,0.25)",
++                  textTransform: "uppercase", letterSpacing: "0.5px",
++                }}>
++                  {tr("Kilitli", "Gesperrt")}
++                </span>
++              )}
++            </motion.div>
++          );
++        })}
++      </div>
++
++      {/* Lejant */}
++      <div style={{
++        display: "flex", gap: "16px", justifyContent: "center",
++        marginBottom: "24px", flexWrap: "wrap",
++      }}>
++        {[
++          { color: "#10b981", label: tr("Satın Alınmış", "Gekauft") },
++          { color: "#f97316", label: tr("Seçili", "Ausgewählt") },
++          { color: "rgba(255,255,255,0.2)", label: tr("Kilitli", "Gesperrt") },
++        ].map((item, i) => (
++          <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
++            <div style={{
++              width: "8px", height: "8px", borderRadius: "50%",
++              background: item.color,
++            }} />
++            <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>
++              {item.label}
++            </span>
++          </div>
++        ))}
++      </div>
++
++      {/* Seçili dönem özeti */}
++      {selectedPeriods.length > 0 && (
++        <div style={{
++          padding: "12px 16px",
++          borderRadius: "12px",
++          background: "rgba(249, 115, 22, 0.08)",
++          border: "1px solid rgba(249, 115, 22, 0.2)",
++          marginBottom: "20px",
++          fontSize: "13px",
++          color: "rgba(255,255,255,0.7)",
++        }}>
++          <span style={{ fontWeight: 600, color: "#f97316" }}>
++            {selectedPeriods.length} {tr("dönem seçildi", "Zeiträume ausgewählt")}
++          </span>
++        </div>
++      )}
++
++      {/* Onay Butonu */}
++      <motion.button
++        whileHover={{ scale: 1.02 }}
++        whileTap={{ scale: 0.98 }}
++        onClick={handleConfirm}
++        disabled={selectedPeriods.length === 0}
++        style={{
++          width: "100%",
++          padding: "14px 0",
++          borderRadius: "12px",
++          border: "none",
++          background: selectedPeriods.length > 0
++            ? "linear-gradient(135deg, #f97316, #ea580c)"
++            : "rgba(255,255,255,0.06)",
++          color: selectedPeriods.length > 0 ? "#fff" : "rgba(255,255,255,0.3)",
++          fontSize: "15px",
++          fontWeight: 600,
++          cursor: selectedPeriods.length > 0 ? "pointer" : "not-allowed",
++          transition: "all 0.25s ease",
++        }}
++      >
++        {tr("Devam Et", "Weiter")}
++      </motion.button>
++
++      {/* Aylık plan uyarısı */}
++      {planType === "monthly" && (
++        <p style={{
++          textAlign: "center",
++          fontSize: "11px",
++          color: "rgba(255,255,255,0.25)",
++          marginTop: "16px",
++          lineHeight: 1.5,
++        }}>
++          {tr(
++            "Geçmiş dönemlere erişmek için 3 Aylık veya Yıllık plana geçin.",
++            "Für Zugriff auf vergangene Zeiträume wechseln Sie zum Quartals- oder Jahresplan."
++          )}
++        </p>
++      )}
++    </motion.div>
++  );
++};
+diff --git a/services/periodUtils.ts b/services/periodUtils.ts
+index ef6e17a..72bba0c 100644
+--- a/services/periodUtils.ts
++++ b/services/periodUtils.ts
+@@ -1,180 +1,213 @@
+-// ─── Dönemsel Abonelik Yardımcı Fonksiyonları ──────────────────────
+-
+-export type Language = "tr" | "de";
+-
+-const MONTH_NAMES_TR = [
+-  "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+-  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+-];
+-
+-const MONTH_NAMES_DE = [
+-  "Januar", "Februar", "März", "April", "Mai", "Juni",
+-  "Juli", "August", "September", "Oktober", "November", "Dezember",
+-];
+-
+-const MONTH_ABBR_TR = [
+-  "Oca", "Şub", "Mar", "Nis", "May", "Haz",
+-  "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara",
+-];
+-
+-const MONTH_ABBR_DE = [
+-  "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+-  "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+-];
+-
+-/** Mevcut takvim dönemini döndürür: "2026-03" */
+-export function getCurrentPeriod(): string {
+-  const now = new Date();
+-  const y = now.getFullYear();
+-  const m = now.getMonth() + 1;
+-  return `${y}-${String(m).padStart(2, "0")}`;
+-}
+-
+-/** "2026-03" → "Mart 2026" veya "März 2026" */
+-export function formatPeriodLabel(period: string, lang: Language): string {
+-  const [y, m] = period.split("-").map(Number);
+-  const names = lang === "tr" ? MONTH_NAMES_TR : MONTH_NAMES_DE;
+-  return `${names[m - 1]} ${y}`;
+-}
+-
+-/** "2026-03" → "Mar" veya "Mär" */
+-export function formatPeriodAbbr(period: string, lang: Language): string {
+-  const m = parseInt(period.split("-")[1], 10);
+-  const abbr = lang === "tr" ? MONTH_ABBR_TR : MONTH_ABBR_DE;
+-  return abbr[m - 1];
+-}
+-
+-/** Ay index (0-11) → Ay ismi */
+-export function getMonthName(monthIndex: number, lang: Language): string {
+-  const names = lang === "tr" ? MONTH_NAMES_TR : MONTH_NAMES_DE;
+-  return names[monthIndex] || "";
+-}
+-
+-/** Ay index (0-11) → Kısa ay ismi */
+-export function getMonthAbbr(monthIndex: number, lang: Language): string {
+-  const abbr = lang === "tr" ? MONTH_ABBR_TR : MONTH_ABBR_DE;
+-  return abbr[monthIndex] || "";
+-}
+-
+-/** Belirtilen başlangıçtan itibaren count adet dönem üretir */
+-export function generatePeriods(startYear: number, startMonth: number, count: number): string[] {
+-  const periods: string[] = [];
+-  let y = startYear;
+-  let m = startMonth;
+-  for (let i = 0; i < count; i++) {
+-    periods.push(`${y}-${String(m).padStart(2, "0")}`);
+-    m++;
+-    if (m > 12) { m = 1; y++; }
+-  }
+-  return periods;
+-}
+-
+-/** Mevcut çeyreğin aylarını döndürür: Q1=[1,2,3], Q2=[4,5,6], vb. */
+-export function getCurrentQuarterMonths(year: number, month: number): string[] {
+-  const q = Math.ceil(month / 3);
+-  const startMonth = (q - 1) * 3 + 1;
+-  return generatePeriods(year, startMonth, 3);
+-}
+-
+-/** Mevcut yılın tüm aylarını döndürür */
+-export function getYearPeriods(year: number): string[] {
+-  return generatePeriods(year, 1, 12);
+-}
+-
+-/** Çeyrek numarası (1-4) döndürür */
+-export function getQuarter(month: number): number {
+-  return Math.ceil(month / 3);
+-}
+-
+-/** Çeyrek etiketi: "Q1 2026" / "1. Çeyrek 2026" */
+-export function getQuarterLabel(year: number, quarter: number, lang: Language): string {
+-  if (lang === "tr") return `${quarter}. Çeyrek ${year}`;
+-  return `Q${quarter} ${year}`;
+-}
+-
+-/** İki dönemi karşılaştırır: negatif = a önce, pozitif = b önce */
+-export function comparePeriods(a: string, b: string): number {
+-  return a.localeCompare(b);
+-}
+-
+-/** Dönem mevcut aya eşit mi? */
+-export function isPeriodCurrent(period: string): boolean {
+-  return period === getCurrentPeriod();
+-}
+-
+-/** Dönem geçmişte mi? */
+-export function isPeriodPast(period: string): boolean {
+-  return period < getCurrentPeriod();
+-}
+-
+-/** Dönem gelecekte mi? */
+-export function isPeriodFuture(period: string): boolean {
+-  return period > getCurrentPeriod();
+-}
+-
+-/**
+- * Plan tipine göre seçilebilir dönemleri hesaplar.
+- * - monthly: sadece mevcut ay
+- * - quarterly: mevcut çeyreğin ayları (geçmiş dahil)
+- * - yearly: mevcut yılın tüm ayları (geçmiş dahil)
+- */
+-export function getSelectablePeriods(planType: string): string[] {
+-  const now = new Date();
+-  const year = now.getFullYear();
+-  const month = now.getMonth() + 1;
+-
+-  switch (planType) {
+-    case "quarterly":
+-      return getCurrentQuarterMonths(year, month);
+-    case "yearly":
+-      return getYearPeriods(year);
+-    case "monthly":
+-    default:
+-      return [getCurrentPeriod()];
+-  }
+-}
+-
+-/**
+- * Aylık abonelerin erişemeyeceği kilitli dönemleri hesaplar.
+- * PeriodPicker'da upgrade teşviki için kullanılır.
+- */
+-export function getLockedPastPeriods(planType: string): string[] {
+-  if (planType !== "monthly") return [];
+-
+-  const now = new Date();
+-  const year = now.getFullYear();
+-  const month = now.getMonth() + 1;
+-  const periods: string[] = [];
+-
+-  // Mevcut yılın geçmiş ayları (mevcut ay hariç)
+-  for (let m = 1; m < month; m++) {
+-    periods.push(`${year}-${String(m).padStart(2, "0")}`);
+-  }
+-  return periods;
+-}
+-
+-/** Satın alınan dönemlerden aktif durumu hesaplar */
+-export function getPeriodStatus(purchasedPeriods: string[]) {
+-  const current = getCurrentPeriod();
+-  const isActive = purchasedPeriods.includes(current);
+-  const futureAndCurrent = purchasedPeriods.filter(p => p >= current);
+-  const remainingMonths = futureAndCurrent.length;
+-
+-  return {
+-    isActive,
+-    isExpired: !isActive,
+-    currentPeriod: current,
+-    remainingMonths,
+-    activePeriods: futureAndCurrent.sort(),
+-  };
+-}
+-
+-/** Son satın alınan ayın son gününü Date olarak döndürür (geriye uyumluluk) */
+-export function getExpiresAtFromPeriods(purchasedPeriods: string[]): Date | null {
+-  if (purchasedPeriods.length === 0) return null;
+-  const sorted = [...purchasedPeriods].sort();
+-  const last = sorted[sorted.length - 1];
+-  const [y, m] = last.split("-").map(Number);
+-  // Ayın son günü: bir sonraki ayın 0. günü
+-  return new Date(y, m, 0, 23, 59, 59);
+-}
++// ─── Dönemsel Abonelik Yardımcı Fonksiyonları ──────────────────────
++
++export type Language = "tr" | "de";
++
++const MONTH_NAMES_TR = [
++  "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
++  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
++];
++
++const MONTH_NAMES_DE = [
++  "Januar", "Februar", "März", "April", "Mai", "Juni",
++  "Juli", "August", "September", "Oktober", "November", "Dezember",
++];
++
++const MONTH_ABBR_TR = [
++  "Oca", "Şub", "Mar", "Nis", "May", "Haz",
++  "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara",
++];
++
++const MONTH_ABBR_DE = [
++  "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
++  "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
++];
++
++/** Mevcut takvim dönemini döndürür: "2026-03" */
++export function getCurrentPeriod(): string {
++  const now = new Date();
++  const y = now.getFullYear();
++  const m = now.getMonth() + 1;
++  return `${y}-${String(m).padStart(2, "0")}`;
++}
++
++/** "2026-03" → "Mart 2026" veya "März 2026" */
++export function formatPeriodLabel(period: string, lang: Language): string {
++  const [y, m] = period.split("-").map(Number);
++  const names = lang === "tr" ? MONTH_NAMES_TR : MONTH_NAMES_DE;
++  return `${names[m - 1]} ${y}`;
++}
++
++/** "2026-03" → "Mar" veya "Mär" */
++export function formatPeriodAbbr(period: string, lang: Language): string {
++  const m = parseInt(period.split("-")[1], 10);
++  const abbr = lang === "tr" ? MONTH_ABBR_TR : MONTH_ABBR_DE;
++  return abbr[m - 1];
++}
++
++/** Ay index (0-11) → Ay ismi */
++export function getMonthName(monthIndex: number, lang: Language): string {
++  const names = lang === "tr" ? MONTH_NAMES_TR : MONTH_NAMES_DE;
++  return names[monthIndex] || "";
++}
++
++/** Ay index (0-11) → Kısa ay ismi */
++export function getMonthAbbr(monthIndex: number, lang: Language): string {
++  const abbr = lang === "tr" ? MONTH_ABBR_TR : MONTH_ABBR_DE;
++  return abbr[monthIndex] || "";
++}
++
++/** Belirtilen başlangıçtan itibaren count adet dönem üretir */
++export function generatePeriods(startYear: number, startMonth: number, count: number): string[] {
++  const periods: string[] = [];
++  let y = startYear;
++  let m = startMonth;
++  for (let i = 0; i < count; i++) {
++    periods.push(`${y}-${String(m).padStart(2, "0")}`);
++    m++;
++    if (m > 12) { m = 1; y++; }
++  }
++  return periods;
++}
++
++/** Mevcut çeyreğin aylarını döndürür: Q1=[1,2,3], Q2=[4,5,6], vb. */
++export function getCurrentQuarterMonths(year: number, month: number): string[] {
++  const q = Math.ceil(month / 3);
++  const startMonth = (q - 1) * 3 + 1;
++  return generatePeriods(year, startMonth, 3);
++}
++
++/** Mevcut yılın tüm aylarını döndürür */
++export function getYearPeriods(year: number): string[] {
++  return generatePeriods(year, 1, 12);
++}
++
++/** Çeyrek numarası (1-4) döndürür */
++export function getQuarter(month: number): number {
++  return Math.ceil(month / 3);
++}
++
++/** Çeyrek etiketi: "Q1 2026" / "1. Çeyrek 2026" */
++export function getQuarterLabel(year: number, quarter: number, lang: Language): string {
++  if (lang === "tr") return `${quarter}. Çeyrek ${year}`;
++  return `Q${quarter} ${year}`;
++}
++
++/** İki dönemi karşılaştırır: negatif = a önce, pozitif = b önce */
++export function comparePeriods(a: string, b: string): number {
++  return a.localeCompare(b);
++}
++
++/** Dönem mevcut aya eşit mi? */
++export function isPeriodCurrent(period: string): boolean {
++  return period === getCurrentPeriod();
++}
++
++/** Dönem geçmişte mi? */
++export function isPeriodPast(period: string): boolean {
++  return period < getCurrentPeriod();
++}
++
++/** Dönem gelecekte mi? */
++export function isPeriodFuture(period: string): boolean {
++  return period > getCurrentPeriod();
++}
++
++/**
++ * Plan tipine göre seçilebilir dönemleri hesaplar.
++ * - monthly: mevcut ay + geçmiş satın alınmış dönemler
++ * - quarterly: mevcut çeyreğin ayları + geçmiş satın alınmış dönemler
++ * - yearly: mevcut yılın tüm ayları + geçmiş yılın satın alınmış dönemleri
++ *
++ * purchasedPeriods parametresi verilirse, geçmişte satın alınmış dönemler
++ * de seçilebilir listeye eklenir (dönem çakışması sorunu giderildi).
++ */
++export function getSelectablePeriods(planType: string, purchasedPeriods?: string[]): string[] {
++  const now = new Date();
++  const year = now.getFullYear();
++  const month = now.getMonth() + 1;
++
++  let basePeriods: string[];
++  switch (planType) {
++    case "quarterly":
++      basePeriods = getCurrentQuarterMonths(year, month);
++      break;
++    case "yearly":
++      basePeriods = getYearPeriods(year);
++      break;
++    case "monthly":
++    default:
++      basePeriods = [getCurrentPeriod()];
++      break;
++  }
++
++  // Geçmişte satın alınmış dönemleri de ekle (tekrarları önle)
++  if (purchasedPeriods && purchasedPeriods.length > 0) {
++    const periodSet = new Set(basePeriods);
++    for (const p of purchasedPeriods) {
++      periodSet.add(p);
++    }
++    return Array.from(periodSet).sort();
++  }
++
++  return basePeriods;
++}
++
++/**
++ * Aylık abonelerin erişemeyeceği kilitli dönemleri hesaplar.
++ * PeriodPicker'da upgrade teşviki için kullanılır.
++ * purchasedPeriods verilirse, satın alınmış dönemler kilitli listeden çıkarılır.
++ */
++export function getLockedPastPeriods(planType: string, purchasedPeriods?: string[]): string[] {
++  if (planType !== "monthly") return [];
++
++  const now = new Date();
++  const year = now.getFullYear();
++  const month = now.getMonth() + 1;
++  const purchased = new Set(purchasedPeriods || []);
++  const periods: string[] = [];
++
++  // Mevcut yılın geçmiş ayları (mevcut ay hariç, satın alınmışlar hariç)
++  for (let m = 1; m < month; m++) {
++    const p = `${year}-${String(m).padStart(2, "0")}`;
++    if (!purchased.has(p)) {
++      periods.push(p);
++    }
++  }
++
++  // Geçmiş yılların satın alınmamış dönemleri de kilitli göster
++  const prevYear = year - 1;
++  for (let m = 1; m <= 12; m++) {
++    const p = `${prevYear}-${String(m).padStart(2, "0")}`;
++    if (!purchased.has(p)) {
++      periods.push(p);
++    }
++  }
++
++  return periods;
++}
++
++/** Satın alınan dönemlerden aktif durumu hesaplar */
++export function getPeriodStatus(purchasedPeriods: string[]) {
++  const current = getCurrentPeriod();
++  const isActive = purchasedPeriods.includes(current);
++  const futureAndCurrent = purchasedPeriods.filter(p => p >= current);
++  const remainingMonths = futureAndCurrent.length;
++
++  return {
++    isActive,
++    isExpired: !isActive,
++    currentPeriod: current,
++    remainingMonths,
++    activePeriods: futureAndCurrent.sort(),
++  };
++}
++
++/** Son satın alınan ayın son gününü Date olarak döndürür (geriye uyumluluk) */
++export function getExpiresAtFromPeriods(purchasedPeriods: string[]): Date | null {
++  if (purchasedPeriods.length === 0) return null;
++  const sorted = [...purchasedPeriods].sort();
++  const last = sorted[sorted.length - 1];
++  const [y, m] = last.split("-").map(Number);
++  // Ayın son günü: bir sonraki ayın 0. günü
++  return new Date(y, m, 0, 23, 59, 59);
++}
+diff --git a/services/useInvoices.ts b/services/useInvoices.ts
+index a3a60f5..609b6ea 100644
+--- a/services/useInvoices.ts
++++ b/services/useInvoices.ts
+@@ -1,278 +1,281 @@
+-import { useState, useEffect, useCallback, useRef } from "react";
+-import { supabase } from "./supabaseService";
+-import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
+-import { getLearningRules } from "./learningEngine";
+-
+-export interface SubscriptionCheck {
+-  isActive: boolean;
+-  isExpired: boolean;
+-  plan: string;
+-  expiresAt: Date | null;
+-}
+-
+-export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) {
+-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+-  const [loading, setLoading] = useState(false);
+-  const [uploading, setUploading] = useState(false);
+-  const prevInvoicesRef = useRef<Invoice[]>([]);
+-
+-  useEffect(() => {
+-    prevInvoicesRef.current = invoices;
+-  }, [invoices]);
+-
+-  const fetchInvoices = useCallback(async () => {
+-    // Veritabanı kullanımı devredışı. (Sadece Prompt + AI modunda çalışıyoruz)
+-    // Supabase den fetch yapmayı engelliyoruz ki önbellek sıfırlanmasın.
+-    setLoading(false);
+-  }, []);
+-
+-  useEffect(() => {
+-    fetchInvoices();
+-  }, [fetchInvoices]);
+-
+-  const fetchInvoiceItems = useCallback(async (invoiceId: string): Promise<InvoiceItem[]> => {
+-    const { data, error } = await supabase
+-      .from("invoice_items")
+-      .select("*")
+-      .eq("invoice_id", invoiceId)
+-      .order("created_at", { ascending: true });
+-
+-    if (error) {
+-      console.error("[useInvoices] items fetch error:", error);
+-      return [];
+-    }
+-    return data || [];
+-  }, []);
+-
+-  const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
+-    // ── Abonelik Dönem Kontrolü ──
+-    if (subscriptionInfo) {
+-      if (!subscriptionInfo.isActive || subscriptionInfo.isExpired) {
+-        const expDateStr = subscriptionInfo.expiresAt
+-          ? subscriptionInfo.expiresAt.toLocaleDateString("tr-TR")
+-          : "—";
+-        throw new Error(
+-          `Abonelik süreniz dolmuş veya aktif değil (Son geçerlilik: ${expDateStr}). ` +
+-          `Fatura yükleyebilmek için lütfen aboneliğinizi yenileyin.`
+-        );
+-      }
+-    }
+-
+-    // Oturum kontrolu - expire olmussa refresh
+-    let { data: { session: currentSession } } = await supabase.auth.getSession();
+-    if (currentSession?.expires_at && currentSession.expires_at * 1000 < Date.now() + 30000) {
+-      const { data: refreshed } = await supabase.auth.refreshSession();
+-      if (refreshed.session) currentSession = refreshed.session;
+-    }
+-    if (!currentSession?.access_token) {
+-      throw new Error("Oturum bulunamadi. Lutfen tekrar giris yapin.");
+-    }
+-
+-    setUploading(true);
+-    try {
+-      const base64 = await fileToBase64(file);
+-
+-      const currentUserId = currentSession?.user?.id;
+-      const rules = getLearningRules(currentUserId); // user-specific
+-
+-      // Ayarlar sekmesindeki "Manuel Kurallar" ve "Öğrenilen Kurallar"ı çek
+-      let activeSettingsRules: any[] = [];
+-      let companyName = "";
+-      let companyVatId = "";
+-      try {
+-        const settingsKey = currentUserId ? `fibu_de_settings_${currentUserId}` : "fibu_de_settings";
+-        const settingsData = localStorage.getItem(settingsKey);
+-        if (settingsData) {
+-          const parsed = JSON.parse(settingsData);
+-          if (parsed.rules && Array.isArray(parsed.rules)) {
+-            // Yalnızca aktif olanları gönder
+-            activeSettingsRules = parsed.rules.filter((r: any) => r.active === true);
+-          }
+-          // Şirket bilgilerini al (fatura yön doğrulaması için)
+-          companyName = parsed?.company?.company_name || "";
+-          companyVatId = parsed?.company?.ust_id || "";
+-        }
+-      } catch (err) {
+-        console.warn("fibu_de_settings okunamadı", err);
+-      }
+-
+-      const { data, error } = await supabase.functions.invoke("super-worker", {
+-        body: {
+-          fileBase64: base64,
+-          fileType: file.type,
+-          learningRules: rules,
+-          settingsRules: activeSettingsRules,
+-          companyName,
+-          companyVatId,
+-        },
+-      });
+-
+-      if (error) {
+-        let errorBody = "";
+-        try {
+-          if (error.context && typeof error.context.text === "function") {
+-            errorBody = await error.context.text();
+-          }
+-        } catch (e) {}
+-        console.error("Invoke Error Detail:", error, errorBody);
+-        throw new Error(`Sunucu Hatası: ${errorBody || error.message}`);
+-      }
+-      
+-      if (!data?.success) throw new Error(data?.error || "Analiz başarısız");
+-
+-      const aiData = data.data; // { header, items, context }
+-
+-      // ── Post-processing Doğrulama: Gelen faturalarda 8xxx hesap kodu engelle ──
+-      // Satıcısı biz olmayan faturalar kesinlikle gelir (8xxx) hesabına atanamaz
+-      if (aiData?.items && Array.isArray(aiData.items)) {
+-        const supplierName = (aiData?.header?.supplier_name || "").toLowerCase();
+-        const supplierVat = aiData?.header?.satici_vkn || "";
+-        const ownName = companyName.toLowerCase();
+-        const ownVat = companyVatId;
+-
+-        // Satıcı biz değilsek → gelen fatura → 8xxx yasak
+-        const isOwnCompanySeller =
+-          (ownVat && supplierVat && supplierVat === ownVat) ||
+-          (ownName && supplierName && supplierName.includes(ownName));
+-
+-        if (!isOwnCompanySeller) {
+-          for (const item of aiData.items) {
+-            if (item.account_code && String(item.account_code).startsWith("8")) {
+-              console.warn(`[useInvoices] 8xxx hesap kodu düzeltildi: ${item.account_code} → 4960 (Satıcı biz değiliz)`);
+-              item.account_code = "4960";
+-              item.account_name = "Verschiedene betriebliche Aufwendungen";
+-              item.account_name_tr = "Çeşitli İşletme Giderleri";
+-              item.match_justification = "Gelen fatura: 8xxx gelir hesabı engellendi, manuel inceleme gerekli";
+-              item.match_score = 50;
+-            }
+-          }
+-        }
+-      }
+-
+-      // Invoices tablosuna mock olarak ekle (Yeni Modele Gore)
+-      const mappedResult = {
+-        ...aiData,
+-        fatura_bilgileri: aiData?.header || {},
+-        finansal_ozet: {
+-          ara_toplam: aiData?.header?.total_net || 0,
+-          toplam_kdv: aiData?.header?.total_vat || 0,
+-          genel_toplam: aiData?.header?.total_gross || 0,
+-        },
+-        kalemler: aiData?.items || [],
+-        uyarilar: aiData?.context ? [aiData.context] : []
+-      };
+-
+-      const mockInvoiceId = "mock-" + Date.now().toString();
+-
+-      const isDuplicate = prevInvoicesRef.current.some(inv => 
+-        inv.fatura_no === mappedResult.fatura_bilgileri.invoice_number && 
+-        inv.satici_adi === mappedResult.fatura_bilgileri.supplier_name
+-      );
+-
+-      if (isDuplicate) {
+-        mappedResult.uyarilar.push("Mükerrer Fatura: Bu dosya/fatura numarası daha önce yüklenmiş görünüyor.");
+-      }
+-
+-      const mockInvoice: Invoice = {
+-        id: mockInvoiceId,
+-        user_id: currentSession.user.id,
+-        fatura_no: mappedResult.fatura_bilgileri.invoice_number || null,
+-        tarih: mappedResult.fatura_bilgileri.invoice_date || null,
+-        satici_vkn: mappedResult.fatura_bilgileri.supplier_vat_id || null,
+-        satici_adi: mappedResult.fatura_bilgileri.supplier_name || null,
+-        alici_vkn: mappedResult.fatura_bilgileri.buyer_vat_id || null,
+-        ara_toplam: mappedResult.finansal_ozet.ara_toplam,
+-        toplam_kdv: mappedResult.finansal_ozet.toplam_kdv,
+-        genel_toplam: mappedResult.finansal_ozet.genel_toplam,
+-        status: isDuplicate ? "mükerrer" : "analyzed",
+-        raw_ai_response: mappedResult,
+-        uyarilar: mappedResult.uyarilar,
+-        file_url: `data:${file.type};base64,${base64}`,
+-        created_at: new Date().toISOString()
+-      };
+-
+-      // Invoices listesini yalnızca React state üzerinden güncelle (DB KAPALI)
+-      setInvoices(prev => [mockInvoice, ...prev]);
+-
+-      return mappedResult as InvoiceAnalysisResult;
+-    } catch (err: any) {
+-      console.error("[useInvoices] uploadAndAnalyze error:", err);
+-      throw new Error(err?.message || "Bir hata oluştu");
+-    } finally {
+-      setUploading(false);
+-    }
+-  }, [fetchInvoices]);
+-
+-  const deleteInvoice = useCallback(async (invoiceId: string) => {
+-    // Veritabanı devre dışı, sadece React state den siliyoruz.
+-    setInvoices(prev => prev.filter(i => i.id !== invoiceId));
+-  }, []);
+-
+-  const updateInvoice = useCallback((invoiceId: string, updates: Partial<Invoice>) => {
+-    setInvoices(prev => prev.map(inv => {
+-      if (inv.id !== invoiceId) return inv;
+-      const updated = { ...inv, ...updates };
+-      // raw_ai_response içindeki header bilgilerini de güncelle
+-      if (updated.raw_ai_response) {
+-        const header = updated.raw_ai_response.header || updated.raw_ai_response.fatura_bilgileri || {};
+-        if (updates.fatura_no !== undefined) header.invoice_number = updates.fatura_no;
+-        if (updates.tarih !== undefined) header.invoice_date = updates.tarih;
+-        if (updates.satici_adi !== undefined) header.supplier_name = updates.satici_adi;
+-        if (updates.satici_vkn !== undefined) header.supplier_vat_id = updates.satici_vkn;
+-        if (updates.alici_vkn !== undefined) header.buyer_vat_id = updates.alici_vkn;
+-        if ((updates as any).alici_adi !== undefined) header.buyer_name = (updates as any).alici_adi;
+-        if (updates.ara_toplam !== undefined) header.total_net = updates.ara_toplam;
+-        if (updates.toplam_kdv !== undefined) header.total_vat = updates.toplam_kdv;
+-        if (updates.genel_toplam !== undefined) header.total_gross = updates.genel_toplam;
+-        if (updated.raw_ai_response.header) updated.raw_ai_response.header = { ...header };
+-        if (updated.raw_ai_response.fatura_bilgileri) updated.raw_ai_response.fatura_bilgileri = { ...header };
+-      }
+-      // Manuel düzenleme yapıldıysa status'u güncelle
+-      if (!updated.status || updated.status === "error") {
+-        updated.status = "analyzed";
+-      }
+-      return updated;
+-    }));
+-  }, []);
+-
+-  const updateInvoiceItems = useCallback((invoiceId: string, updatedItems: any[]) => {
+-    setInvoices(prev => prev.map(inv => {
+-      if (inv.id !== invoiceId) return inv;
+-      const updated = { ...inv };
+-      if (updated.raw_ai_response) {
+-        updated.raw_ai_response = {
+-          ...updated.raw_ai_response,
+-          items: updatedItems,
+-          kalemler: updatedItems,
+-        };
+-      }
+-      return updated;
+-    }));
+-  }, []);
+-
+-  return {
+-    invoices,
+-    loading,
+-    uploading,
+-    fetchInvoices,
+-    fetchInvoiceItems,
+-    uploadAndAnalyze,
+-    deleteInvoice,
+-    updateInvoice,
+-    updateInvoiceItems,
+-  };
+-}
+-
+-function fileToBase64(file: File): Promise<string> {
+-  return new Promise((resolve, reject) => {
+-    const reader = new FileReader();
+-    reader.onload = () => {
+-      const result = reader.result as string;
+-      // data:image/jpeg;base64,/9j/4AAQ... → sadece base64 kısmı
+-      const base64 = result.split(",")[1];
+-      resolve(base64);
+-    };
+-    reader.onerror = reject;
+-    reader.readAsDataURL(file);
+-  });
+-}
++import { useState, useEffect, useCallback, useRef } from "react";
++import { supabase } from "./supabaseService";
++import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
++import { getLearningRules } from "./learningEngine";
++
++export interface SubscriptionCheck {
++  isActive: boolean;
++  isExpired: boolean;
++  plan: string;
++  expiresAt: Date | null;
++}
++
++export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) {
++  const [invoices, setInvoices] = useState<Invoice[]>([]);
++  const [loading, setLoading] = useState(false);
++  const [uploading, setUploading] = useState(false);
++  const prevInvoicesRef = useRef<Invoice[]>([]);
++
++  useEffect(() => {
++    prevInvoicesRef.current = invoices;
++  }, [invoices]);
++
++  const fetchInvoices = useCallback(async () => {
++    // Veritabanı kullanımı devredışı. (Sadece Prompt + AI modunda çalışıyoruz)
++    // Supabase den fetch yapmayı engelliyoruz ki önbellek sıfırlanmasın.
++    setLoading(false);
++  }, []);
++
++  useEffect(() => {
++    fetchInvoices();
++  }, [fetchInvoices]);
++
++  const fetchInvoiceItems = useCallback(async (invoiceId: string): Promise<InvoiceItem[]> => {
++    const { data, error } = await supabase
++      .from("invoice_items")
++      .select("*")
++      .eq("invoice_id", invoiceId)
++      .order("created_at", { ascending: true });
++
++    if (error) {
++      console.error("[useInvoices] items fetch error:", error);
++      return [];
++    }
++    return data || [];
++  }, []);
++
++  const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
++    // ── Abonelik Dönem Kontrolü ──
++    if (subscriptionInfo) {
++      if (!subscriptionInfo.isActive || subscriptionInfo.isExpired) {
++        const expDateStr = subscriptionInfo.expiresAt
++          ? subscriptionInfo.expiresAt.toLocaleDateString("tr-TR")
++          : "—";
++        throw new Error(
++          `Abonelik süreniz dolmuş veya aktif değil (Son geçerlilik: ${expDateStr}). ` +
++          `Fatura yükleyebilmek için lütfen aboneliğinizi yenileyin.`
++        );
++      }
++    }
++
++    // Oturum kontrolu - expire olmussa refresh
++    let { data: { session: currentSession } } = await supabase.auth.getSession();
++    if (currentSession?.expires_at && currentSession.expires_at * 1000 < Date.now() + 30000) {
++      const { data: refreshed } = await supabase.auth.refreshSession();
++      if (refreshed.session) currentSession = refreshed.session;
++    }
++    if (!currentSession?.access_token) {
++      throw new Error("Oturum bulunamadi. Lutfen tekrar giris yapin.");
++    }
++
++    setUploading(true);
++    try {
++      const base64 = await fileToBase64(file);
++
++      const currentUserId = currentSession?.user?.id;
++      const rules = getLearningRules(currentUserId); // user-specific
++
++      // Ayarlar sekmesindeki "Manuel Kurallar" ve "Öğrenilen Kurallar"ı çek
++      let activeSettingsRules: any[] = [];
++      let companyName = "";
++      let companyVatId = "";
++      try {
++        const settingsKey = currentUserId ? `fibu_de_settings_${currentUserId}` : "fibu_de_settings";
++        const settingsData = localStorage.getItem(settingsKey);
++        if (settingsData) {
++          const parsed = JSON.parse(settingsData);
++          if (parsed.rules && Array.isArray(parsed.rules)) {
++            // Yalnızca aktif olanları gönder
++            activeSettingsRules = parsed.rules.filter((r: any) => r.active === true);
++          }
++          // Şirket bilgilerini al (fatura yön doğrulaması için)
++          companyName = parsed?.company?.company_name || "";
++          companyVatId = parsed?.company?.ust_id || "";
++        }
++      } catch (err) {
++        console.warn("fibu_de_settings okunamadı", err);
++      }
++
++      const { data, error } = await supabase.functions.invoke("super-worker", {
++        body: {
++          fileBase64: base64,
++          fileType: file.type,
++          learningRules: rules,
++          settingsRules: activeSettingsRules,
++          companyName,
++          companyVatId,
++        },
++        headers: {
++          Authorization: `Bearer ${currentSession.access_token}`,
++        },
++      });
++
++      if (error) {
++        let errorBody = "";
++        try {
++          if (error.context && typeof error.context.text === "function") {
++            errorBody = await error.context.text();
++          }
++        } catch (e) {}
++        console.error("Invoke Error Detail:", error, errorBody);
++        throw new Error(`Sunucu Hatası: ${errorBody || error.message}`);
++      }
++      
++      if (!data?.success) throw new Error(data?.error || "Analiz başarısız");
++
++      const aiData = data.data; // { header, items, context }
++
++      // ── Post-processing Doğrulama: Gelen faturalarda 8xxx hesap kodu engelle ──
++      // Satıcısı biz olmayan faturalar kesinlikle gelir (8xxx) hesabına atanamaz
++      if (aiData?.items && Array.isArray(aiData.items)) {
++        const supplierName = (aiData?.header?.supplier_name || "").toLowerCase();
++        const supplierVat = aiData?.header?.satici_vkn || "";
++        const ownName = companyName.toLowerCase();
++        const ownVat = companyVatId;
++
++        // Satıcı biz değilsek → gelen fatura → 8xxx yasak
++        const isOwnCompanySeller =
++          (ownVat && supplierVat && supplierVat === ownVat) ||
++          (ownName && supplierName && supplierName.includes(ownName));
++
++        if (!isOwnCompanySeller) {
++          for (const item of aiData.items) {
++            if (item.account_code && String(item.account_code).startsWith("8")) {
++              console.warn(`[useInvoices] 8xxx hesap kodu düzeltildi: ${item.account_code} → 4960 (Satıcı biz değiliz)`);
++              item.account_code = "4960";
++              item.account_name = "Verschiedene betriebliche Aufwendungen";
++              item.account_name_tr = "Çeşitli İşletme Giderleri";
++              item.match_justification = "Gelen fatura: 8xxx gelir hesabı engellendi, manuel inceleme gerekli";
++              item.match_score = 50;
++            }
++          }
++        }
++      }
++
++      // Invoices tablosuna mock olarak ekle (Yeni Modele Gore)
++      const mappedResult = {
++        ...aiData,
++        fatura_bilgileri: aiData?.header || {},
++        finansal_ozet: {
++          ara_toplam: aiData?.header?.total_net || 0,
++          toplam_kdv: aiData?.header?.total_vat || 0,
++          genel_toplam: aiData?.header?.total_gross || 0,
++        },
++        kalemler: aiData?.items || [],
++        uyarilar: aiData?.context ? [aiData.context] : []
++      };
++
++      const mockInvoiceId = "mock-" + Date.now().toString();
++
++      const isDuplicate = prevInvoicesRef.current.some(inv => 
++        inv.fatura_no === mappedResult.fatura_bilgileri.invoice_number && 
++        inv.satici_adi === mappedResult.fatura_bilgileri.supplier_name
++      );
++
++      if (isDuplicate) {
++        mappedResult.uyarilar.push("Mükerrer Fatura: Bu dosya/fatura numarası daha önce yüklenmiş görünüyor.");
++      }
++
++      const mockInvoice: Invoice = {
++        id: mockInvoiceId,
++        user_id: currentSession.user.id,
++        fatura_no: mappedResult.fatura_bilgileri.invoice_number || null,
++        tarih: mappedResult.fatura_bilgileri.invoice_date || null,
++        satici_vkn: mappedResult.fatura_bilgileri.supplier_vat_id || null,
++        satici_adi: mappedResult.fatura_bilgileri.supplier_name || null,
++        alici_vkn: mappedResult.fatura_bilgileri.buyer_vat_id || null,
++        ara_toplam: mappedResult.finansal_ozet.ara_toplam,
++        toplam_kdv: mappedResult.finansal_ozet.toplam_kdv,
++        genel_toplam: mappedResult.finansal_ozet.genel_toplam,
++        status: isDuplicate ? "mükerrer" : "analyzed",
++        raw_ai_response: mappedResult,
++        uyarilar: mappedResult.uyarilar,
++        file_url: `data:${file.type};base64,${base64}`,
++        created_at: new Date().toISOString()
++      };
++
++      // Invoices listesini yalnızca React state üzerinden güncelle (DB KAPALI)
++      setInvoices(prev => [mockInvoice, ...prev]);
++
++      return mappedResult as InvoiceAnalysisResult;
++    } catch (err: any) {
++      console.error("[useInvoices] uploadAndAnalyze error:", err);
++      throw new Error(err?.message || "Bir hata oluştu");
++    } finally {
++      setUploading(false);
++    }
++  }, [fetchInvoices]);
++
++  const deleteInvoice = useCallback(async (invoiceId: string) => {
++    // Veritabanı devre dışı, sadece React state den siliyoruz.
++    setInvoices(prev => prev.filter(i => i.id !== invoiceId));
++  }, []);
++
++  const updateInvoice = useCallback((invoiceId: string, updates: Partial<Invoice>) => {
++    setInvoices(prev => prev.map(inv => {
++      if (inv.id !== invoiceId) return inv;
++      const updated = { ...inv, ...updates };
++      // raw_ai_response içindeki header bilgilerini de güncelle
++      if (updated.raw_ai_response) {
++        const header = updated.raw_ai_response.header || updated.raw_ai_response.fatura_bilgileri || {};
++        if (updates.fatura_no !== undefined) header.invoice_number = updates.fatura_no;
++        if (updates.tarih !== undefined) header.invoice_date = updates.tarih;
++        if (updates.satici_adi !== undefined) header.supplier_name = updates.satici_adi;
++        if (updates.satici_vkn !== undefined) header.supplier_vat_id = updates.satici_vkn;
++        if (updates.alici_vkn !== undefined) header.buyer_vat_id = updates.alici_vkn;
++        if ((updates as any).alici_adi !== undefined) header.buyer_name = (updates as any).alici_adi;
++        if (updates.ara_toplam !== undefined) header.total_net = updates.ara_toplam;
++        if (updates.toplam_kdv !== undefined) header.total_vat = updates.toplam_kdv;
++        if (updates.genel_toplam !== undefined) header.total_gross = updates.genel_toplam;
++        if (updated.raw_ai_response.header) updated.raw_ai_response.header = { ...header };
++        if (updated.raw_ai_response.fatura_bilgileri) updated.raw_ai_response.fatura_bilgileri = { ...header };
++      }
++      // Manuel düzenleme yapıldıysa status'u güncelle
++      if (!updated.status || updated.status === "error") {
++        updated.status = "analyzed";
++      }
++      return updated;
++    }));
++  }, []);
++
++  const updateInvoiceItems = useCallback((invoiceId: string, updatedItems: any[]) => {
++    setInvoices(prev => prev.map(inv => {
++      if (inv.id !== invoiceId) return inv;
++      const updated = { ...inv };
++      if (updated.raw_ai_response) {
++        updated.raw_ai_response = {
++          ...updated.raw_ai_response,
++          items: updatedItems,
++          kalemler: updatedItems,
++        };
++      }
++      return updated;
++    }));
++  }, []);
++
++  return {
++    invoices,
++    loading,
++    uploading,
++    fetchInvoices,
++    fetchInvoiceItems,
++    uploadAndAnalyze,
++    deleteInvoice,
++    updateInvoice,
++    updateInvoiceItems,
++  };
++}
++
++function fileToBase64(file: File): Promise<string> {
++  return new Promise((resolve, reject) => {
++    const reader = new FileReader();
++    reader.onload = () => {
++      const result = reader.result as string;
++      // data:image/jpeg;base64,/9j/4AAQ... → sadece base64 kısmı
++      const base64 = result.split(",")[1];
++      resolve(base64);
++    };
++    reader.onerror = reject;
++    reader.readAsDataURL(file);
++  });
++}
+diff --git a/services/useSubscriptionTimer.ts b/services/useSubscriptionTimer.ts
+index 3a4da16..c596f08 100644
+--- a/services/useSubscriptionTimer.ts
++++ b/services/useSubscriptionTimer.ts
+@@ -1,132 +1,138 @@
+-import { useState, useEffect } from "react";
+-import { supabase } from "./supabaseService";
+-import { getCurrentPeriod, getPeriodStatus, getExpiresAtFromPeriods } from "./periodUtils";
+-
+-export interface SubscriptionInfo {
+-    isActive: boolean;
+-    isExpired: boolean;
+-    plan: string;
+-    purchasedPeriods: string[];
+-    currentPeriod: string;
+-    remainingMonths: number;
+-    expiresAt: Date | null;
+-}
+-
+-export const useSubscriptionTimer = (session: any, userRole: string) => {
+-    const [subInfo, setSubInfo] = useState<SubscriptionInfo>({
+-        isActive: false,
+-        isExpired: false,
+-        plan: "free",
+-        purchasedPeriods: [],
+-        currentPeriod: getCurrentPeriod(),
+-        remainingMonths: 0,
+-        expiresAt: null,
+-    });
+-
+-    const fetchSubscription = async () => {
+-        if (!session?.user?.id) return;
+-
+-        // Admin sınırsız erişim
+-        if (userRole === "admin") {
+-            const current = getCurrentPeriod();
+-            setSubInfo({
+-                isActive: true,
+-                isExpired: false,
+-                plan: "yearly",
+-                purchasedPeriods: [current],
+-                currentPeriod: current,
+-                remainingMonths: 12,
+-                expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+-            });
+-            return;
+-        }
+-
+-        try {
+-            const { data } = await supabase
+-                .from("subscription_periods")
+-                .select("period_year, period_month, plan_type")
+-                .eq("user_id", session.user.id)
+-                .order("period_year", { ascending: true })
+-                .order("period_month", { ascending: true });
+-
+-            if (data && data.length > 0) {
+-                const periods = data.map((d: any) =>
+-                    `${d.period_year}-${String(d.period_month).padStart(2, "0")}`
+-                );
+-                const lastPlanType = data[data.length - 1].plan_type || "monthly";
+-                const status = getPeriodStatus(periods);
+-
+-                setSubInfo({
+-                    isActive: status.isActive,
+-                    isExpired: status.isExpired,
+-                    plan: lastPlanType,
+-                    purchasedPeriods: periods,
+-                    currentPeriod: status.currentPeriod,
+-                    remainingMonths: status.remainingMonths,
+-                    expiresAt: getExpiresAtFromPeriods(periods),
+-                });
+-            } else {
+-                // localStorage fallback
+-                const stored = localStorage.getItem(`periods_${session.user.id}`);
+-                if (stored) {
+-                    try {
+-                        const parsed = JSON.parse(stored);
+-                        const periods: string[] = parsed.periods || [];
+-                        const planType = parsed.plan || "monthly";
+-                        const status = getPeriodStatus(periods);
+-
+-                        setSubInfo({
+-                            isActive: status.isActive,
+-                            isExpired: status.isExpired,
+-                            plan: planType,
+-                            purchasedPeriods: periods,
+-                            currentPeriod: status.currentPeriod,
+-                            remainingMonths: status.remainingMonths,
+-                            expiresAt: getExpiresAtFromPeriods(periods),
+-                        });
+-                    } catch {
+-                        setSubInfo({
+-                            isActive: false, isExpired: false, plan: "free",
+-                            purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
+-                            remainingMonths: 0, expiresAt: null,
+-                        });
+-                    }
+-                } else {
+-                    setSubInfo({
+-                        isActive: false, isExpired: false, plan: "free",
+-                        purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
+-                        remainingMonths: 0, expiresAt: null,
+-                    });
+-                }
+-            }
+-        } catch {
+-            // DB hatası — localStorage fallback dene
+-            const stored = localStorage.getItem(`periods_${session.user.id}`);
+-            if (stored) {
+-                try {
+-                    const parsed = JSON.parse(stored);
+-                    const periods: string[] = parsed.periods || [];
+-                    const status = getPeriodStatus(periods);
+-                    setSubInfo({
+-                        isActive: status.isActive,
+-                        isExpired: status.isExpired,
+-                        plan: parsed.plan || "monthly",
+-                        purchasedPeriods: periods,
+-                        currentPeriod: status.currentPeriod,
+-                        remainingMonths: status.remainingMonths,
+-                        expiresAt: getExpiresAtFromPeriods(periods),
+-                    });
+-                } catch { /* ignore */ }
+-            }
+-        }
+-    };
+-
+-    useEffect(() => {
+-        fetchSubscription();
+-        const handleUpdate = () => fetchSubscription();
+-        window.addEventListener("subscription_updated", handleUpdate);
+-        return () => window.removeEventListener("subscription_updated", handleUpdate);
+-    }, [session, userRole]);
+-
+-    return subInfo;
+-};
++import { useState, useEffect } from "react";
++import { supabase } from "./supabaseService";
++import { getCurrentPeriod, getPeriodStatus, getExpiresAtFromPeriods } from "./periodUtils";
++
++export interface SubscriptionInfo {
++    isActive: boolean;
++    isExpired: boolean;
++    plan: string;
++    purchasedPeriods: string[];
++    currentPeriod: string;
++    remainingMonths: number;
++    expiresAt: Date | null;
++}
++
++export const useSubscriptionTimer = (session: any, userRole: string) => {
++    const [subInfo, setSubInfo] = useState<SubscriptionInfo>({
++        isActive: false,
++        isExpired: false,
++        plan: "free",
++        purchasedPeriods: [],
++        currentPeriod: getCurrentPeriod(),
++        remainingMonths: 0,
++        expiresAt: null,
++    });
++
++    // localStorage'dan dönem bilgisini yükle (DB erişimi yokken fallback)
++    const loadFromLocalStorage = (userId: string) => {
++        const stored = localStorage.getItem(`periods_${userId}`);
++        if (stored) {
++            try {
++                const parsed = JSON.parse(stored);
++                const periods: string[] = parsed.periods || [];
++                const planType = parsed.plan || "monthly";
++                const status = getPeriodStatus(periods);
++
++                setSubInfo({
++                    isActive: status.isActive,
++                    isExpired: status.isExpired,
++                    plan: planType,
++                    purchasedPeriods: periods,
++                    currentPeriod: status.currentPeriod,
++                    remainingMonths: status.remainingMonths,
++                    expiresAt: getExpiresAtFromPeriods(periods),
++                });
++            } catch {
++                setSubInfo({
++                    isActive: false, isExpired: false, plan: "free",
++                    purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
++                    remainingMonths: 0, expiresAt: null,
++                });
++            }
++        } else {
++            setSubInfo({
++                isActive: false, isExpired: false, plan: "free",
++                purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
++                remainingMonths: 0, expiresAt: null,
++            });
++        }
++    };
++
++    const fetchSubscription = async () => {
++        if (!session?.user?.id) return;
++
++        // Admin sınırsız erişim
++        if (userRole === "admin") {
++            const current = getCurrentPeriod();
++            setSubInfo({
++                isActive: true,
++                isExpired: false,
++                plan: "yearly",
++                purchasedPeriods: [current],
++                currentPeriod: current,
++                remainingMonths: 12,
++                expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
++            });
++            return;
++        }
++
++        try {
++            const { data, error: queryError } = await supabase
++                .from("subscription_periods")
++                .select("period_year, period_month, plan_type")
++                .eq("user_id", session.user.id)
++                .order("period_year", { ascending: true })
++                .order("period_month", { ascending: true });
++
++            // Tablo yoksa veya 404 döndüyse localStorage'a düş
++            if (queryError) {
++                console.warn("[useSubscriptionTimer] DB sorgu hatası:", queryError.message);
++                loadFromLocalStorage(session.user.id);
++                return;
++            }
++
++            if (data && data.length > 0) {
++                const periods = data.map((d: any) =>
++                    `${d.period_year}-${String(d.period_month).padStart(2, "0")}`
++                );
++                const lastPlanType = data[data.length - 1].plan_type || "monthly";
++                const status = getPeriodStatus(periods);
++
++                const info: SubscriptionInfo = {
++                    isActive: status.isActive,
++                    isExpired: status.isExpired,
++                    plan: lastPlanType,
++                    purchasedPeriods: periods,
++                    currentPeriod: status.currentPeriod,
++                    remainingMonths: status.remainingMonths,
++                    expiresAt: getExpiresAtFromPeriods(periods),
++                };
++                setSubInfo(info);
++
++                // DB verisi başarılı ise localStorage'ı da güncelle (senkron tut)
++                try {
++                    localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
++                        periods,
++                        plan: lastPlanType,
++                    }));
++                } catch { /* localStorage erişim hatası — görmezden gel */ }
++            } else {
++                // DB'de kayıt yok — localStorage fallback
++                loadFromLocalStorage(session.user.id);
++            }
++        } catch (err) {
++            console.warn("[useSubscriptionTimer] Beklenmeyen hata:", err);
++            // DB hatası — localStorage fallback dene
++            loadFromLocalStorage(session.user.id);
++        }
++    };
++
++    useEffect(() => {
++        fetchSubscription();
++        const handleUpdate = () => fetchSubscription();
++        window.addEventListener("subscription_updated", handleUpdate);
++        return () => window.removeEventListener("subscription_updated", handleUpdate);
++    }, [session, userRole]);
++
++    return subInfo;
++};
