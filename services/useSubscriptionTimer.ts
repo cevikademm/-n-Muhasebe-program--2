@@ -23,6 +23,41 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
         expiresAt: null,
     });
 
+    // localStorage'dan dönem bilgisini yükle (DB erişimi yokken fallback)
+    const loadFromLocalStorage = (userId: string) => {
+        const stored = localStorage.getItem(`periods_${userId}`);
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                const periods: string[] = parsed.periods || [];
+                const planType = parsed.plan || "monthly";
+                const status = getPeriodStatus(periods);
+
+                setSubInfo({
+                    isActive: status.isActive,
+                    isExpired: status.isExpired,
+                    plan: planType,
+                    purchasedPeriods: periods,
+                    currentPeriod: status.currentPeriod,
+                    remainingMonths: status.remainingMonths,
+                    expiresAt: getExpiresAtFromPeriods(periods),
+                });
+            } catch {
+                setSubInfo({
+                    isActive: false, isExpired: false, plan: "free",
+                    purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
+                    remainingMonths: 0, expiresAt: null,
+                });
+            }
+        } else {
+            setSubInfo({
+                isActive: false, isExpired: false, plan: "free",
+                purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
+                remainingMonths: 0, expiresAt: null,
+            });
+        }
+    };
+
     const fetchSubscription = async () => {
         if (!session?.user?.id) return;
 
@@ -42,12 +77,19 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
         }
 
         try {
-            const { data } = await supabase
+            const { data, error: queryError } = await supabase
                 .from("subscription_periods")
                 .select("period_year, period_month, plan_type")
                 .eq("user_id", session.user.id)
                 .order("period_year", { ascending: true })
                 .order("period_month", { ascending: true });
+
+            // Tablo yoksa veya 404 döndüyse localStorage'a düş
+            if (queryError) {
+                console.warn("[useSubscriptionTimer] DB sorgu hatası:", queryError.message);
+                loadFromLocalStorage(session.user.id);
+                return;
+            }
 
             if (data && data.length > 0) {
                 const periods = data.map((d: any) =>
@@ -56,7 +98,7 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
                 const lastPlanType = data[data.length - 1].plan_type || "monthly";
                 const status = getPeriodStatus(periods);
 
-                setSubInfo({
+                const info: SubscriptionInfo = {
                     isActive: status.isActive,
                     isExpired: status.isExpired,
                     plan: lastPlanType,
@@ -64,60 +106,24 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
                     currentPeriod: status.currentPeriod,
                     remainingMonths: status.remainingMonths,
                     expiresAt: getExpiresAtFromPeriods(periods),
-                });
-            } else {
-                // localStorage fallback
-                const stored = localStorage.getItem(`periods_${session.user.id}`);
-                if (stored) {
-                    try {
-                        const parsed = JSON.parse(stored);
-                        const periods: string[] = parsed.periods || [];
-                        const planType = parsed.plan || "monthly";
-                        const status = getPeriodStatus(periods);
+                };
+                setSubInfo(info);
 
-                        setSubInfo({
-                            isActive: status.isActive,
-                            isExpired: status.isExpired,
-                            plan: planType,
-                            purchasedPeriods: periods,
-                            currentPeriod: status.currentPeriod,
-                            remainingMonths: status.remainingMonths,
-                            expiresAt: getExpiresAtFromPeriods(periods),
-                        });
-                    } catch {
-                        setSubInfo({
-                            isActive: false, isExpired: false, plan: "free",
-                            purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
-                            remainingMonths: 0, expiresAt: null,
-                        });
-                    }
-                } else {
-                    setSubInfo({
-                        isActive: false, isExpired: false, plan: "free",
-                        purchasedPeriods: [], currentPeriod: getCurrentPeriod(),
-                        remainingMonths: 0, expiresAt: null,
-                    });
-                }
-            }
-        } catch {
-            // DB hatası — localStorage fallback dene
-            const stored = localStorage.getItem(`periods_${session.user.id}`);
-            if (stored) {
+                // DB verisi başarılı ise localStorage'ı da güncelle (senkron tut)
                 try {
-                    const parsed = JSON.parse(stored);
-                    const periods: string[] = parsed.periods || [];
-                    const status = getPeriodStatus(periods);
-                    setSubInfo({
-                        isActive: status.isActive,
-                        isExpired: status.isExpired,
-                        plan: parsed.plan || "monthly",
-                        purchasedPeriods: periods,
-                        currentPeriod: status.currentPeriod,
-                        remainingMonths: status.remainingMonths,
-                        expiresAt: getExpiresAtFromPeriods(periods),
-                    });
-                } catch { /* ignore */ }
+                    localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
+                        periods,
+                        plan: lastPlanType,
+                    }));
+                } catch { /* localStorage erişim hatası — görmezden gel */ }
+            } else {
+                // DB'de kayıt yok — localStorage fallback
+                loadFromLocalStorage(session.user.id);
             }
+        } catch (err) {
+            console.warn("[useSubscriptionTimer] Beklenmeyen hata:", err);
+            // DB hatası — localStorage fallback dene
+            loadFromLocalStorage(session.user.id);
         }
     };
 

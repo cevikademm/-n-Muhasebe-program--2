@@ -312,6 +312,7 @@ export default function App() {
               // Ödeme entegrasyonu (Stripe vb.) tamamlanınca bu kayıt
               // webhook üzerinden sunucu tarafında oluşturulmalıdır.
               try {
+                let dbSuccess = false;
                 if (selectedPeriods && selectedPeriods.length > 0) {
                   // Dönemsel kayıtlar oluştur
                   const rows = selectedPeriods.map(p => {
@@ -324,18 +325,39 @@ export default function App() {
                       price_paid: (plan?.price || 0) / selectedPeriods.length,
                     };
                   });
-                  await supabase.from("subscription_periods")
+                  const { error: upsertError } = await supabase
+                    .from("subscription_periods")
                     .upsert(rows, { onConflict: "user_id,period_year,period_month" });
+
+                  if (upsertError) {
+                    console.warn("[App] subscription_periods upsert hatası:", upsertError.message);
+                  } else {
+                    dbSuccess = true;
+                  }
                 }
+
                 // Geriye uyumluluk: eski subscriptions tablosuna da özet kayıt
-                await supabase.from("subscriptions").upsert({
-                  user_id: session.user.id,
-                  status: "active",
+                try {
+                  await supabase.from("subscriptions").upsert({
+                    user_id: session.user.id,
+                    status: "active",
+                    plan: plan?.key || "monthly",
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: "user_id" });
+                } catch { /* eski tablo yoksa görmezden gel */ }
+
+                // Her durumda localStorage'ı da güncelle (DB + localStorage senkron)
+                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
+                  periods: selectedPeriods || [],
                   plan: plan?.key || "monthly",
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: "user_id" });
+                }));
+
+                if (!dbSuccess) {
+                  console.warn("[App] DB yazılamadı, localStorage fallback aktif");
+                }
               } catch (e) {
-                // localStorage fallback
+                console.error("[App] Abonelik kayıt hatası:", e);
+                // localStorage fallback — her durumda kaydet
                 localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
                   periods: selectedPeriods || [],
                   plan: plan?.key || "monthly",

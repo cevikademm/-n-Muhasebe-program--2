@@ -114,42 +114,75 @@ export function isPeriodFuture(period: string): boolean {
 
 /**
  * Plan tipine göre seçilebilir dönemleri hesaplar.
- * - monthly: sadece mevcut ay
- * - quarterly: mevcut çeyreğin ayları (geçmiş dahil)
- * - yearly: mevcut yılın tüm ayları (geçmiş dahil)
+ * - monthly: mevcut ay + geçmiş satın alınmış dönemler
+ * - quarterly: mevcut çeyreğin ayları + geçmiş satın alınmış dönemler
+ * - yearly: mevcut yılın tüm ayları + geçmiş yılın satın alınmış dönemleri
+ *
+ * purchasedPeriods parametresi verilirse, geçmişte satın alınmış dönemler
+ * de seçilebilir listeye eklenir (dönem çakışması sorunu giderildi).
  */
-export function getSelectablePeriods(planType: string): string[] {
+export function getSelectablePeriods(planType: string, purchasedPeriods?: string[]): string[] {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
+  let basePeriods: string[];
   switch (planType) {
     case "quarterly":
-      return getCurrentQuarterMonths(year, month);
+      basePeriods = getCurrentQuarterMonths(year, month);
+      break;
     case "yearly":
-      return getYearPeriods(year);
+      basePeriods = getYearPeriods(year);
+      break;
     case "monthly":
     default:
-      return [getCurrentPeriod()];
+      basePeriods = [getCurrentPeriod()];
+      break;
   }
+
+  // Geçmişte satın alınmış dönemleri de ekle (tekrarları önle)
+  if (purchasedPeriods && purchasedPeriods.length > 0) {
+    const periodSet = new Set(basePeriods);
+    for (const p of purchasedPeriods) {
+      periodSet.add(p);
+    }
+    return Array.from(periodSet).sort();
+  }
+
+  return basePeriods;
 }
 
 /**
  * Aylık abonelerin erişemeyeceği kilitli dönemleri hesaplar.
  * PeriodPicker'da upgrade teşviki için kullanılır.
+ * purchasedPeriods verilirse, satın alınmış dönemler kilitli listeden çıkarılır.
  */
-export function getLockedPastPeriods(planType: string): string[] {
+export function getLockedPastPeriods(planType: string, purchasedPeriods?: string[]): string[] {
   if (planType !== "monthly") return [];
 
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
+  const purchased = new Set(purchasedPeriods || []);
   const periods: string[] = [];
 
-  // Mevcut yılın geçmiş ayları (mevcut ay hariç)
+  // Mevcut yılın geçmiş ayları (mevcut ay hariç, satın alınmışlar hariç)
   for (let m = 1; m < month; m++) {
-    periods.push(`${year}-${String(m).padStart(2, "0")}`);
+    const p = `${year}-${String(m).padStart(2, "0")}`;
+    if (!purchased.has(p)) {
+      periods.push(p);
+    }
   }
+
+  // Geçmiş yılların satın alınmamış dönemleri de kilitli göster
+  const prevYear = year - 1;
+  for (let m = 1; m <= 12; m++) {
+    const p = `${prevYear}-${String(m).padStart(2, "0")}`;
+    if (!purchased.has(p)) {
+      periods.push(p);
+    }
+  }
+
   return periods;
 }
 

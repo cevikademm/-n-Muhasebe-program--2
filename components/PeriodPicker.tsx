@@ -32,8 +32,8 @@ export const PeriodPicker: React.FC<PeriodPickerProps> = ({
   const currentPeriod = getCurrentPeriod();
   const currentYear = now.getFullYear();
 
-  // Plan tipine göre seçilebilir dönemler
-  const selectablePeriods = useMemo(() => getSelectablePeriods(planType), [planType]);
+  // Plan tipine göre seçilebilir dönemler (satın alınmış geçmiş dönemler dahil)
+  const selectablePeriods = useMemo(() => getSelectablePeriods(planType, purchasedPeriods), [planType, purchasedPeriods]);
 
   // Seçili dönemler (otomatik hesaplanır)
   const selectedPeriods = useMemo(() => {
@@ -160,14 +160,14 @@ export const PeriodPicker: React.FC<PeriodPickerProps> = ({
       }}>
         <button
           onClick={() => setViewYear(v => v - 1)}
-          disabled={viewYear <= currentYear}
+          disabled={viewYear <= currentYear - 2}
           style={{
             background: "rgba(255,255,255,0.06)",
             border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: "8px",
             padding: "6px",
-            cursor: viewYear <= currentYear ? "not-allowed" : "pointer",
-            opacity: viewYear <= currentYear ? 0.3 : 1,
+            cursor: viewYear <= currentYear - 2 ? "not-allowed" : "pointer",
+            opacity: viewYear <= currentYear - 2 ? 0.3 : 1,
             color: "#fff",
             display: "flex",
           }}

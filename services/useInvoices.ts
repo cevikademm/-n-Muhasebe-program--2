@@ -105,6 +105,9 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
           companyName,
           companyVatId,
         },
+        headers: {
+          Authorization: `Bearer ${currentSession.access_token}`,
+        },
       });
 
       if (error) {
