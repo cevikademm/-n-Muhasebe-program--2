@@ -358,6 +358,9 @@ KARAR AĞACI:
 
 ## 12. ÇIKTI FORMATI (JSON) — KESİN UYULACAK FORMAT
 
+🚨 KURAL (CRITICAL): String değerler içerisinde KESİNLİKLE " (unescaped) kullanma! Hepsini tek tırnak yap veya escape et (\"). String içerisinde Enter (\n) veya Tab (\t) kullanma.
+
+
 Uygulamanın çökmemesi için **KESİNLİKLE AŞAĞIDAKİ YAPIYI KULLAN**. 
 Başka tablo, metin veya \`markdown\` olmadan yalnızca JSON verisi gönder:
 

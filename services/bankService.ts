@@ -3,10 +3,10 @@ import { supabase } from "./supabaseService";
 // ─────────────────────────────────────────────
 //  EDGE FUNCTION URL
 // ─────────────────────────────────────────────
-const getEdgeFunctionUrl = () => {
+const getEdgeFunctionUrl = (fn: "super-worker" | "analyze-bank" = "super-worker") => {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
   if (!supabaseUrl) throw new Error("VITE_SUPABASE_URL tanımlı değil.");
-  return `${supabaseUrl}/functions/v1/super-worker`;
+  return `${supabaseUrl}/functions/v1/${fn}`;
 };
 
 // ─────────────────────────────────────────────
@@ -16,7 +16,7 @@ const fetchBankAnalysis = async (fileBase64: string, fileType: string): Promise<
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
 
-  const edgeUrl = getEdgeFunctionUrl();
+  const edgeUrl = getEdgeFunctionUrl("analyze-bank");
   const res = await fetch(edgeUrl, {
     method: "POST",
     headers: {
@@ -24,7 +24,7 @@ const fetchBankAnalysis = async (fileBase64: string, fileType: string): Promise<
       "Authorization": `Bearer ${session.access_token}`,
       "apikey": (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "",
     },
-    body: JSON.stringify({ mode: "bank", fileBase64, fileType }),
+    body: JSON.stringify({ fileBase64, fileType }),
   });
 
   if (!res.ok) {
@@ -51,6 +51,9 @@ export interface BankTransaction {
   type: "income" | "expense";
   reference: string;      // Referenz-Nr / Mandatsreferenz
   counterpart: string;    // Auftraggeber oder Empfänger
+  category: string;       // Almanca kategori (ör: Lastschrift, Gutschrift)
+  category_tr: string;    // Türkçe kategori (ör: Otomatik Ödeme, Havale)
+  balance?: number;       // İşlem sonrası bakiye (varsa)
 }
 
 export interface BankStatement {
@@ -101,6 +104,9 @@ export const analyzeBankStatement = async (
       type: (tx.type === "income" ? "income" : "expense") as "income" | "expense",
       reference: String(tx.reference || ""),
       counterpart: String(tx.counterpart || ""),
+      category: String(tx.category || "Sonstige"),
+      category_tr: String(tx.category_tr || "Diğer"),
+      balance: tx.balance != null ? Number(tx.balance) : undefined,
     }));
 
   return {

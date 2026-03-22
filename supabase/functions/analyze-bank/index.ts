@@ -9,6 +9,9 @@ const ALLOWED_ORIGINS = [
   "https://fikoai.de",
   "https://www.fikoai.de",
   "https://fibu-de-2.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002",
 ];
 
 function getCorsHeaders(req: Request) {
@@ -23,40 +26,144 @@ function getCorsHeaders(req: Request) {
 
 const MODEL_SMART = "gemini-2.5-flash";
 
-const BANK_PROMPT = `Sen Alman bankacılık uzmanısın. Bu banka ekstresini (Kontoauszug) analiz et.
+const BANK_PROMPT = `# Banka Ekstresi (Kontoauszug) Analiz Motoru v2.0
 
-GÖREV:
-1. Tüm işlemleri (Buchungen) çıkar
-2. Her işlem için: tarih, açıklama, tutar, işlem türü (gelir/gider), karşı taraf bilgilerini çıkar
-3. Hesap özetini çıkar (dönem, açılış/kapanış bakiyesi vb.)
+Sen Alman bankacılık sistemine hakim bir **Banka Ekstresi Analiz Motoru**sun.
+Her türlü Alman bankasından gelen ekstreyi (TARGOBANK, Sparkasse, Commerzbank, Deutsche Bank, ING, DKB, Volksbank vb.) okuyabilir ve analiz edebilirsin.
 
-ÖNEMLI KURALLAR:
-- Giderler (Lastschrift, Überweisung ausgehend, Auszahlung): negatif tutar
-- Gelirler (Gutschrift, Überweisung eingehend, Einzahlung): pozitif tutar
-- Tarihleri YYYY-MM-DD formatında yaz
-- Tutarları ondalık sayı olarak ver (virgül değil nokta)
-- description: Verwendungszweck veya açıklama metni
-- counterpart: Auftraggeber veya Empfänger adı
-- reference: Referenznummer, EREF, MREF, oder leer
-- RESERV / Reservierung / Vormerkung / Vorausbuchung girişlerini transactions listesine EKLEME — bunlar gerçek işlem değildir
+---
+
+## 1. GÖREV
+
+1. Ekstrenin kapsadığı dönemi, hesap numarasını ve banka adını tespit et
+2. Açılış bakiyesi (Anfangssaldo) ve kapanış bakiyesi (Endsaldo/Schlusssaldo) çıkar
+3. **Her işlemi (Buchung) tek tek çıkar — hiçbir satırı atlama**
+4. Her işleme doğru kategori ata
+5. Toplam gelir ve toplam gideri hesapla
+6. Sonucu JSON formatında döndür
+
+---
+
+## 2. İŞLEM TÜR TESPİTİ
+
+### Gelir (income) — pozitif tutar:
+- GUTSCHRIFT, ECHTZEITGUTSCHRIFT (Havale gelen)
+- Überweisung eingehend, Einzahlung
+- Gehalt, Lohn (Maaş)
+- Mieteinnahme (Kira geliri)
+- Rückerstattung, Erstattung (İade)
+
+### Gider (expense) — negatif tutar:
+- LASTSCHRIFT, SEPALASTSCHRIFT (Otomatik ödeme)
+- ECHTZEITÜBERWEISUNG, Überweisung ausgehend (Havale giden)
+- KARTENZAHLUNG, NFCKARTENZAHLUNG, KARTENZAHLUNGMITPIN, KARTENEINSATZ (Kart ödemesi)
+- DAUERAUFTRAG (Düzenli ödeme)
+- GEBÜHR, GRUNDGEBÜHR, KONTOFÜHRUNG (Banka ücreti)
+- AUSLANDSEINSATZ (Yurtdışı işlem ücreti)
+- Auszahlung, Bargeldabhebung (Nakit çekim)
+- ABSCHLUSS (Dönem kapanışı — ücret ise gider)
+
+### Bilgi (info) — tutar = 0:
+- ANFANGSSALDO (Açılış bakiyesi satırı)
+
+---
+
+## 3. KATEGORİZASYON KURALLARI
+
+İşlem açıklamasındaki (Buchungstext / Verwendungszweck) anahtar kelimelere göre kategori belirle:
+
+| Anahtar Kelime(ler) | Kategori | Kategori (TR) |
+|---|---|---|
+| ECHTZEITGUTSCHRIFT, GUTSCHRIFT | Gutschrift | Havale (Gelen) |
+| ECHTZEITÜBERWEISUNG, ÜBERWEISUNG | Überweisung | Havale (Giden) |
+| SEPALASTSCHRIFT, LASTSCHRIFT | Lastschrift | Otomatik Ödeme |
+| NFCKARTENZAHLUNG | NFC-Kartenzahlung | Kart Ödemesi (NFC) |
+| KARTENZAHLUNGMITPIN | PIN-Kartenzahlung | Kart Ödemesi (PIN) |
+| KARTENEINSATZ | Online-Kartenzahlung | Online Kart Ödemesi |
+| DAUERAUFTRAG | Dauerauftrag | Düzenli Ödeme |
+| GEBÜHR, GRUNDGEBÜHR, KONTOFÜHRUNG | Bankgebühr | Banka Ücreti |
+| AUSLANDSEINSATZ | Auslandsgebühr | Yurtdışı İşlem Ücreti |
+| ABSCHLUSS | Abschluss | Dönem Kapanışı |
+| BARGELD, AUSZAHLUNG, GELDAUTOMAT, ATM | Bargeld | Nakit İşlem |
+| GEHALT, LOHN | Gehalt | Maaş |
+| MIETE | Miete | Kira |
+| VERSICHERUNG, KASKO, HAFTPFLICHT | Versicherung | Sigorta |
+| STROM, GAS, WASSER, STADTWERKE, ENERGIE | Nebenkosten | Enerji/Yan Giderler |
+| TELEKOM, VODAFONE, O2, TELEFON, MOBILFUNK | Telekommunikation | İletişim |
+| *(Eşleşme yoksa)* | Sonstige | Diğer |
+
+---
+
+## 4. RESERVASYON / ÖN YETKİ FİLTRESİ
+
+Aşağıdaki kelimeleri içeren satırları transactions listesine **EKLEME** — bunlar henüz gerçekleşmemiş ön yetki işlemleridir:
+- RESERV.BETRAG
+- Reservierung
+- Vormerkung
+- Vorausbuchung
+- PREAUTH
+- Vorgemerkt
+
+---
+
+## 5. TUTAR VE BAKİYE KURALLARI
+
+- Alman sayı formatını (1.234,56) ondalık sayıya çevir: 1234.56
+- Gelirler: **pozitif** tutar (ör: 1500.00)
+- Giderler: **negatif** tutar (ör: -49.99)
+- Bakiye (balance): Her işlemden sonraki güncel hesap bakiyesi (varsa)
+- totalIncome: Tüm gelir tutarlarının toplamı (pozitif değer)
+- totalExpense: Tüm gider tutarlarının toplamı (pozitif değer olarak, negatif DEĞİL)
+- Tarihleri YYYY-MM-DD formatında yaz (ör: 2025-01-15)
+
+---
+
+## 6. KARŞI TARAF (COUNTERPART) TESPİTİ
+
+İşlem açıklamasından karşı tarafı çıkar:
+- Auftraggeber / Empfänger adı
+- IBAN varsa ayrıca reference alanına yaz
+- EREF, MREF, KREF gibi referansları reference alanına ekle
+- Karşı taraf bulunamazsa counterpart = "" (boş string)
+
+---
+
+## 7. ÇIKTI FORMATI (JSON) — KESİN UYULACAK FORMAT
+
+🚨 String değerler içerisinde KESİNLİKLE " (unescaped) kullanma! Hepsini tek tırnak yap veya escape et.
 
 SADECE şu JSON formatını döndür (başka hiçbir şey yazma):
+
 {
-  "period": "Monat Jahr",
-  "accountNumber": "IBAN veya hesap no",
-  "bankName": "Banka adı",
-  "openingBalance": 0.00,
-  "closingBalance": 0.00,
-  "totalIncome": 0.00,
-  "totalExpense": 0.00,
+  "period": "01.01.2025 - 31.01.2025",
+  "accountNumber": "DE89 3702 0500 0001 2345 67",
+  "bankName": "TARGOBANK",
+  "openingBalance": 5230.45,
+  "closingBalance": 4812.30,
+  "totalIncome": 2150.00,
+  "totalExpense": 2568.15,
   "transactions": [
     {
-      "date": "YYYY-MM-DD",
-      "description": "Verwendungszweck / açıklama",
-      "amount": -99.99,
+      "date": "2025-01-03",
+      "description": "SEPALASTSCHRIFT Vodafone GmbH Mobilfunkrechnung Jan 2025",
+      "amount": -39.99,
       "type": "expense",
-      "reference": "REF123",
-      "counterpart": "Firma GmbH"
+      "reference": "EREF: RF2025010300123",
+      "counterpart": "Vodafone GmbH",
+      "category": "Telekommunikation",
+      "category_tr": "İletişim",
+      "balance": 5190.46
+    },
+    {
+      "date": "2025-01-05",
+      "description": "ECHTZEITGUTSCHRIFT Max Mustermann Miete Januar",
+      "amount": 1200.00,
+      "type": "income",
+      "reference": "",
+      "counterpart": "Max Mustermann",
+      "category": "Gutschrift",
+      "category_tr": "Havale (Gelen)",
+      "balance": 6390.46
     }
   ]
 }`;

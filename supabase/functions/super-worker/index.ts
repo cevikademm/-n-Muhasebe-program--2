@@ -1,12 +1,16 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { jsonrepair } from "https://esm.sh/jsonrepair";
 import { SYSTEM_PROMPT } from "./prompt.ts";
 
 const ALLOWED_ORIGINS = [
   "https://fikoai.de",
   "https://www.fikoai.de",
   "https://fibu-de-2.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002",
 ];
 
 function getCorsHeaders(req: Request) {
@@ -174,7 +178,7 @@ serve(async (req) => {
         }],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
           responseMimeType: "application/json",
         },
       }),
@@ -195,14 +199,46 @@ serve(async (req) => {
 
     let analysisResult;
     try {
-        const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        analysisResult = JSON.parse(cleaned);
+        let cleaned = rawText.replace(/```[a-zA-Z]*[-]?\n?/g, "").replace(/```\n?/g, "").trim();
+        
+        // Sadece JSON kısmını almak için kırpma işlemi (extratext koruması)
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        const firstBracket = cleaned.indexOf('[');
+        const lastBracket = cleaned.lastIndexOf(']');
+        
+        const start = (firstBrace !== -1 && firstBracket !== -1) ? Math.min(firstBrace, firstBracket) : Math.max(firstBrace, firstBracket);
+        let end = Math.max(lastBrace, lastBracket);
+        
+        // Eğer json tamamen bitmediyse (örneğin API kesintisi), end de geçerli bir yerde olmayabilir.
+        // Bu yüzden jsonrepair'in yapısına güveneceğiz.
+        
+        if (start !== -1) {
+             cleaned = cleaned.substring(start);
+             if (end !== -1 && end >= start) {
+                  // EĞER mantikli bir son bulunmuşsa oradan kes
+                  cleaned = cleaned.substring(0, end - start + 1);
+             }
+        }
+        
+        // GitHub'daki en gelişmiş kütüphane olan `jsonrepair`'i (josdejong/jsonrepair) devreye aldık.
+        // Unescaped quotes, missing commas, trailing commas, and missing brackets hatalarını düzeltecek.
+        let repairedJSON = cleaned;
+        try {
+             repairedJSON = jsonrepair(cleaned);
+        } catch (repairErr: any) {
+             console.warn("[super-worker] jsonrepair warning (could not fully repair):", repairErr.message);
+        }
+
+        analysisResult = JSON.parse(repairedJSON);
+
     // [FIX M-3] Ham AI yanıtı istemciye gönderilmiyor
-    } catch {
-        console.error("[super-worker] JSON parse error, raw preview:", rawText.substring(0, 200));
+    } catch (err: any) {
+        console.error("[super-worker] JSON parse error: ", err.message, "raw preview:", rawText.substring(0, 500));
+        const snippet = rawText ? rawText.substring(0, 300) : "BOŞ YANIT";
         return new Response(JSON.stringify({
             success: false,
-            error: "AI yanıtı JSON formatında değil"
+            error: `JSON Parse Hatası (${err.message}). Detay: ${snippet}`
         }), {
             status: 422,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
