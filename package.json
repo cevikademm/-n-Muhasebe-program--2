@@ -12,12 +12,12 @@
     "test:coverage": "vitest run --config vitest.config.ts --coverage"
   },
   "dependencies": {
-    "@google/genai": "^1.43.0",
-    "@supabase/supabase-js": "^2.98.0",
+    "@google/genai": "^1.46.0",
+    "@supabase/supabase-js": "^2.100.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",
-    "lucide-react": "^0.575.0",
-    "motion": "^12.34.3",
+    "lucide-react": "^1.0.1",
+    "motion": "^12.38.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.5.207",
     "react": "^19.2.4",
