@@ -16,16 +16,16 @@ import { PeriodPicker } from "./PeriodPicker";
 import { UpgradePrompt } from "./UpgradePrompt";
 import { formatPeriodLabel, type Language } from "../services/periodUtils";
 
-interface AuthScreenProps { onAuth: (session: any) => void; }
+interface AuthScreenProps { onAuth: (session: any) => void; initialRegister?: boolean; }
 
 type ScreenState = "auth" | "register-modal" | "period-select" | "payment";
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister }) => {
   const { t, lang, setLang } = useLang();
   const campaignDiscounts = useCampaignDiscounts();
 
   // ─── Auth Form ────────────────────────────────────────
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(!initialRegister);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -115,9 +115,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth }) => {
           email: companyEmail.trim() || regEmail,
         });
       }
-      // Free plan → direkt payment, diğerleri → dönem seçimi
+      // Free plan → direkt giriş yap (ödeme ekranını atla)
       if (selectedPlan?.key === "free") {
-        setScreenState("payment");
+        // Otomatik login yap
+        const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+          email: regEmail,
+          password: regPassword,
+        });
+        if (loginError) throw loginError;
+        if (loginData.session) {
+          onAuth(loginData.session);
+          return;
+        }
       } else {
         setScreenState("period-select");
       }

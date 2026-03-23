@@ -6,6 +6,7 @@ import {
   LayoutDashboard, FileText, BarChart3, Building2, Settings2, Briefcase,
 } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
+import { LandingPage } from "./components/LandingPage";
 import { LeftPanel } from "./components/LeftPanel";
 import { CenterPanel } from "./components/CenterPanel";
 import { RightPanel } from "./components/RightPanel";
@@ -24,6 +25,13 @@ import { CampaignsPanel } from "./components/CampaignsPanel";
 import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
 import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
 import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
+
+// New Legal Pages
+import { AboutUsPanel } from "./components/AboutUsPanel";
+import { DeliveryReturnPanel } from "./components/DeliveryReturnPanel";
+import { PrivacyPolicyPanel } from "./components/PrivacyPolicyPanel";
+import { DistanceSellingPanel } from "./components/DistanceSellingPanel";
+import { LegalFooter } from "./components/LegalFooter";
 import { ToastProvider } from "./contexts/ToastContext";
 import { useAccountPlans } from "./services/useAccountPlans";
 import { useCompanies } from "./services/useCompanies";
@@ -34,6 +42,8 @@ export default function App() {
   const [lang, setLang] = useState<Language>("tr");
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showLanding, setShowLanding] = useState(true);
+  const [initialRegister, setInitialRegister] = useState(false);
 
   // UI States
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
@@ -372,6 +382,11 @@ export default function App() {
       );
     }
 
+    if (activeMenu === "about") return <AboutUsPanel />;
+    if (activeMenu === "deliveryReturn") return <DeliveryReturnPanel />;
+    if (activeMenu === "privacy") return <PrivacyPolicyPanel />;
+    if (activeMenu === "distanceSelling") return <DistanceSellingPanel />;
+
     return (
       <div
         className="flex-1 flex flex-col items-center justify-center"
@@ -440,8 +455,15 @@ export default function App() {
   return (
     <ToastProvider>
       <LangContext.Provider value={{ t, lang, setLang }}>
-        {!session ? (
-          <AuthScreen onAuth={setSession} />
+        {!session && showLanding ? (
+          <LandingPage
+            onGoToLogin={() => { setInitialRegister(false); setShowLanding(false); }}
+            onGoToRegister={() => { setInitialRegister(true); setShowLanding(false); }}
+            lang={lang}
+            onLangChange={setLang}
+          />
+        ) : !session ? (
+          <AuthScreen onAuth={setSession} initialRegister={initialRegister} />
         ) : (
           <div
             className="flex h-screen overflow-hidden flex-col md:flex-row"
@@ -467,6 +489,7 @@ export default function App() {
               style={{ minWidth: 0, minHeight: 0 }}
             >
               {renderCenterPanel()}
+              <LegalFooter onNavigate={(key) => handleMenuChange(key as any)} />
             </div>
 
             <div

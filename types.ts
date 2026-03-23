@@ -72,6 +72,10 @@ export interface Translations {
   deleted: string;
   subscription: string;
   invoices: string;
+  about: string;
+  deliveryReturn: string;
+  privacy: string;
+  distanceSelling: string;
 }
 
 export interface AccountRow {
@@ -160,7 +164,7 @@ export interface UserSettings {
   updated_at: string;
 }
 
-export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'settings' | 'adminView' | 'subscription' | 'maliMusavir' | 'campaigns';
+export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'settings' | 'adminView' | 'subscription' | 'maliMusavir' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
 
 export interface UserProfile {
   id: string;

@@ -91,6 +91,10 @@ export const translations: Record<'tr' | 'de', Translations> = {
     deleted: "Silindi!",
     subscription: "Abonelik",
     invoices: "Faturalar",
+    about: "Hakkımızda",
+    deliveryReturn: "Teslimat ve İade Şartları",
+    privacy: "Gizlilik Sözleşmesi",
+    distanceSelling: "Mesafeli Satış Sözleşmesi",
   },
   de: {
     appTitle: "Deutschland Vorbuchhaltungssystem",
@@ -164,5 +168,9 @@ export const translations: Record<'tr' | 'de', Translations> = {
     deleted: "Gelöscht!",
     subscription: "Abonnement",
     invoices: "Rechnungen",
+    about: "Über Uns",
+    deliveryReturn: "Liefer- und Rückgabebedingungen",
+    privacy: "Datenschutzerklärung",
+    distanceSelling: "Fernabsatzvertrag",
   },
 };
