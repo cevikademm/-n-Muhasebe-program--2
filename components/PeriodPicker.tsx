@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { motion } from "motion/react";
 import { useLang } from "../LanguageContext";
 import { ChevronLeft, ChevronRight, Lock, Check } from "lucide-react";
+import { PaymentLogos } from "./SubscriptionPanel";
 import {
   getMonthAbbr,
   getCurrentPeriod,
@@ -297,6 +298,11 @@ export const PeriodPicker: React.FC<PeriodPickerProps> = ({
           </span>
         </div>
       )}
+
+      {/* Payment Logos */}
+      <div style={{ marginBottom: "16px" }}>
+        <PaymentLogos />
+      </div>
 
       {/* Onay Butonu */}
       <motion.button

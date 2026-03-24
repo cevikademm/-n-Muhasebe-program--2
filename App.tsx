@@ -31,7 +31,6 @@ import { AboutUsPanel } from "./components/AboutUsPanel";
 import { DeliveryReturnPanel } from "./components/DeliveryReturnPanel";
 import { PrivacyPolicyPanel } from "./components/PrivacyPolicyPanel";
 import { DistanceSellingPanel } from "./components/DistanceSellingPanel";
-import { LegalFooter } from "./components/LegalFooter";
 import { ToastProvider } from "./contexts/ToastContext";
 import { useAccountPlans } from "./services/useAccountPlans";
 import { useCompanies } from "./services/useCompanies";
@@ -463,7 +462,7 @@ export default function App() {
             onLangChange={setLang}
           />
         ) : !session ? (
-          <AuthScreen onAuth={setSession} initialRegister={initialRegister} />
+          <AuthScreen onAuth={setSession} initialRegister={initialRegister} onBack={() => setShowLanding(true)} />
         ) : (
           <div
             className="flex h-screen overflow-hidden flex-col md:flex-row"
@@ -489,7 +488,6 @@ export default function App() {
               style={{ minWidth: 0, minHeight: 0 }}
             >
               {renderCenterPanel()}
-              <LegalFooter onNavigate={(key) => handleMenuChange(key as any)} />
             </div>
 
             <div

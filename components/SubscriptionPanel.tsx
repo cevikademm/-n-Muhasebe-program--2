@@ -125,6 +125,48 @@ export const getPlans = (tr: (a: string, b: string) => string, discounts?: PlanD
   ];
 };
 
+export const PaymentLogos = ({ centered = true }: { centered?: boolean }) => (
+  <div style={{
+    display: "flex",
+    alignItems: centered ? "center" : "flex-start",
+    justifyContent: centered ? "center" : "flex-start",
+    gap: "10px",
+    flexWrap: "wrap",
+    opacity: 0.85,
+  }}>
+    <div style={{
+      display: "flex", alignItems: "center", gap: "2px",
+      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: "8px", padding: "6px 10px",
+    }} title="Visa">
+      <svg width="40" height="13" viewBox="0 0 40 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14.9442 0.334473L9.82227 12.3345H5.85827L7.69627 7.76647L3.48327 0.334473H7.81827L10.3703 6.64347L10.7493 6.64347L13.8863 0.334473H14.9442Z" fill="white"/>
+        <path d="M19.1412 0.334473H15.6592V12.3345H19.1412V0.334473Z" fill="white"/>
+        <path d="M29.6201 12.3345L27.4211 4.75747L27.0541 4.75747L24.3641 12.3345H20.4491L24.5021 0.334473H28.7841L33.4071 12.3345H29.6201ZM27.2401 2.36847L27.1811 2.36847L25.4201 8.86847H28.9481L27.2401 2.36847Z" fill="white"/>
+        <path d="M39.6922 4.19547C39.6922 1.63647 37.4722 0.177473 35.1512 0.177473C33.4732 0.177473 31.8102 0.826473 30.6862 1.95047L32.1642 4.17847C33.0232 3.42447 34.0042 3.01247 35.0682 3.01247C36.1432 3.01247 36.6972 3.51847 36.6972 4.09747C36.6972 6.57847 30.9322 5.56847 30.9322 9.60847C30.9322 11.5545 32.5402 12.5695 34.6972 12.5695C36.4352 12.5695 37.9902 11.9675 39.2992 10.9665L37.9002 8.71847C37.0872 9.42147 36.0082 9.87347 35.0342 9.87347C34.1162 9.87347 33.6842 9.45347 33.6842 8.94147C33.6842 6.13647 39.6922 7.37347 39.6922 4.19547Z" fill="white"/>
+      </svg>
+    </div>
+    <div style={{
+      display: "flex", alignItems: "center", gap: "1px",
+      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: "8px", padding: "6px 10px",
+    }} title="MasterCard">
+      <svg width="24" height="15" viewBox="0 0 24 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="7.5" cy="7.5" r="7.5" fill="#FF5F00"/>
+        <circle cx="16.5" cy="7.5" r="7.5" fill="#EB001B"/>
+        <path d="M12 13.5C13.2514 12.0289 14 10.0886 14 8C14 5.9114 13.2514 3.97115 12 2.5C10.7486 3.97115 10 5.9114 10 8C10 10.0886 10.7486 12.0289 12 13.5Z" fill="#FF9E0F"/>
+      </svg>
+    </div>
+    <div style={{
+      display: "flex", alignItems: "center",
+      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: "8px", padding: "5px 10px", height: "29px",
+    }} title="iyzico ile Öde">
+      <img src="/iyzico-checkout.png" alt="iyzico ile Öde" style={{ height: 18, objectFit: "contain" }} />
+    </div>
+  </div>
+);
+
 const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M13.3 4.3L6.5 11.1L2.7 7.3" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -646,6 +688,16 @@ export const SubscriptionPanel: React.FC<{
             "Alle Preise verstehen sich inklusive MwSt. Periodisches Abonnementmodell — Sie erhalten Zugang zu den gekauften Monaten."
           )}
         </motion.p>
+
+        {/* Payment Logos */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1 }}
+          style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}
+        >
+          <PaymentLogos />
+        </motion.div>
       </div>
     </div>
   );
