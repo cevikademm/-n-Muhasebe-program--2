@@ -29,7 +29,7 @@ const t = {
       subtitle: "Almanya ve Avrupa'daki KOBİ'ler için yapay zeka destekli muhasebe çözümü. Faturalarınızı yükleyin, banka hesap özetlerinizi analiz edin — gerisini FikoAI halleder.",
       cta: "Hemen Başlayın",
       ctaSecondary: "Demo İzle",
-      stat1: "Fatura İşlendi",
+      stat1: "hedef Analizi",
       stat2: "Doğruluk Oranı",
       stat3: "Zaman Tasarrufu",
     },
@@ -96,7 +96,7 @@ const t = {
       subtitle: "KI-gestützte Buchhaltungslösung für KMU in Deutschland und Europa. Laden Sie Ihre Rechnungen hoch, analysieren Sie Kontoauszüge — FikoAI erledigt den Rest.",
       cta: "Jetzt starten",
       ctaSecondary: "Demo ansehen",
-      stat1: "Rechnungen verarbeitet",
+      stat1: "Ziel Analyse",
       stat2: "Genauigkeit",
       stat3: "Zeitersparnis",
     },
@@ -303,7 +303,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
             style={{ display: "flex", justifyContent: "center", gap: 48, marginTop: 64, flexWrap: "wrap" }}
           >
             {[
-              { value: "50K+", label: c.hero.stat1 },
+              { value: "hedef 50K", label: c.hero.stat1 },
               { value: "99.5%", label: c.hero.stat2 },
               { value: "80%", label: c.hero.stat3 },
             ].map((stat, i) => (
