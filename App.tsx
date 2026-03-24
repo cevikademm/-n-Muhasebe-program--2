@@ -233,6 +233,8 @@ export default function App() {
           userEmail={session?.user?.email}
           userRole={userRole}
           userId={session?.user?.id}
+          subscriptionPlan={subInfo.plan}
+          onNavigateToSubscription={() => handleMenuChange("subscription" as any)}
         />
       );
     }
@@ -261,6 +263,8 @@ export default function App() {
           isSubscriptionExpired={subInfo.isExpired}
           subscriptionExpiresAt={subInfo.expiresAt}
           subscriptionPlan={subInfo.plan}
+          propUserId={session?.user?.id}
+          onNavigateToSubscription={() => handleMenuChange("subscription" as any)}
         />
       );
     }
@@ -276,6 +280,8 @@ export default function App() {
           isSubscriptionExpired={subInfo.isExpired}
           subscriptionExpiresAt={subInfo.expiresAt}
           subscriptionPlan={subInfo.plan}
+          userId={session?.user?.id}
+          onNavigateToSubscription={() => handleMenuChange("subscription" as any)}
           onUpload={async (files) => {
             for (const file of files) {
               try {

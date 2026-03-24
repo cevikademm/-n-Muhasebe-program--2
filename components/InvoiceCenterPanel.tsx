@@ -4,8 +4,9 @@ import { Invoice, InvoiceItem } from "../types";
 import {
   Upload, Search, Loader2, FileText, Calendar, Clock,
   AlertCircle, ChevronDown, ChevronUp, Building2,
-  AlertTriangle, Package, TrendingUp,
+  AlertTriangle, Package, TrendingUp, Crown,
 } from "lucide-react";
+import { FREE_PLAN_LIMITS, getInvoiceCount, getRemainingInvoices, canUploadInvoice } from "../services/freePlanLimits";
 
 interface InvoiceCenterPanelProps {
   invoices: Invoice[];
@@ -19,6 +20,8 @@ interface InvoiceCenterPanelProps {
   isSubscriptionExpired?: boolean;
   subscriptionExpiresAt?: Date | null;
   subscriptionPlan?: string;
+  userId?: string;
+  onNavigateToSubscription?: () => void;
 }
 
 const fmtEur = (n: number) =>
@@ -32,7 +35,7 @@ const STATUS_MAP: Record<string, { label: [string, string]; color: string; bg: s
 
 export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
   invoices, loading, uploading, selectedInvoice, onSelectInvoice, onUpload, fetchItems, onAccountClick,
-  isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan,
+  isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan, userId, onNavigateToSubscription,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -105,7 +108,11 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
     }
   };
 
-  const uploadBlocked = isSubscriptionExpired === true;
+  const isFreePlan = (subscriptionPlan || "free") === "free";
+  const freeInvoiceUsed = getInvoiceCount(userId);
+  const freeInvoiceRemaining = getRemainingInvoices(userId);
+  const freeLimitReached = isFreePlan && !canUploadInvoice(subscriptionPlan || "free", userId);
+  const uploadBlocked = isSubscriptionExpired === true || freeLimitReached;
   const subExpDateStr = subscriptionExpiresAt
     ? subscriptionExpiresAt.toLocaleDateString("tr-TR")
     : null;
@@ -144,6 +151,72 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
         </div>
       )}
 
+      {/* Free Plan Counter / Limit Banner */}
+      {isFreePlan && (
+        <div style={{
+          padding: "10px 16px",
+          background: freeLimitReached ? "rgba(239,68,68,.10)" : "rgba(6,182,212,.06)",
+          borderBottom: `1px solid ${freeLimitReached ? "rgba(239,68,68,.2)" : "rgba(6,182,212,.12)"}`,
+          display: "flex", alignItems: "center", gap: "10px",
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: "32px", height: "32px", borderRadius: "8px", flexShrink: 0,
+            background: freeLimitReached ? "rgba(239,68,68,.15)" : "rgba(6,182,212,.12)",
+            border: `1px solid ${freeLimitReached ? "rgba(239,68,68,.3)" : "rgba(6,182,212,.2)"}`,
+          }}>
+            <FileText size={14} style={{ color: freeLimitReached ? "#ef4444" : "#06b6d4" }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: freeLimitReached ? "#fca5a5" : "#e2e8f0" }}>
+                {tr("Ücretsiz Plan", "Kostenloser Plan")}
+              </span>
+              <span style={{
+                fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "10px",
+                background: freeLimitReached ? "rgba(239,68,68,.15)" : "rgba(249,115,22,.12)",
+                color: freeLimitReached ? "#ef4444" : "#f97316",
+                border: `1px solid ${freeLimitReached ? "rgba(239,68,68,.3)" : "rgba(249,115,22,.25)"}`,
+              }}>
+                {freeInvoiceUsed}/{FREE_PLAN_LIMITS.maxInvoices}
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div style={{ width: "100%", height: "4px", borderRadius: "2px", background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
+              <div style={{
+                width: `${Math.min(100, (freeInvoiceUsed / FREE_PLAN_LIMITS.maxInvoices) * 100)}%`,
+                height: "100%", borderRadius: "2px",
+                background: freeLimitReached
+                  ? "linear-gradient(90deg, #ef4444, #dc2626)"
+                  : `linear-gradient(90deg, #06b6d4, ${freeInvoiceRemaining <= 3 ? "#f59e0b" : "#06b6d4"})`,
+                transition: "width .3s ease",
+              }} />
+            </div>
+            <span style={{ fontSize: "10px", color: freeLimitReached ? "#f87171" : "rgba(255,255,255,.4)", marginTop: "3px", display: "block" }}>
+              {freeLimitReached
+                ? tr("Fatura limitinize ulaştınız. Pro plana geçerek sınırsız fatura yükleyin.", "Rechnungslimit erreicht. Upgrade auf Pro für unbegrenzte Rechnungen.")
+                : tr(`${freeInvoiceRemaining} fatura hakkınız kaldı`, `${freeInvoiceRemaining} Rechnungen verbleibend`)}
+            </span>
+          </div>
+          {freeLimitReached && onNavigateToSubscription && (
+            <button
+              onClick={onNavigateToSubscription}
+              style={{
+                display: "flex", alignItems: "center", gap: "5px",
+                padding: "7px 14px", borderRadius: "8px", border: "none", cursor: "pointer",
+                background: "linear-gradient(135deg, #f97316, #ea580c)",
+                color: "#fff", fontSize: "11px", fontWeight: 700,
+                boxShadow: "0 2px 8px rgba(249,115,22,.3)",
+                flexShrink: 0, whiteSpace: "nowrap" as const,
+              }}
+            >
+              <Crown size={12} />
+              {tr("Pro'ya Geç", "Auf Pro upgraden")}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="inv-header" style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,.06)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", gap: "8px" }}>
@@ -158,7 +231,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading || uploadBlocked}
-            title={uploadBlocked ? tr("Abonelik süresi dolmuş — yükleme yapılamaz", "Abonnement abgelaufen") : ""}
+            title={freeLimitReached ? tr("Fatura limitine ulaşıldı — Pro plana geçin", "Rechnungslimit erreicht") : uploadBlocked ? tr("Abonelik süresi dolmuş — yükleme yapılamaz", "Abonnement abgelaufen") : ""}
             style={{
               display: "flex", alignItems: "center", gap: "6px",
               padding: "9px 14px", borderRadius: "10px",

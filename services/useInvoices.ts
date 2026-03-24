@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabaseService";
 import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
 import { getLearningRules } from "./learningEngine";
+import { canUploadInvoice, incrementInvoiceCount, getRemainingInvoices } from "./freePlanLimits";
 
 export interface SubscriptionCheck {
   isActive: boolean;
@@ -56,6 +57,17 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
           `Fatura yükleyebilmek için lütfen aboneliğinizi yenileyin.`
         );
       }
+    }
+
+    // ── Ücretsiz Plan Fatura Limiti ──
+    const currentPlan = subscriptionInfo?.plan || "free";
+    const userId = (await supabase.auth.getSession()).data.session?.user?.id;
+    if (!canUploadInvoice(currentPlan, userId)) {
+      const remaining = getRemainingInvoices(userId);
+      throw new Error(
+        `Ücretsiz planda maksimum 10 fatura yükleyebilirsiniz. Kalan: ${remaining}. ` +
+        `Daha fazla fatura yüklemek için Pro plana geçin.`
+      );
     }
 
     // Oturum kontrolu - expire olmussa refresh
@@ -196,6 +208,11 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
 
       // Invoices listesini yalnızca React state üzerinden güncelle (DB KAPALI)
       setInvoices(prev => [mockInvoice, ...prev]);
+
+      // Ücretsiz plan sayacını artır
+      if (currentPlan === "free") {
+        incrementInvoiceCount(currentSession.user.id);
+      }
 
       return mappedResult as InvoiceAnalysisResult;
     } catch (err: any) {

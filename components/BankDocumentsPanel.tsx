@@ -26,6 +26,7 @@ import {
 } from "../services/bankAnalysisStore";
 import { supabase } from "../services/supabaseService";
 import { createUnmatchedNotifications } from "../services/notificationService";
+import { canUploadBankStatement, incrementBankStatementCount, getBankStatementCount, FREE_PLAN_LIMITS, getRemainingBankStatements } from "../services/freePlanLimits";
 
 // ─────────────────────────────────────────────
 //  PROPS
@@ -34,6 +35,8 @@ interface BankDocumentsPanelProps {
   isSubscriptionExpired?: boolean;
   subscriptionExpiresAt?: Date | null;
   subscriptionPlan?: string;
+  propUserId?: string;
+  onNavigateToSubscription?: () => void;
 }
 
 // ─────────────────────────────────────────────
@@ -123,7 +126,7 @@ const parseStmtDate = (s: SavedBankStatement): { year: number; month: number } =
 // ─────────────────────────────────────────────
 //  ANA PANEL
 // ─────────────────────────────────────────────
-export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan }) => {
+export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan, propUserId, onNavigateToSubscription }) => {
   const invoices: any[] = [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => (lang === "tr" ? a : b);
@@ -259,6 +262,18 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
       return;
     }
 
+    // ── Ücretsiz Plan Banka Ekstresi Limiti ──
+    const currentPlan = subscriptionPlan || "free";
+    if (!canUploadBankStatement(currentPlan, propUserId)) {
+      setError(
+        tr(
+          `Ücretsiz planda maksimum ${FREE_PLAN_LIMITS.maxBankStatements} banka ekstresi yükleyebilirsiniz. Daha fazla yüklemek için Pro plana geçin.`,
+          `Im kostenlosen Plan können Sie maximal ${FREE_PLAN_LIMITS.maxBankStatements} Kontoauszug hochladen. Upgraden Sie für mehr.`
+        )
+      );
+      return;
+    }
+
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       setError(tr("Sadece PDF dosyası yükleyebilirsiniz.", "Nur PDF-Dateien werden unterstützt."));
       return;
@@ -313,6 +328,11 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
       });
       setStatement(result);
       setTxMatches(withMatches);
+
+      // Ücretsiz plan sayacını artır
+      if (currentPlan === "free") {
+        incrementBankStatementCount(propUserId);
+      }
 
       // ── Otomatik kaydet
       const uid = userId ?? (await supabase.auth.getSession()).data.session?.user?.id ?? null;
@@ -499,8 +519,8 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
             onClick={() => {
               if (!isSubscriptionExpired) fileRef.current?.click();
             }}
-            disabled={analyzing || isSubscriptionExpired}
-            style={btnStyle(isSubscriptionExpired ? "#4b5563" : "#06b6d4", analyzing || isSubscriptionExpired)}
+            disabled={analyzing || isSubscriptionExpired || !canUploadBankStatement(subscriptionPlan || "free", propUserId)}
+            style={btnStyle((isSubscriptionExpired || !canUploadBankStatement(subscriptionPlan || "free", propUserId)) ? "#4b5563" : "#06b6d4", analyzing || isSubscriptionExpired || !canUploadBankStatement(subscriptionPlan || "free", propUserId))}
             title={isSubscriptionExpired ? tr("Ekstre Yükle (Abonelik Süresi Doldu)", "Hochladen (Abonnement abgelaufen)") : ""}
           >
             {analyzing ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> {tr("Analiz...", "Analyse...")}</> : <><Upload size={12} /> {tr("Ekstre Yükle", "Hochladen")}</>}
@@ -532,6 +552,51 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
           </div>
         </div>
       )}
+
+      {/* Free Plan Bank Statement Limit Banner */}
+      {(subscriptionPlan || "free") === "free" && !isSubscriptionExpired && (() => {
+        const bankUsed = getBankStatementCount(propUserId);
+        const bankLimitReached = !canUploadBankStatement(subscriptionPlan || "free", propUserId);
+        return (
+          <div style={{
+            padding: "10px 22px",
+            background: bankLimitReached ? "rgba(239,68,68,.10)" : "rgba(6,182,212,.06)",
+            borderBottom: `1px solid ${bankLimitReached ? "rgba(239,68,68,.2)" : "rgba(6,182,212,.12)"}`,
+            display: "flex", alignItems: "center", gap: "10px",
+            flexShrink: 0,
+          }}>
+            <Banknote size={16} style={{ color: bankLimitReached ? "#ef4444" : "#06b6d4", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: bankLimitReached ? "#fca5a5" : "#e2e8f0" }}>
+                {tr("Ücretsiz Plan", "Kostenloser Plan")}
+              </span>
+              <span style={{
+                fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "10px", marginLeft: "8px",
+                background: bankLimitReached ? "rgba(239,68,68,.15)" : "rgba(249,115,22,.12)",
+                color: bankLimitReached ? "#ef4444" : "#f97316",
+              }}>
+                {bankUsed}/{FREE_PLAN_LIMITS.maxBankStatements}
+              </span>
+              <span style={{ fontSize: "10px", color: bankLimitReached ? "#f87171" : "rgba(255,255,255,.4)", display: "block", marginTop: "2px" }}>
+                {bankLimitReached
+                  ? tr("Ekstre limitinize ulaştınız. Pro plana geçerek sınırsız ekstre yükleyin.", "Kontoauszugslimit erreicht. Upgrade auf Pro für unbegrenzte Auszüge.")
+                  : tr(`${getRemainingBankStatements(propUserId)} ekstre hakkınız kaldı`, `${getRemainingBankStatements(propUserId)} Kontoauszüge verbleibend`)}
+              </span>
+            </div>
+            {bankLimitReached && onNavigateToSubscription && (
+              <button onClick={onNavigateToSubscription} style={{
+                display: "flex", alignItems: "center", gap: "5px",
+                padding: "7px 14px", borderRadius: "8px", border: "none", cursor: "pointer",
+                background: "linear-gradient(135deg, #f97316, #ea580c)",
+                color: "#fff", fontSize: "11px", fontWeight: 700,
+                boxShadow: "0 2px 8px rgba(249,115,22,.3)", flexShrink: 0,
+              }}>
+                {tr("Pro'ya Geç", "Auf Pro upgraden")}
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* İÇERİK */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>

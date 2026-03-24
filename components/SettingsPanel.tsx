@@ -5,18 +5,71 @@ import { ExportTab } from "./ExportTab";
 import { SettingsCompanyTab } from "./settings/SettingsCompanyTab";
 import { SettingsMatchingTab } from "./settings/SettingsMatchingTab";
 import { SettingsSecurityTab } from "./settings/SettingsSecurityTab";
-import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2 } from "lucide-react";
+import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2, Lock } from "lucide-react";
+import { canUseRules, canUseExport } from "../services/freePlanLimits";
 
 interface SettingsPanelProps {
   userEmail: string | undefined;
   userRole: string;
   userId: string | undefined;
+  subscriptionPlan?: string;
+  onNavigateToSubscription?: () => void;
 }
 
 type Tab = "company" | "accounting" | "matching" | "export" | "security";
 
+const ProLockedOverlay: React.FC<{
+  title: string;
+  description: string;
+  onUpgrade?: () => void;
+  tr: (a: string, b: string) => string;
+}> = ({ title, description, onUpgrade, tr }) => (
+  <div style={{
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    padding: "60px 24px", textAlign: "center", minHeight: "300px",
+  }}>
+    <div style={{
+      width: "64px", height: "64px", borderRadius: "16px",
+      background: "rgba(249,115,22,.1)", border: "1px solid rgba(249,115,22,.2)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      marginBottom: "20px",
+    }}>
+      <Lock size={28} style={{ color: "#f97316" }} />
+    </div>
+    <h3 style={{ fontSize: "20px", fontWeight: 700, color: "#fff", margin: "0 0 8px" }}>
+      {title}
+    </h3>
+    <p style={{ fontSize: "14px", color: "rgba(255,255,255,.45)", maxWidth: "400px", lineHeight: 1.6, margin: "0 0 24px" }}>
+      {description}
+    </p>
+    <div style={{
+      display: "flex", alignItems: "center", gap: "6px",
+      padding: "6px 14px", borderRadius: "20px", marginBottom: "24px",
+      background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.2)",
+    }}>
+      <Lock size={12} style={{ color: "#ef4444" }} />
+      <span style={{ fontSize: "11px", fontWeight: 600, color: "#ef4444" }}>
+        {tr("Ücretsiz planda kullanılamaz", "Im kostenlosen Plan nicht verfügbar")}
+      </span>
+    </div>
+    {onUpgrade && (
+      <button onClick={onUpgrade} style={{
+        display: "flex", alignItems: "center", gap: "8px",
+        padding: "12px 28px", borderRadius: "12px", border: "none", cursor: "pointer",
+        background: "linear-gradient(135deg, #f97316, #ea580c)",
+        color: "#fff", fontSize: "15px", fontWeight: 700,
+        boxShadow: "0 4px 16px rgba(249,115,22,.3)",
+        transition: "all .2s",
+      }}>
+        <Crown size={18} />
+        {tr("Pro Plana Geç", "Auf Pro upgraden")}
+      </button>
+    )}
+  </div>
+);
+
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  userEmail, userRole, userId,
+  userEmail, userRole, userId, subscriptionPlan, onNavigateToSubscription,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -119,15 +172,39 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           )}
 
           {tab === "matching" && (
-            <SettingsMatchingTab
-              userId={userId}
-              userRole={userRole}
-              flash={flash}
-            />
+            canUseRules(subscriptionPlan || "free") ? (
+              <SettingsMatchingTab
+                userId={userId}
+                userRole={userRole}
+                flash={flash}
+              />
+            ) : (
+              <ProLockedOverlay
+                title={tr("Kurallar", "Regeln")}
+                description={tr(
+                  "Kural oluşturma ve düzenleme özelliği Pro plan ile kullanılabilir. Kurallar sayesinde faturalarınız otomatik olarak doğru hesaplara eşleştirilir.",
+                  "Regeln erstellen und bearbeiten ist nur mit dem Pro-Plan verfügbar. Regeln ermöglichen die automatische Zuordnung Ihrer Rechnungen."
+                )}
+                onUpgrade={onNavigateToSubscription}
+                tr={tr}
+              />
+            )
           )}
 
           {tab === "export" && (
-            <ExportTab invoices={[]} invoiceItems={[]} tr={tr} lang={lang} />
+            canUseExport(subscriptionPlan || "free") ? (
+              <ExportTab invoices={[]} invoiceItems={[]} tr={tr} lang={lang} />
+            ) : (
+              <ProLockedOverlay
+                title={tr("Export", "Export")}
+                description={tr(
+                  "DATEV ve CSV export özelliği Pro plan ile kullanılabilir. Verilerinizi muhasebe yazılımınıza kolayca aktarın.",
+                  "DATEV- und CSV-Export ist nur mit dem Pro-Plan verfügbar. Exportieren Sie Ihre Daten einfach in Ihre Buchhaltungssoftware."
+                )}
+                onUpgrade={onNavigateToSubscription}
+                tr={tr}
+              />
+            )
           )}
 
           {tab === "security" && (
