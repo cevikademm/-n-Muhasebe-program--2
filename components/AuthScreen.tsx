@@ -5,6 +5,7 @@ import { useLang } from "../LanguageContext";
 import { TubesBackground } from "./TubesBackground";
 import { getPlans, PlanCard, useCampaignDiscounts } from "./SubscriptionPanel";
 import {
+  ArrowLeft,
   ArrowRight,
   Loader2,
   Lock,
@@ -22,11 +23,11 @@ import { DistanceSellingPanel as DistanceSellingPanelInline } from "./DistanceSe
 import { DeliveryReturnPanel as DeliveryReturnPanelInline } from "./DeliveryReturnPanel";
 import { formatPeriodLabel, type Language } from "../services/periodUtils";
 
-interface AuthScreenProps { onAuth: (session: any) => void; initialRegister?: boolean; }
+interface AuthScreenProps { onAuth: (session: any) => void; initialRegister?: boolean; onBack?: () => void; }
 
 type ScreenState = "auth" | "register-modal" | "period-select" | "payment";
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister, onBack }) => {
   const { t, lang, setLang } = useLang();
   const campaignDiscounts = useCampaignDiscounts();
 
@@ -172,7 +173,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
           backgroundSize: "40px 40px"
         }} />
 
-        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 sm:p-6">
+        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 pt-16 sm:p-6 sm:pt-16 pt-safe">
           {/* Seçili plan bilgisi */}
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -236,7 +237,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
           backgroundSize: "40px 40px"
         }} />
 
-        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 sm:p-6">
+        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 pt-16 sm:p-6 sm:pt-16 pt-safe">
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -406,8 +407,29 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
         background: "radial-gradient(ellipse at center, rgba(6,182,212,.08) 0%, transparent 70%)"
       }} />
 
-      {/* Language switcher */}
-      <div className="absolute top-5 left-5 flex gap-2 z-20">
+      {/* Back + Language switcher */}
+      <div className="absolute top-5 left-5 pt-safe flex items-center gap-3 z-20">
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              padding: "6px 14px",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              background: "rgba(255,255,255,0.05)",
+              color: "rgba(255,255,255,0.5)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+            }}
+          >
+            <ArrowLeft size={13} />
+            {tr("Ana Sayfa", "Startseite")}
+          </button>
+        )}
         {(["tr", "de"] as const).map(l => (
           <button key={l} onClick={() => setLang(l)}
             className="font-syne px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer transition-all border"
@@ -420,10 +442,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
       </div>
 
       {/* ── Layout ── */}
-      <div className="relative z-10 flex flex-col lg:flex-row w-full min-h-screen overflow-y-auto">
+      <div className="relative z-10 flex flex-col lg:flex-row w-full min-h-screen overflow-y-auto pt-safe">
 
         {/* LEFT: Login form */}
-        <div className="flex items-center justify-center p-4 sm:p-6 lg:p-10 lg:w-[380px] xl:w-[420px] flex-shrink-0">
+        <div className="flex items-center justify-center p-4 pt-16 sm:p-6 sm:pt-16 lg:p-10 lg:pt-10 lg:w-[380px] xl:w-[420px] flex-shrink-0">
           <div
             className="fade-up w-full max-w-[380px] flex flex-col rounded-2xl overflow-hidden shadow-2xl max-h-[95vh]"
             style={{
@@ -482,6 +504,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
               <p className="text-xs text-center mt-4" style={{ color: "rgba(255,255,255,0.25)" }}>
                 {tr("Hesabınız yok mu? Bir plan seçin.", "Kein Konto? Wählen Sie einen Plan.")}
               </p>
+
             </div>
           </div>
         </div>
