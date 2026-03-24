@@ -32,6 +32,7 @@ import { DeliveryReturnPanel } from "./components/DeliveryReturnPanel";
 import { PrivacyPolicyPanel } from "./components/PrivacyPolicyPanel";
 import { DistanceSellingPanel } from "./components/DistanceSellingPanel";
 import { ToastProvider } from "./contexts/ToastContext";
+import { SubscriptionCountdown } from "./components/SubscriptionCountdown";
 import { useAccountPlans } from "./services/useAccountPlans";
 import { useCompanies } from "./services/useCompanies";
 import { useSubscriptionTimer } from "./services/useSubscriptionTimer";
@@ -493,6 +494,15 @@ export default function App() {
                 }`}
               style={{ minWidth: 0, minHeight: 0 }}
             >
+              {subInfo && subInfo.plan !== 'free' && (
+                <SubscriptionCountdown
+                  plan={subInfo.plan}
+                  purchasedPeriods={subInfo.purchasedPeriods || []}
+                  currentPeriod={subInfo.currentPeriod || ""}
+                  remainingMonths={subInfo.remainingMonths || 0}
+                  isExpired={subInfo.isExpired}
+                />
+              )}
               {renderCenterPanel()}
             </div>
 

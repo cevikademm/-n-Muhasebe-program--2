@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { NotificationBell, NotificationDrawer } from "./NotificationDrawer";
 import { supabase } from "../services/supabaseService";
-import { SubscriptionCountdown } from "./SubscriptionCountdown";
 
 interface CustomerStatus {
   company_name: string;
@@ -789,19 +788,6 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         <div style={{ flex: 1, overflowY: "auto", paddingTop: "8px" }}>
           <SidebarContent />
         </div>
-
-        {/* Timer fixed above footer */}
-        {subInfo && subInfo.plan !== 'free' && (
-          <div style={{ paddingBottom: "12px" }}>
-            <SubscriptionCountdown
-              plan={subInfo.plan}
-              purchasedPeriods={subInfo.purchasedPeriods || []}
-              currentPeriod={subInfo.currentPeriod || ""}
-              remainingMonths={subInfo.remainingMonths || 0}
-              isExpired={subInfo.isExpired}
-            />
-          </div>
-        )}
 
         {/* Footer */}
         <div style={{
