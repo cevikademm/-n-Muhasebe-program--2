@@ -49,3 +49,6 @@ ocr_results.txt
 datev_full_text.txt
 
 .vercel
+
+# Local Netlify folder
+.netlify

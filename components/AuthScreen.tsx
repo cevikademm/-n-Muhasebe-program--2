@@ -11,9 +11,15 @@ import {
   X,
   CreditCard,
   CheckCircle2,
+  FileText,
+  ShieldAlert,
+  Truck,
 } from "lucide-react";
 import { PeriodPicker } from "./PeriodPicker";
 import { UpgradePrompt } from "./UpgradePrompt";
+import { PrivacyPolicyPanel as PrivacyPolicyPanelInline } from "./PrivacyPolicyPanel";
+import { DistanceSellingPanel as DistanceSellingPanelInline } from "./DistanceSellingPanel";
+import { DeliveryReturnPanel as DeliveryReturnPanelInline } from "./DeliveryReturnPanel";
 import { formatPeriodLabel, type Language } from "../services/periodUtils";
 
 interface AuthScreenProps { onAuth: (session: any) => void; initialRegister?: boolean; }
@@ -50,6 +56,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
   const [companyEmail, setCompanyEmail] = useState("");
   const [modalError, setModalError] = useState("");
   const [modalLoading, setModalLoading] = useState(false);
+
+  // ─── Agreement Checkboxes ──────────────────────────
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  const [acceptDistanceSelling, setAcceptDistanceSelling] = useState(false);
+  const [acceptDeliveryReturn, setAcceptDeliveryReturn] = useState(false);
+  const [showAgreementModal, setShowAgreementModal] = useState<"privacy" | "distance" | "delivery" | null>(null);
 
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const plans = getPlans(tr, campaignDiscounts);
@@ -99,6 +111,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
     // [FIX L-2] Şifre politikası NIST SP 800-63B'ye uygun hale getirildi (min 8 karakter)
     if (regPassword.length < 8) { setModalError(tr("Şifre en az 8 karakter olmalı", "Passwort muss mindestens 8 Zeichen haben")); return; }
     if (regPassword !== regPassword2) { setModalError(tr("Şifreler eşleşmiyor", "Passwörter stimmen nicht überein")); return; }
+    if (!acceptPrivacy || !acceptDistanceSelling || !acceptDeliveryReturn) {
+      setModalError(tr(
+        "Devam etmek için tüm sözleşmeleri onaylamanız gerekmektedir.",
+        "Sie müssen alle Vereinbarungen akzeptieren, um fortzufahren."
+      ));
+      return;
+    }
 
     setModalLoading(true);
     try {
@@ -114,6 +133,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
           phone: companyPhone.trim(),
           email: companyEmail.trim() || regEmail,
         });
+
+        // Sözleşme onaylarını kaydet
+        const agreementRows = [
+          { user_id: data.user.id, agreement_type: "privacy_policy" },
+          { user_id: data.user.id, agreement_type: "distance_selling" },
+          { user_id: data.user.id, agreement_type: "delivery_return" },
+        ];
+        await supabase.from("user_agreements").insert(agreementRows);
       }
       // Free plan → direkt giriş yap (ödeme ekranını atla)
       if (selectedPlan?.key === "free") {
@@ -859,12 +886,59 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
                   </div>
                 </div>
 
+                {/* ─── Sözleşme Onayları ─── */}
+                <div style={{
+                  marginTop: "20px",
+                  padding: "16px",
+                  borderRadius: "14px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(255,255,255,0.02)",
+                }}>
+                  <p style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: "12px" }}>
+                    {tr("Sözleşme Onayları", "Vertragsbestätigungen")}
+                  </p>
+
+                  {([
+                    { key: "privacy" as const, state: acceptPrivacy, setter: setAcceptPrivacy, icon: <ShieldAlert size={14} />, label: tr("Gizlilik ve Kişisel Verilerin Korunması Sözleşmesi", "Datenschutzvereinbarung") },
+                    { key: "distance" as const, state: acceptDistanceSelling, setter: setAcceptDistanceSelling, icon: <FileText size={14} />, label: tr("Mesafeli Satış Sözleşmesi", "Fernabsatzvertrag") },
+                    { key: "delivery" as const, state: acceptDeliveryReturn, setter: setAcceptDeliveryReturn, icon: <Truck size={14} />, label: tr("Teslimat ve İade Şartları", "Liefer- und Rückgabebedingungen") },
+                  ] as const).map(({ key, state, setter, icon, label }) => (
+                    <label key={key} style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "10px",
+                      marginBottom: "10px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      color: state ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.4)",
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={state}
+                        onChange={e => setter(e.target.checked)}
+                        style={{ marginTop: "2px", accentColor: "#06b6d4", cursor: "pointer" }}
+                      />
+                      <span>
+                        {icon}{" "}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowAgreementModal(key); }}
+                          style={{ background: "none", border: "none", color: "#06b6d4", cursor: "pointer", textDecoration: "underline", fontSize: "13px", padding: 0 }}
+                        >
+                          {label}
+                        </button>
+                        {tr("'ni okudum ve kabul ediyorum.", " gelesen und akzeptiert.")}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
                 {/* Submit */}
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={handleRegisterAndPay}
-                  disabled={modalLoading}
+                  disabled={modalLoading || !acceptPrivacy || !acceptDistanceSelling || !acceptDeliveryReturn}
                   style={{
                     width: "100%",
                     marginTop: "24px",
@@ -875,12 +949,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
                     color: "#fff",
                     fontSize: "14px",
                     fontWeight: 700,
-                    cursor: modalLoading ? "not-allowed" : "pointer",
+                    cursor: (modalLoading || !acceptPrivacy || !acceptDistanceSelling || !acceptDeliveryReturn) ? "not-allowed" : "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     gap: "8px",
-                    opacity: modalLoading ? 0.7 : 1,
+                    opacity: (modalLoading || !acceptPrivacy || !acceptDistanceSelling || !acceptDeliveryReturn) ? 0.5 : 1,
                     boxShadow: "0 4px 18px rgba(249,115,22,0.3)",
                     letterSpacing: "0.3px",
                   }}
@@ -893,8 +967,66 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister 
                 </motion.button>
 
                 <p style={{ textAlign: "center", fontSize: "11px", color: "rgba(255,255,255,0.2)", marginTop: "12px" }}>
-                  {tr("Kayıt olarak hizmet şartlarını kabul etmiş olursunuz.", "Mit der Registrierung akzeptieren Sie die Nutzungsbedingungen.")}
+                  {tr("Tüm sözleşmeleri onaylamadan kayıt olunamazır.", "Ohne Zustimmung zu allen Vereinbarungen ist keine Registrierung möglich.")}
                 </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Agreement Preview Modal ─── */}
+      <AnimatePresence>
+        {showAgreementModal && (
+          <motion.div
+            key="agreement-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 60,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px",
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(8px)",
+            }}
+            onClick={() => setShowAgreementModal(null)}
+          >
+            <motion.div
+              key="agreement-modal-content"
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                width: "100%",
+                maxWidth: "700px",
+                maxHeight: "80vh",
+                overflowY: "auto",
+                borderRadius: "20px",
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "#111318",
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#111318", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "#fff", fontWeight: 700, fontSize: "15px" }}>
+                  {showAgreementModal === "privacy" && tr("Gizlilik Sözleşmesi", "Datenschutzvereinbarung")}
+                  {showAgreementModal === "distance" && tr("Mesafeli Satış Sözleşmesi", "Fernabsatzvertrag")}
+                  {showAgreementModal === "delivery" && tr("Teslimat ve İade Şartları", "Liefer- und Rückgabebedingungen")}
+                </span>
+                <button onClick={() => setShowAgreementModal(null)} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: "8px", padding: "6px", cursor: "pointer", color: "rgba(255,255,255,0.5)", display: "flex" }}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div style={{ padding: 0 }}>
+                {showAgreementModal === "privacy" && <PrivacyPolicyPanelInline />}
+                {showAgreementModal === "distance" && <DistanceSellingPanelInline />}
+                {showAgreementModal === "delivery" && <DeliveryReturnPanelInline />}
               </div>
             </motion.div>
           </motion.div>

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-    Bell, X, Check, CheckCheck, FileText,
+    Bell, Check, CheckCheck, FileText,
     AlertTriangle, ChevronRight, Loader2, XCircle,
 } from "lucide-react";
 import {
@@ -11,6 +11,7 @@ import {
     markAllAsRead,
     dismissNotification,
 } from "../services/notificationService";
+import { useLang } from "../LanguageContext";
 
 // ─────────────────────────────────────────────
 //  PROPS
@@ -30,17 +31,6 @@ const fmtDate = (iso: string | null) => {
     if (!iso) return "—";
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-};
-
-const timeAgo = (iso: string) => {
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "az önce";
-    if (mins < 60) return `${mins} dk önce`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} saat önce`;
-    const days = Math.floor(hrs / 24);
-    return `${days} gün önce`;
 };
 
 // ─────────────────────────────────────────────
@@ -133,8 +123,20 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
     userId,
     onNavigateToInvoices,
 }) => {
+    const { t } = useLang();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
+
+    const timeAgo = (iso: string) => {
+        const diff = Date.now() - new Date(iso).getTime();
+        const mins = Math.floor(diff / 60000);
+        if (mins < 1) return t.justNow;
+        if (mins < 60) return `${mins} ${t.minsAgo}`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs} ${t.hoursAgo}`;
+        const days = Math.floor(hrs / 24);
+        return `${days} ${t.daysAgo}`;
+    };
 
     const load = useCallback(async () => {
         if (!userId) return;
@@ -170,6 +172,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
 
     return (
         <div
+            className="notification-drawer"
             style={{
                 position: "fixed",
                 top: 0,
@@ -189,6 +192,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
         >
             {/* ── HEADER ── */}
             <div
+                className="pt-safe"
                 style={{
                     display: "flex",
                     alignItems: "center",
@@ -222,12 +226,12 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                                 fontFamily: "'Syne', sans-serif",
                             }}
                         >
-                            Bildirimler
+                            {t.notifications}
                         </div>
                         <div style={{ fontSize: "10px", color: "#475569" }}>
                             {unreadCount > 0
-                                ? `${unreadCount} okunmamış`
-                                : "Tüm bildirimler okundu"}
+                                ? `${unreadCount} ${t.unread}`
+                                : t.allRead}
                         </div>
                     </div>
                 </div>
@@ -249,7 +253,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                                 cursor: "pointer",
                             }}
                         >
-                            <CheckCheck size={11} /> Tümünü Oku
+                            <CheckCheck size={11} /> {t.markAllAsRead}
                         </button>
                     )}
                 </div>
@@ -294,9 +298,9 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                             size={28}
                             style={{ color: "#1e293b", marginBottom: "12px" }}
                         />
-                        <div style={{ fontWeight: 600 }}>Bildirim bulunmuyor</div>
+                        <div style={{ fontWeight: 600 }}>{t.noNotifications}</div>
                         <div style={{ fontSize: "10px", marginTop: "4px", color: "#2a3040" }}>
-                            Eşleşmeyen banka işlemleri burada görünecek
+                            {t.unmatchedInfo}
                         </div>
                     </div>
                 )}
@@ -457,7 +461,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                                         transition: "all .15s",
                                     }}
                                 >
-                                    <FileText size={11} /> Fatura Yükle
+                                    <FileText size={11} /> {t.uploadInvoice}
                                     <ChevronRight size={10} />
                                 </button>
 
@@ -478,7 +482,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                                             cursor: "pointer",
                                         }}
                                     >
-                                        <Check size={10} /> Okundu
+                                        <Check size={10} /> {t.read}
                                     </button>
                                 )}
 
@@ -499,7 +503,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                                         marginLeft: "auto",
                                     }}
                                 >
-                                    <XCircle size={10} /> Yok Say
+                                    <XCircle size={10} /> {t.dismiss}
                                 </button>
                             </div>
                         </div>
@@ -517,7 +521,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                     flexShrink: 0,
                 }}
             >
-                Eşleşmeyen banka işlemleri otomatik olarak bildirilir
+                {t.autoNotifInfo}
             </div>
 
             <style>{`

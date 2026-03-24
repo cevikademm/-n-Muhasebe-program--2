@@ -6,7 +6,7 @@ import {
   CreditCard, ArrowRight, Sparkles, TrendingUp,
   Users, Clock, Award, Eye, Languages,
 } from "lucide-react";
-import { LegalModal, SSLModal } from "./LegalFooter";
+import { LegalModal, SecurityCertificatesModal } from "./LegalFooter";
 import { DeliveryReturnPanel } from "./DeliveryReturnPanel";
 import { PrivacyPolicyPanel } from "./PrivacyPolicyPanel";
 import { DistanceSellingPanel } from "./DistanceSellingPanel";
@@ -193,6 +193,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
 
       {/* ══ NAVBAR ══ */}
       <nav
+        className="pt-safe"
         style={{
           position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
           background: scrollY > 50 ? "rgba(9,13,20,.92)" : "transparent",
@@ -553,7 +554,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {[
                   { id: "about", label: c.footer.about },
-                  { id: "ssl", label: c.footer.ssl },
+                  { id: "ssl", label: lang === "tr" ? "Güvenlik" : "Sicherheit" },
                   { id: "deliveryReturn", label: c.footer.delivery },
                   { id: "privacy", label: c.footer.privacy },
                   { id: "distanceSelling", label: c.footer.distance },
@@ -625,19 +626,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
         </div>
       </footer>
 
-      {activeModal === "ssl" && <SSLModal onClose={() => setActiveModal(null)} />}
+      {activeModal === "ssl" && <SecurityCertificatesModal onClose={() => setActiveModal(null)} />}
       {activeModal === "deliveryReturn" && (
-        <LegalModal onClose={() => setActiveModal(null)}>
+        <LegalModal title={c.footer.delivery} icon={Zap} onClose={() => setActiveModal(null)}>
           <DeliveryReturnPanel />
         </LegalModal>
       )}
       {activeModal === "privacy" && (
-        <LegalModal onClose={() => setActiveModal(null)}>
+        <LegalModal title={c.footer.privacy} icon={Shield} onClose={() => setActiveModal(null)}>
           <PrivacyPolicyPanel />
         </LegalModal>
       )}
       {activeModal === "distanceSelling" && (
-        <LegalModal onClose={() => setActiveModal(null)}>
+        <LegalModal title={c.footer.distance} icon={FileText} onClose={() => setActiveModal(null)}>
           <DistanceSellingPanel />
         </LegalModal>
       )}

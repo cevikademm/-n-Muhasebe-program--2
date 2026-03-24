@@ -76,6 +76,24 @@ export interface Translations {
   deliveryReturn: string;
   privacy: string;
   distanceSelling: string;
+  sslCertificate: string;
+  isoCertificate: string;
+  gdprCompliant: string;
+  gobdCompliant: string;
+  certificates: string;
+  notifications: string;
+  unread: string;
+  allRead: string;
+  markAllAsRead: string;
+  noNotifications: string;
+  unmatchedInfo: string;
+  read: string;
+  dismiss: string;
+  autoNotifInfo: string;
+  justNow: string;
+  minsAgo: string;
+  hoursAgo: string;
+  daysAgo: string;
 }
 
 export interface AccountRow {
