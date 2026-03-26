@@ -164,6 +164,16 @@ export const PaymentLogos = ({ centered = true }: { centered?: boolean }) => (
     }} title="iyzico ile Öde">
       <img src="/iyzico-checkout.png" alt="iyzico ile Öde" style={{ height: 18, objectFit: "contain" }} />
     </div>
+    <div style={{
+      display: "flex", alignItems: "center",
+      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: "8px", padding: "5px 12px", height: "29px",
+    }} title="PayTR ile Öde">
+      <svg width="60" height="16" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="23" fill="#00C853" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="24">Pay</text>
+        <text x="42" y="23" fill="#ffffff" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="24">TR</text>
+      </svg>
+    </div>
   </div>
 );
 

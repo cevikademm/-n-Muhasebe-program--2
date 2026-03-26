@@ -173,6 +173,105 @@ const whyIcons = [
   <TrendingUp size={22} />,
 ];
 
+const guideContent: any = {
+  tr: {
+    title: "Modern Muhasebe Rehberi",
+    subtitle: "Yapay Zeka ile Finansal Dönüşüm",
+    sections: [
+      {
+        id: 1,
+        title: "Muhasebede Yeni Bir Dönem",
+        content: "Geleneksel muhasebe yöntemleri; manuel veri girişi, bitmek bilmeyen kağıt fatura yığınları ve insan hatasına açık dosyalama süreçleri arasında sıkışmış durumdadır. FikoAI, Avrupa’daki KOBİ’ler için bu dönüşümün öncülüğünü üstlenerek, 20 yılı aşkın finansal saha tecrübesini en ileri teknolojiyle harmanlıyor.",
+        extra: "Eski vs. Yeni: Belgelerin saniyeler içinde dijitalleşmesi, %99.5 doğruluk oranı, %80 zaman tasarrufu.",
+        icon: <Sparkles size={20} />
+      },
+      {
+        id: 2,
+        title: "Muhasebenin Yeni Dili",
+        content: "OCR Teknolojisi (Dijital Gözler), taranmış kağıt belgeleri dijital verilere dönüştürür. AI Destekli Kategorizasyon ise faturayı doğru gider kalemine yerleştiren 'Akıllı Kütüphane' görevi görür.",
+        extra: "Banka Hesap Özeti Analizi ile finansal puzzle saniyeler içinde tamamlanır.",
+        icon: <Languages size={20} />
+      },
+      {
+        id: 3,
+        title: "Uygulamada Yapay Zeka",
+        content: "FikoAI, karmaşık algoritmaları sade bir kullanıcı deneyimine dönüştürür. Google Gemini AI desteğiyle %99.5 doğruluk ile profesyonel standartlara ulaşırsınız.",
+        extra: "DATEV entegrasyonu ve SKR03/04 eşleme ile Avrupa genelinde yetkinlik kazandırır.",
+        icon: <Zap size={20} />
+      },
+      {
+        id: 4,
+        title: "Güvenlik ve Standartlar",
+        content: "GDPR/DSGVO uyumluluğu ile veri sızıntısı risklerini ortadan kaldırıyoruz. SSL ve RLS güvenliği ile verileriniz hem iletimde hem depolamada şifrelenir.",
+        extra: "Alman muhasebe planlarıyla (SKR) tam uyumlu otomatik kodlama.",
+        icon: <Shield size={20} />
+      },
+      {
+        id: 5,
+        title: "Verimlilik Analizi",
+        content: "Geleceğin muhasebe uzmanı, operasyonel yüklerden kurtulup 'finansal danışman' rolüne soyunandır. FikoAI ile %80 zaman tasarrufu sağlanır.",
+        extra: "50.000'den fazla fatura işleme deneyimi ile saniyeler içinde raporlama.",
+        icon: <TrendingUp size={20} />
+      },
+      {
+        id: 6,
+        title: "Kariyer Yol Haritası",
+        content: "FikoAI'nın sunduğu imkanları birer eğitim basamağı olarak kullanın. Ücretsiz plan ile teorik bilgilerinizi pratikle birleştirin.",
+        extra: "FikoAI ile bu dijital dönüşümün sadece bir tanığı değil, bizzat yöneticisi olun.",
+        icon: <Globe size={20} />
+      }
+    ]
+  },
+  de: {
+    title: "Moderner Buchhaltungsleitfaden",
+    subtitle: "Finanzielle Transformation mit KI",
+    sections: [
+      {
+        id: 1,
+        title: "Neue Ära der Buchhaltung",
+        content: "Traditionelle Methoden sind zwischen manueller Dateneingabe und Papierstapeln gefangen. FikoAI kombiniert 20+ Jahre Erfahrung mit modernster KI für KMU in Europa.",
+        extra: "Alt vs. Neu: Digitalisierung in Sekunden, 99,5% Genauigkeit, 80% Zeitersparnis.",
+        icon: <Sparkles size={20} />
+      },
+      {
+        id: 2,
+        title: "Die neue Sprache",
+        content: "OCR-Technologie wandelt Papier in digitale Daten um. KI-gestützte Kategorisierung fungiert als 'Smarte Bibliothek' für Ihre Ausgaben.",
+        extra: "Kontoauszug-Analyse löst das Finanzpuzzle in Sekundenschnelle.",
+        icon: <Languages size={20} />
+      },
+      {
+        id: 3,
+        title: "KI in der Anwendung",
+        content: "FikoAI verwandelt komplexe Algorithmen in einfache Benutzererfahrungen. Mit Google Gemini erreichen Sie professionelle Standards.",
+        extra: "DATEV-Integration und SKR03/04-Mapping für europaweite Kompetenz.",
+        icon: <Zap size={20} />
+      },
+      {
+        id: 4,
+        title: "Sicherheit und Standards",
+        content: "DSGVO-Konformität eliminiert Risiken. SSL- und RLS-Sicherheit verschlüsseln Ihre Daten bei Übertragung und Speicherung.",
+        extra: "Automatische Kontierung nach deutschen SKR-Standards.",
+        icon: <Shield size={20} />
+      },
+      {
+        id: 5,
+        title: "Effizienzanalyse",
+        content: "Befreien Sie sich von operativer Last und werden Sie zum Finanzberater. FikoAI spart bis zu 80% Ihrer wertvollen Zeit.",
+        extra: "Erfahrung aus über 50.000 verarbeiteten Rechnungen.",
+        icon: <TrendingUp size={20} />
+      },
+      {
+        id: 6,
+        title: "Karriere-Roadmap",
+        content: "Nutzen Sie FikoAI als Bildungsstufe. Verbinden Sie mit unserem kostenlosen Plan theoretisches Wissen mit der Praxis.",
+        extra: "Werden Sie mit FikoAI zum Manager der digitalen Transformation.",
+        icon: <Globe size={20} />
+      }
+    ]
+  }
+};
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToRegister, lang, onLangChange }) => {
   const c = t[lang];
   const [scrollY, setScrollY] = useState(0);
@@ -391,6 +490,79 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
         </div>
       </section>
 
+      {/* ══ MODERN ACCOUNTING GUIDE ══ */}
+      <section style={{ padding: "80px 24px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            style={{ textAlign: "center", marginBottom: 48 }}
+          >
+            <h3 className="font-syne" style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, color: "#fff" }}>
+              {guideContent[lang].title}
+            </h3>
+            <p style={{ color: "#8b5cf6", fontSize: 16, fontWeight: 500 }}>
+              {guideContent[lang].subtitle}
+            </p>
+          </motion.div>
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 24
+          }}>
+            {guideContent[lang].sections.map((section: any, i: number) => (
+              <motion.div
+                key={section.id}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+                whileHover={{ y: -8, borderColor: "rgba(139,92,246,0.3)" }}
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 20,
+                  padding: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                  transition: "all 0.3s ease"
+                }}
+              >
+                <div style={{
+                  width: 48, height: 48, borderRadius: 12,
+                  background: "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(6,182,212,0.1))",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#8b5cf6"
+                }}>
+                  {section.icon}
+                </div>
+                <div>
+                  <h4 className="font-syne" style={{ fontSize: 18, fontWeight: 600, color: "#fff", marginBottom: 12 }}>
+                    {section.title}
+                  </h4>
+                  <p style={{ color: "#8b9ab0", fontSize: 14, lineHeight: 1.6, marginBottom: 16 }}>
+                    {section.content}
+                  </p>
+                  <div style={{
+                    paddingTop: 16,
+                    borderTop: "1px solid rgba(255,255,255,0.05)",
+                    color: "#06b6d4",
+                    fontSize: 12,
+                    fontStyle: "italic",
+                    lineHeight: 1.5
+                  }}>
+                    {section.extra}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ══ PRICING ══ */}
       <section id="pricing" style={{ padding: "80px 24px", maxWidth: 1300, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 56 }}>
@@ -502,6 +674,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
           }}>
             <img src="/iyzico-checkout.png" alt="iyzico ile Öde" style={{ height: 28, objectFit: "contain" }} />
           </div>
+
+          {/* PayTR */}
+          <div style={{
+            padding: "6px 20px", background: "rgba(255,255,255,.06)",
+            border: "1px solid rgba(255,255,255,.1)", borderRadius: 10,
+            display: "flex", alignItems: "center",
+          }}>
+            <svg width="80" height="22" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <text x="0" y="24" fill="#00C853" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="26">Pay</text>
+              <text x="44" y="24" fill="#e2e8f0" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="26">TR</text>
+            </svg>
+          </div>
         </div>
       </section>
 
@@ -606,6 +790,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGoToLogin, onGoToReg
                 </div>
                 <div style={{ padding: "2px 8px", background: "rgba(255,255,255,.05)", borderRadius: 6, display: "flex", alignItems: "center" }}>
                   <img src="/iyzico-footer.png" alt="iyzico" style={{ height: 18, objectFit: "contain" }} />
+                </div>
+                <div style={{ padding: "2px 10px", background: "rgba(255,255,255,.05)", borderRadius: 6, display: "flex", alignItems: "center" }}>
+                  <svg width="48" height="14" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <text x="0" y="24" fill="#00C853" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="26">Pay</text>
+                    <text x="44" y="24" fill="#e2e8f0" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="26">TR</text>
+                  </svg>
                 </div>
               </div>
             </div>

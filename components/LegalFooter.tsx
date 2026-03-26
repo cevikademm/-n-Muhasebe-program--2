@@ -269,6 +269,13 @@ export function LegalFooter({ onNavigate }: LegalFooterProps) {
               <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg px-3 py-1 shadow-inner h-[29px]" title="iyzico ile Öde">
                 <img src="/iyzico-checkout.png" alt="iyzico ile Öde" style={{ height: 18, objectFit: "contain" }} />
               </div>
+
+              <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg px-3 py-1 shadow-inner h-[29px]" title="PayTR ile Öde">
+                <svg width="60" height="16" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <text x="0" y="23" fill="#00C853" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="24">Pay</text>
+                  <text x="42" y="23" fill="#ffffff" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="24">TR</text>
+                </svg>
+              </div>
             </div>
           </div>
         </div>
