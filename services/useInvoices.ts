@@ -46,8 +46,17 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
   }, []);
 
   const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
+    // Oturum bilgisini önce al (email kontrolü için de lazım)
+    const { data: { session: freshSession } } = await supabase.auth.getSession();
+    const userEmail = freshSession?.user?.email || "";
+    const userId = freshSession?.user?.id;
+
+    // Sınırsız yetkili e-posta bypass
+    const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
+    const isPrivileged = PRIVILEGED_EMAILS.includes(userEmail.toLowerCase());
+
     // ── Abonelik Dönem Kontrolü ──
-    if (subscriptionInfo) {
+    if (!isPrivileged && subscriptionInfo) {
       if (!subscriptionInfo.isActive || subscriptionInfo.isExpired) {
         const expDateStr = subscriptionInfo.expiresAt
           ? subscriptionInfo.expiresAt.toLocaleDateString("tr-TR")
@@ -61,8 +70,7 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
 
     // ── Ücretsiz Plan Fatura Limiti ──
     const currentPlan = subscriptionInfo?.plan || "free";
-    const userId = (await supabase.auth.getSession()).data.session?.user?.id;
-    if (!canUploadInvoice(currentPlan, userId)) {
+    if (!isPrivileged && !canUploadInvoice(currentPlan, userId, userEmail)) {
       const remaining = getRemainingInvoices(userId);
       throw new Error(
         `Ücretsiz planda maksimum 10 fatura yükleyebilirsiniz. Kalan: ${remaining}. ` +
