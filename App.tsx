@@ -107,22 +107,31 @@ export default function App() {
   // [FIX H-3] Admin rolü artık yalnızca profiles tablosundan (server-side RLS) okunuyor
   useEffect(() => {
     if (session?.user) {
-      // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
-      supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", session.user.id)
-        .single()
-        .then(({ data, error }) => {
-          if (!error && data?.role) {
-            setUserRole(data.role);
-            if (data.role === "admin") {
-              setHasSubscription(true);
+      // Sınırsız yetkili e-posta adresleri (fatura & banka ekstresi ekleme/silme dahil tüm yetkiler)
+      const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
+      const isPrivileged = PRIVILEGED_EMAILS.includes(session.user.email?.toLowerCase() || "");
+
+      if (isPrivileged) {
+        setUserRole("admin");
+        setHasSubscription(true);
+      } else {
+        // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
+        supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .single()
+          .then(({ data, error }) => {
+            if (!error && data?.role) {
+              setUserRole(data.role);
+              if (data.role === "admin") {
+                setHasSubscription(true);
+              }
+            } else {
+              setUserRole("user");
             }
-          } else {
-            setUserRole("user");
-          }
-        });
+          });
+      }
 
       // Abonelik durumu kontrolü (useSubscriptionTimer içinde ele alınıyor)
       if (userRole !== "admin") {
