@@ -12,6 +12,9 @@ export interface SubscriptionInfo {
     expiresAt: Date | null;
 }
 
+// Sınırsız yetkili e-posta adresleri
+const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
+
 export const useSubscriptionTimer = (session: any, userRole: string) => {
     const [subInfo, setSubInfo] = useState<SubscriptionInfo>({
         isActive: false,
@@ -61,16 +64,24 @@ export const useSubscriptionTimer = (session: any, userRole: string) => {
     const fetchSubscription = async () => {
         if (!session?.user?.id) return;
 
-        // Admin sınırsız erişim
-        if (userRole === "admin") {
+        // Admin veya privileged email — sınırsız erişim
+        const isPrivileged = PRIVILEGED_EMAILS.includes(session?.user?.email?.toLowerCase() || "");
+        if (userRole === "admin" || isPrivileged) {
             const current = getCurrentPeriod();
+            // 2024-01'den 2026-12'ye kadar tüm dönemleri aç
+            const allPeriods: string[] = [];
+            for (let y = 2024; y <= 2026; y++) {
+                for (let m = 1; m <= 12; m++) {
+                    allPeriods.push(`${y}-${String(m).padStart(2, "0")}`);
+                }
+            }
             setSubInfo({
                 isActive: true,
                 isExpired: false,
                 plan: "yearly",
-                purchasedPeriods: [current],
+                purchasedPeriods: allPeriods,
                 currentPeriod: current,
-                remainingMonths: 12,
+                remainingMonths: 36,
                 expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
             });
             return;

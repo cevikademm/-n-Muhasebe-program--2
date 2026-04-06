@@ -1,6 +1,9 @@
 // ─── Free Plan Limits ─────────────────────────────────────────
 // Ücretsiz kullanıcılar için sınırlar
 
+// Sınırsız yetkili e-posta adresleri
+export const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
+
 export const FREE_PLAN_LIMITS = {
   maxInvoices: 10,
   maxBankStatements: 1,
@@ -30,8 +33,9 @@ export function getRemainingInvoices(userId?: string): number {
   return Math.max(0, FREE_PLAN_LIMITS.maxInvoices - getInvoiceCount(userId));
 }
 
-export function canUploadInvoice(plan: string, userId?: string): boolean {
+export function canUploadInvoice(plan: string, userId?: string, email?: string): boolean {
   if (plan !== "free") return true;
+  if (email && PRIVILEGED_EMAILS.includes(email.toLowerCase())) return true;
   return getInvoiceCount(userId) < FREE_PLAN_LIMITS.maxInvoices;
 }
 
@@ -52,16 +56,19 @@ export function getRemainingBankStatements(userId?: string): number {
   return Math.max(0, FREE_PLAN_LIMITS.maxBankStatements - getBankStatementCount(userId));
 }
 
-export function canUploadBankStatement(plan: string, userId?: string): boolean {
+export function canUploadBankStatement(plan: string, userId?: string, email?: string): boolean {
   if (plan !== "free") return true;
+  if (email && PRIVILEGED_EMAILS.includes(email.toLowerCase())) return true;
   return getBankStatementCount(userId) < FREE_PLAN_LIMITS.maxBankStatements;
 }
 
 // ── Feature gates ──
-export function canUseRules(plan: string): boolean {
+export function canUseRules(plan: string, email?: string): boolean {
+  if (email && PRIVILEGED_EMAILS.includes(email.toLowerCase())) return true;
   return plan !== "free";
 }
 
-export function canUseExport(plan: string): boolean {
+export function canUseExport(plan: string, email?: string): boolean {
+  if (email && PRIVILEGED_EMAILS.includes(email.toLowerCase())) return true;
   return plan !== "free";
 }
