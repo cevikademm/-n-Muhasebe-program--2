@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabaseService";
 import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
 import { getLearningRules } from "./learningEngine";
-import { canUploadInvoice, incrementInvoiceCount, getRemainingInvoices } from "./freePlanLimits";
+// freePlanLimits importları kaldırıldı — abonelik sistemi devre dışı
 
 export interface SubscriptionCheck {
   isActive: boolean;
@@ -46,38 +46,6 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
   }, []);
 
   const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
-    // Oturum bilgisini önce al (email kontrolü için de lazım)
-    const { data: { session: freshSession } } = await supabase.auth.getSession();
-    const userEmail = freshSession?.user?.email || "";
-    const userId = freshSession?.user?.id;
-
-    // Sınırsız yetkili e-posta bypass
-    const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
-    const isPrivileged = PRIVILEGED_EMAILS.includes(userEmail.toLowerCase());
-
-    // ── Abonelik Dönem Kontrolü ──
-    if (!isPrivileged && subscriptionInfo) {
-      if (!subscriptionInfo.isActive || subscriptionInfo.isExpired) {
-        const expDateStr = subscriptionInfo.expiresAt
-          ? subscriptionInfo.expiresAt.toLocaleDateString("tr-TR")
-          : "—";
-        throw new Error(
-          `Abonelik süreniz dolmuş veya aktif değil (Son geçerlilik: ${expDateStr}). ` +
-          `Fatura yükleyebilmek için lütfen aboneliğinizi yenileyin.`
-        );
-      }
-    }
-
-    // ── Ücretsiz Plan Fatura Limiti ──
-    const currentPlan = subscriptionInfo?.plan || "free";
-    if (!isPrivileged && !canUploadInvoice(currentPlan, userId, userEmail)) {
-      const remaining = getRemainingInvoices(userId);
-      throw new Error(
-        `Ücretsiz planda maksimum 10 fatura yükleyebilirsiniz. Kalan: ${remaining}. ` +
-        `Daha fazla fatura yüklemek için Pro plana geçin.`
-      );
-    }
-
     // Oturum kontrolu - expire olmussa refresh
     let { data: { session: currentSession } } = await supabase.auth.getSession();
     if (currentSession?.expires_at && currentSession.expires_at * 1000 < Date.now() + 30000) {
@@ -217,10 +185,7 @@ export function useInvoices(session: any, subscriptionInfo?: SubscriptionCheck) 
       // Invoices listesini yalnızca React state üzerinden güncelle (DB KAPALI)
       setInvoices(prev => [mockInvoice, ...prev]);
 
-      // Ücretsiz plan sayacını artır
-      if (currentPlan === "free") {
-        incrementInvoiceCount(currentSession.user.id);
-      }
+      // Abonelik sistemi kaldırıldı — sayaç artırma yok
 
       return mappedResult as InvoiceAnalysisResult;
     } catch (err: any) {

@@ -6,7 +6,7 @@ import { SettingsCompanyTab } from "./settings/SettingsCompanyTab";
 import { SettingsMatchingTab } from "./settings/SettingsMatchingTab";
 import { SettingsSecurityTab } from "./settings/SettingsSecurityTab";
 import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2, Lock } from "lucide-react";
-import { canUseRules, canUseExport } from "../services/freePlanLimits";
+// freePlanLimits kaldırıldı — abonelik sistemi devre dışı
 
 interface SettingsPanelProps {
   userEmail: string | undefined;
@@ -172,39 +172,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           )}
 
           {tab === "matching" && (
-            canUseRules(subscriptionPlan || "free") ? (
               <SettingsMatchingTab
                 userId={userId}
                 userRole={userRole}
                 flash={flash}
               />
-            ) : (
-              <ProLockedOverlay
-                title={tr("Kurallar", "Regeln")}
-                description={tr(
-                  "Kural oluşturma ve düzenleme özelliği Pro plan ile kullanılabilir. Kurallar sayesinde faturalarınız otomatik olarak doğru hesaplara eşleştirilir.",
-                  "Regeln erstellen und bearbeiten ist nur mit dem Pro-Plan verfügbar. Regeln ermöglichen die automatische Zuordnung Ihrer Rechnungen."
-                )}
-                onUpgrade={onNavigateToSubscription}
-                tr={tr}
-              />
-            )
           )}
 
           {tab === "export" && (
-            canUseExport(subscriptionPlan || "free") ? (
               <ExportTab invoices={[]} invoiceItems={[]} tr={tr} lang={lang} />
-            ) : (
-              <ProLockedOverlay
-                title={tr("Export", "Export")}
-                description={tr(
-                  "DATEV ve CSV export özelliği Pro plan ile kullanılabilir. Verilerinizi muhasebe yazılımınıza kolayca aktarın.",
-                  "DATEV- und CSV-Export ist nur mit dem Pro-Plan verfügbar. Exportieren Sie Ihre Daten einfach in Ihre Buchhaltungssoftware."
-                )}
-                onUpgrade={onNavigateToSubscription}
-                tr={tr}
-              />
-            )
           )}
 
           {tab === "security" && (

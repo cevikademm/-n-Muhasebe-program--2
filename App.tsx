@@ -133,14 +133,7 @@ export default function App() {
           });
       }
 
-      // Abonelik durumu kontrolü (useSubscriptionTimer içinde ele alınıyor)
-      if (userRole !== "admin") {
-        if (!subInfo.isActive) {
-          setActiveMenu("subscription");
-        } else if (activeMenu === "subscription" && subInfo.isActive) {
-          setActiveMenu("dashboard");
-        }
-      }
+      // Abonelik kontrolü kaldırıldı — tüm kullanıcılar sınırsız erişime sahip
     }
   }, [session]);
 
