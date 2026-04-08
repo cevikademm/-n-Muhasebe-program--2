@@ -54,10 +54,10 @@ serve(async (req) => {
       });
     }
 
-    // Gemini API key from Supabase Secrets
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: "GEMINI_API_KEY bulunamadı" }), {
+    // Anthropic API key from Supabase Secrets
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ success: false, error: "ANTHROPIC_API_KEY bulunamadı" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -155,47 +155,53 @@ serve(async (req) => {
       finalPrompt += "======================================================\n";
     }
 
-    // [FIX H-1] API anahtarı URL yerine header'da gönderiliyor
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
+    // Claude Haiku 4.5 — vision (PDF + image) destekli
+    const isPdf = mimeType === "application/pdf";
+    const contentBlock = isPdf
+      ? {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: fileBase64 },
+        }
+      : {
+          type: "image",
+          source: { type: "base64", media_type: mimeType, data: fileBase64 },
+        };
 
-    const geminiResponse = await fetch(geminiUrl, {
+    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: finalPrompt },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: fileBase64,
-              },
-            },
-          ],
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-        },
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 8192,
+        temperature: 0.1,
+        system: finalPrompt,
+        messages: [
+          {
+            role: "user",
+            content: [
+              contentBlock,
+              { type: "text", text: "Faturayı analiz et ve istenen JSON formatında döndür. Sadece JSON, başka açıklama yok." },
+            ],
+          },
+        ],
       }),
     });
 
-    // [FIX M-2] AI hata detayları istemciye sızdırılmıyor
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
-      console.error("[super-worker] Gemini API error:", errText.substring(0, 300));
-      return new Response(JSON.stringify({ success: false, error: `AI servis hatası: ${geminiResponse.status}` }), {
+    if (!anthropicResponse.ok) {
+      const errText = await anthropicResponse.text();
+      console.error("[super-worker] Anthropic API error:", errText.substring(0, 500));
+      return new Response(JSON.stringify({ success: false, error: `AI servis hatası: ${anthropicResponse.status}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const geminiData = await geminiResponse.json();
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const anthropicData = await anthropicResponse.json();
+    const rawText = anthropicData?.content?.[0]?.text || "";
 
     let analysisResult;
     try {
@@ -245,10 +251,70 @@ serve(async (req) => {
         });
     }
 
+    // ── Post-processing: Header'daki buyer/supplier bilgilerini şirket bilgilerinden zorla doldur ──
+    // KURAL: Geçerli bir faturada supplier veya buyer'dan EN AZ BİRİ kullanıcı şirketi
+    // olmak zorundadır. İki taraf da kullanıcı şirketi olamaz (AI halüsinasyonu).
+    const isPayroll = (analysisResult?.header?.invoice_type || "").toLowerCase().includes("lohn");
+    if (analysisResult?.header && !isPayroll) {
+      const h = analysisResult.header;
+      const ownNameLc = (companyName || "").toLowerCase().trim();
+      const ownVat    = (companyVatId || "").trim();
+      const supNameLc = (h.supplier_name || "").toLowerCase().trim();
+      const buyNameLc = (h.buyer_name || "").toLowerCase().trim();
+      const supVat    = (h.supplier_vat_id || "").trim();
+      const buyVat    = (h.buyer_vat_id || "").trim();
+
+      const matches = (n: string, v: string) =>
+        (!!ownVat && !!v && v === ownVat) ||
+        (!!ownNameLc && !!n && (n.includes(ownNameLc) || ownNameLc.includes(n)));
+
+      const supplierIsUs = matches(supNameLc, supVat);
+      const buyerIsUs    = matches(buyNameLc, buyVat);
+      const aiIsIncoming = (h.invoice_type || "").toLowerCase().includes("eingang");
+
+      if (supplierIsUs && buyerIsUs) {
+        // ANORMAL: AI iki tarafı da bizim şirket yapmış. Gerçek satıcıyı temizle,
+        // bunu gelen fatura olarak işaretle ve manuel inceleme uyarısı koy.
+        h.supplier_name = null;
+        h.supplier_vat_id = null;
+        h.invoice_type = "eingangsrechnung";
+        if (companyName)  h.buyer_name   = companyName;
+        if (companyVatId) h.buyer_vat_id = companyVatId;
+        analysisResult.context = (analysisResult.context ? analysisResult.context + " " : "") +
+          "UYARI: AI satıcı ve alıcıyı aynı şirket olarak döndürdü — gerçek satıcı temizlendi, manuel düzeltme gerekli.";
+      } else if (supplierIsUs) {
+        // Giden fatura → satıcı biziz, alıcıyı olduğu gibi bırak
+        h.invoice_type = "ausgangsrechnung";
+        if (companyName)  h.supplier_name   = companyName;
+        if (companyVatId) h.supplier_vat_id = companyVatId;
+      } else if (buyerIsUs || aiIsIncoming) {
+        // Gelen fatura → alıcı biziz, satıcıyı olduğu gibi bırak
+        h.invoice_type = "eingangsrechnung";
+        if (companyName)  h.buyer_name   = companyName;
+        if (companyVatId) h.buyer_vat_id = companyVatId;
+      } else {
+        // Hiçbir taraf bizim şirket değil → varsayılan: gelen fatura, alıcı biziz
+        // (Kassenbon / fiş senaryosu — fişlerde alıcı genelde yazmaz).
+        h.invoice_type = "eingangsrechnung";
+        if (companyName)  h.buyer_name   = companyName;
+        if (companyVatId) h.buyer_vat_id = companyVatId;
+        analysisResult.context = (analysisResult.context ? analysisResult.context + " " : "") +
+          "UYARI: Faturadaki taraflar kullanıcı şirketiyle eşleşmedi — alıcı kullanıcı şirketi olarak zorlandı.";
+      }
+
+      // supplier_vat_id'ye yanlışlıkla kişi adı yazılmışsa temizle (sayı içermiyorsa)
+      if (h.supplier_vat_id && !/\d/.test(String(h.supplier_vat_id))) {
+        h.supplier_vat_id = null;
+      }
+      if (h.buyer_vat_id && !/\d/.test(String(h.buyer_vat_id))) {
+        h.buyer_vat_id = null;
+      }
+    }
+
     // ── Post-processing: Gelen faturalarda 8xxx hesap kodu engelle ──
-    if (analysisResult?.items && Array.isArray(analysisResult.items)) {
+    if (analysisResult?.items && Array.isArray(analysisResult.items) && !isPayroll) {
       const supplierName = (analysisResult.header?.supplier_name || "").toLowerCase();
-      const supplierVat = analysisResult.header?.satici_vkn || "";
+      const supplierVat = analysisResult.header?.supplier_vat_id || analysisResult.header?.satici_vkn || "";
       const ownName = (companyName || "").toLowerCase();
       const ownVat = companyVatId || "";
 

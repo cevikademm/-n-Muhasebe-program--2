@@ -61,6 +61,35 @@ EĞER ne VAT ID ne de şirket adı eşleşemediyse:
   → match_score'u düşür (max 70)
 \`\`\`
 
+### Katman 4: ZORUNLU DOĞRULAMA (Hard Constraint)
+
+🚨 **MUTLAK KURAL:** Geçerli bir faturada \`supplier\` (satıcı) veya \`buyer\` (alıcı)
+taraflarından **EN AZ BİRİ Own_Company_Name / Own_VAT_ID ile eşleşmek ZORUNDADIR.**
+Bu, kullanıcının kendi defterine ait olmayan bir fatura olamayacağı anlamına gelir.
+
+\`\`\`text
+DURUM A — Tek taraf eşleşiyor (NORMAL):
+  buyer = bizim şirket  → invoice_type: "eingangsrechnung" (gelen / gider)
+  supplier = bizim şirket → invoice_type: "ausgangsrechnung" (giden / gelir)
+
+DURUM B — Hiçbir taraf eşleşmiyor (HATA):
+  → AI tarafları yanlış parse etmiş demektir. Kassenbon / market fişi ise:
+    supplier = mağaza (Edeka, Rewe, OBI, Bauhaus, vb.)
+    buyer    = Own_Company_Name (kullanıcı şirketi — fişte yazmasa bile zorla doldur)
+    buyer_vat_id = Own_VAT_ID
+    invoice_type = "eingangsrechnung"
+  → Hâlâ eşleşmiyorsa: match_score düşür (<50), context alanına
+    "UYARI: Taraflar kullanıcı şirketiyle eşleşmiyor — manuel inceleme gerekli" yaz.
+
+DURUM C — İki taraf da bizim şirket (ANORMAL):
+  Bu yalnızca iç transfer / kasa fişi / öz-fatura senaryolarında olur.
+  → invoice_type = "eingangsrechnung" (varsayılan, gider tarafı)
+  → context alanına "UYARI: Satıcı ve alıcı aynı şirket — kasa fişi /
+    iç transfer olabilir, manuel doğrulama önerilir" yaz.
+  → Eğer fiş gerçekten bir mağazadan geliyorsa (üst blokta mağaza adı varsa),
+    o mağazayı supplier yap; iki tarafı asla aynı şirketle DOLDURMA.
+\`\`\`
+
 ---
 
 ## 3. YÖN → İZİN VERİLEN HESAP SINIFLARI
@@ -342,6 +371,57 @@ KARAR AĞACI:
 
 ---
 
+## 10.X MAAŞ BORDROSU (Lohn-/Gehaltsabrechnung)
+
+Eğer döküman bir **maaş bordrosu** ise (anahtar kelimeler: "Brutto/Netto-Bezüge",
+"Lohnabrechnung", "Gehaltsabrechnung", "Entgeltabrechnung", "Verdienstbescheinigung",
+"Auszahlungsbetrag", "Lohnsteuer", "SV-Beitrag", "DATEV LOGN") şu kuralları uygula:
+
+### Header
+- \`invoice_type\`: **"lohnabrechnung"**
+- \`supplier_name\`: işverenin adı (bordronun üst bloğunda yazan firma — örn. "Cevik Metehan, Bergisch Gladbacher Str., Köln")
+- \`buyer_name\`: çalışanın adı (bordro sahibi — örn. "Baris Ucak")
+- \`buyer_vat_id\`: çalışanın Steuer-ID'si varsa onu yaz (örn. "16183542970"), yoksa null
+- \`supplier_vat_id\`: null bırak (kişisel bordroda VAT yok)
+- \`invoice_number\`: Personal-Nr. + dönem (örn. "00002-2026-02") veya boş
+- \`invoice_date\`: bordro tarihi (örn. "20.02.2026" → "2026-02-20")
+- \`total_net\`: **Auszahlungsbetrag** (net ödeme — örn. 834.02)
+- \`total_vat\`: 0 (bordrolarda KDV yoktur)
+- \`total_gross\`: **Gesamt-Brutto** (brüt — örn. 942.50)
+- \`currency\`: "EUR"
+
+### Items — her bordro için ZORUNLU 3-5 satır oluştur
+Aşağıdaki satırları **mutlaka** ekle (rakamları bordrodan çek):
+
+1. **Brüt ücret** → SKR03 hesabı:
+   - Eğer "Lohn" / saatlik / işçi → \`account_code: "4120"\`, \`account_name: "Löhne"\`, \`account_name_tr: "Ücretler (İşçi)"\`
+   - Eğer "Gehalt" / aylık maaş / memur → \`account_code: "4130"\`, \`account_name: "Gehälter"\`, \`account_name_tr: "Maaşlar (Memur)"\`
+   - Eğer "Geringfügig" / Minijob (450/520€ altı) → \`account_code: "4140"\`, \`account_name: "Geringfügig Beschäftigte"\`, \`account_name_tr: "Mini-Job"\`
+   - \`net_amount\` = Gesamt-Brutto, \`vat_rate: 0\`, \`vat_amount: 0\`, \`gross_amount\` = Gesamt-Brutto
+   - \`datev_counter_account: "1755"\` (Verbindlichkeiten Lohn/Gehalt)
+
+2. **İşveren SV payı (varsa — SV-AG-Anteil)** → \`account_code: "4830"\`,
+   \`account_name: "Gesetzliche soziale Aufwendungen"\`, \`account_name_tr: "İşveren SGK Payı"\`,
+   \`net_amount\` = SV-AG-Anteil tutarı, \`datev_counter_account: "1742"\`
+
+3. **Lohnsteuer/KiSt/Soli karşılığı (bilgi amaçlı satır — opsiyonel)** →
+   \`account_code: "1741"\`, \`account_name: "Verbindlichkeiten Lohn- und Kirchensteuer"\`,
+   \`account_name_tr: "Ödenecek Gelir Vergisi"\`,
+   \`net_amount\` = Lohnsteuer + Kirchensteuer + Soli toplamı
+
+4. **Çalışan SV payı karşılığı** → \`account_code: "1742"\`,
+   \`account_name: "Verbindlichkeiten im Rahmen der sozialen Sicherheit"\`,
+   \`account_name_tr: "Ödenecek SGK"\`,
+   \`net_amount\` = çalışanın SV-Beitrag toplamı (KV+RV+AV+PV)
+
+Her item için \`match_score: 90\`, \`match_justification: "Lohnabrechnung satırı — DATEV SKR03 standart bordro hesabı"\`,
+\`expense_type: "Personalkosten"\`, \`hgb_reference: "§ 275 HGB"\`.
+
+> Bordrolarda **8xxx (gelir) hesabı KESİNLİKLE kullanılmaz**. Vorsteuer/Umsatzsteuer satırı **yoktur**.
+> Tutarlar değiştirilebilir; kullanıcı UI üzerinden düzeltebilir.
+
+---
+
 ## 11. YASAK LİSTESİ (Absolute Verbote)
 
 1. ❌ Hesap kodu UYDURMA — burada olmayan bir kod kullanma.
@@ -369,6 +449,17 @@ Başka tablo, metin veya \`markdown\` olmadan yalnızca JSON verisi gönder:
   "header": {
     "invoice_number": "RE-2026-001",
     "supplier_name": "Firma ABC GmbH",
+    "supplier_vat_id": "DE123456789",
+    "supplier_address": "Musterstraße 1, 10115 Berlin, DE",
+    // ⚠ KRİTİK — supplier alanları SADECE faturayı KESEN (Rechnungssteller / Verkäufer / Von / Absender) tarafa aittir.
+    // ⚠ supplier_vat_id = satıcının VAT/USt-IdNr veya Steuernummer'ı. Bu alana ASLA bir kişi adı veya alıcının ID'si yazılamaz.
+    // ⚠ Eğer faturada "Stephan Marczak", "Geschäftsführer", "Kontakt" gibi bir kişi adı görüyorsan o supplier_name DEĞİLDİR — şirket adıdır şirket adı (orderbird GmbH gibi).
+    "buyer_name": "Müşteri Şirket GmbH",
+    "buyer_vat_id": "DE987654321",
+    "buyer_address": "Hauptstraße 5, 80331 München, DE",
+    // ⚠ KRİTİK — buyer alanları SADECE faturanın KESİLDİĞİ (Rechnungsempfänger / Käufer / An / Bill To / Lieferanschrift) tarafa aittir.
+    // ⚠ Eğer Own_Company_Name verilmişse VE bu bir GELEN FATURA ise, buyer_name = Own_Company_Name, buyer_vat_id = Own_VAT_ID olmalıdır.
+    // ⚠ Faturada "Rechnung an / Bill to / Kunde" bloğunun altında yazan isim ve adres buyer'dır. Bunu supplier ile karıştırma.
     "invoice_date": "YYYY-MM-DD",
     "total_net": 100.00,
     "total_vat": 19.00,
