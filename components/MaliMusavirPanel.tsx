@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { SuSaReport } from "./SuSaReport";
 import { supabase } from "../services/supabaseService";
-import { SavedTransaction, fetchUserIncomeTransactions, isRefundTransaction } from "../services/bankService";
+import { SavedTransaction, fetchUserIncomeTransactions, isRefundTransaction, isSelfTransferTransaction } from "../services/bankService";
 
 // ── Tx kind override store (income | expense | refund) ──
 type TxKind = "income" | "expense" | "refund";
@@ -317,7 +317,7 @@ const AusgangsbuchDoc: React.FC<{
     [rawBankIncomes, overrides]
   );
   const totalBankIncome = incomeOnly.reduce((s, tx) => s + (tx.amount || 0), 0);
-  const matchedCount = incomeOnly.filter(tx => tx.matched_invoice_id).length;
+  const matchedCount = incomeOnly.filter(tx => !!tx.matched_invoice_id).length;
 
   const hasSteuernummer = !!(companyInfo?.steuernummer?.trim());
   const hasUstId = !!(companyInfo?.ust_id?.trim());
@@ -1200,7 +1200,7 @@ const TeslimRaporuDoc: React.FC<{
           <div style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
             <div style={{ fontSize: "8px", color: "#15803d", fontWeight: 700 }}>{tr("Eşleşen", "Zugeordnet")}</div>
             <div style={{ fontSize: "16px", fontWeight: 800, color: "#166534" }}>
-              {bankIncomes.filter(tx => tx.matched_invoice_id).length} / {bankIncomes.length}
+              {bankIncomes.filter(tx => !!tx.matched_invoice_id).length} / {bankIncomes.length}
             </div>
           </div>
         </div>

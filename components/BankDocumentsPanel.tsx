@@ -905,7 +905,33 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
 
                   {expandedStmt === s.id && stmtTxs[s.id] && (
                     <div style={{ background: "#080a0e", borderBottom: si < monthStatements.length - 1 ? "1px solid #141720" : "none" }}>
-                      <SavedStmtView rows={stmtTxs[s.id]} stmt={s} tr={tr} invoices={invoices} />
+                      <SavedStmtView
+                        rows={stmtTxs[s.id]}
+                        stmt={s}
+                        tr={tr}
+                        invoices={invoices}
+                        matchStatusOverrides={matchStatusOverrides}
+                        onChangeMatchStatus={(id, st) => setMatchStatusOverrides(p => {
+                          const next = { ...p };
+                          if (st === null) delete next[id]; else next[id] = st;
+                          return next;
+                        })}
+                        onMarkAllUnmatchedAsNoInvoice={() => {
+                          if (!window.confirm(tr(
+                            "Bu ekstredeki tüm eşleşmeyen işlemler 'Faturasız' olarak işaretlensin mi?",
+                            "Alle nicht abgeglichenen Buchungen als 'Ohne Rechnung' markieren?"
+                          ))) return;
+                          setMatchStatusOverrides(p => {
+                            const next = { ...p };
+                            (stmtTxs[s.id] || []).forEach(r => {
+                              const cur = next[r.id];
+                              if (cur === "matched") return;
+                              if (!r.matched_invoice_id || cur === "none") next[r.id] = "no_invoice";
+                            });
+                            return next;
+                          });
+                        }}
+                      />
                     </div>
                   )}
                 </div>
@@ -977,8 +1003,9 @@ const TxTable: React.FC<{
       const isIncome = effectiveKind === "income" || effectiveKind === "refund";
       const autoHasMatch = !!match;
       const statusOverride = matchStatusOverrides[tx.id];
-      const hasMatch = statusOverride === "matched" ? true : statusOverride === "none" || statusOverride === "no_invoice" ? false : autoHasMatch;
-      const isNoInvoice = statusOverride === "no_invoice";
+      const isSelfTransfer = isSelfTransferTransaction(tx);
+      const hasMatch = statusOverride === "matched" ? true : statusOverride === "none" || statusOverride === "no_invoice" ? false : (isSelfTransfer ? false : autoHasMatch);
+      const isNoInvoice = statusOverride === "no_invoice" || (!statusOverride && isSelfTransfer);
       const isExpanded = expandedId === tx.id;
       const matchedInvoice = autoHasMatch && match ? invoices.find(inv => String(inv.id) === String(match.invoiceId)) ?? null : null;
 
@@ -1058,11 +1085,7 @@ const TxTable: React.FC<{
                   onSaveRule={onSaveRule}
                 />
               )}
-              {isSelfTransferTransaction(tx) && !hasMatch ? (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#a78bfa", fontFamily: "'DM Sans',sans-serif", padding: "3px 8px", borderRadius: "5px", background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.25)", alignSelf: "flex-start", fontWeight: 700 }}>
-                  ⇄ {tr("Para Transferi (Kendi Hesap)", "Eigenüberweisung")}
-                </div>
-              ) : (
+              {(
                 <>
                   {!hasMatch && manualMatchTxId !== tx.id && (
                     <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
@@ -1120,7 +1143,10 @@ const SavedStmtView: React.FC<{
   stmt: SavedBankStatement;
   tr: (a: string, b: string) => string;
   invoices?: Invoice[];
-}> = ({ rows, stmt, tr, invoices = [] }) => {
+  matchStatusOverrides?: Record<string, "matched" | "none" | "no_invoice">;
+  onChangeMatchStatus?: (id: string, status: "matched" | "none" | "no_invoice" | null) => void;
+  onMarkAllUnmatchedAsNoInvoice?: () => void;
+}> = ({ rows, stmt, tr, invoices = [], matchStatusOverrides = {}, onChangeMatchStatus, onMarkAllUnmatchedAsNoInvoice }) => {
   const [filter, setFilter] = useState<"all" | "income" | "expense" | "matched" | "unmatched" | "no_invoice">("all");
 
   // RESERV / Vormerkung girişlerini arşiv görünümünden de gizle
@@ -1131,18 +1157,29 @@ const SavedStmtView: React.FC<{
     return !SAVED_RESERV.test(desc) && !SAVED_RESERV.test(ref) && !SAVED_RESERV.test(cp);
   }), [rows]);
 
+  const isMatchedRow = (r: SavedTransaction) => {
+    const ov = matchStatusOverrides[r.id];
+    if (ov === "matched") return true;
+    if (ov === "none" || ov === "no_invoice") return false;
+    return !!r.matched_invoice_id;
+  };
+  const isNoInvoiceRow = (r: SavedTransaction) => matchStatusOverrides[r.id] === "no_invoice";
+
   const incomeRows = cleanRows.filter(r => r.type === "income");
   const expenseRows = cleanRows.filter(r => r.type === "expense");
-  const matchedCount = cleanRows.filter(r => !!r.matched_invoice_id).length;
-  const unmatchedCount = cleanRows.length - matchedCount;
+  const matchedCount = cleanRows.filter(isMatchedRow).length;
+  const noInvoiceCount = cleanRows.filter(isNoInvoiceRow).length;
+  const unmatchedCount = cleanRows.length - matchedCount - noInvoiceCount;
 
   const filtered = useMemo(() => {
     if (filter === "income") return incomeRows;
     if (filter === "expense") return expenseRows;
-    if (filter === "matched") return cleanRows.filter(r => !!r.matched_invoice_id);
-    if (filter === "unmatched") return cleanRows.filter(r => !r.matched_invoice_id);
+    if (filter === "matched") return cleanRows.filter(isMatchedRow);
+    if (filter === "no_invoice") return cleanRows.filter(isNoInvoiceRow);
+    if (filter === "unmatched") return cleanRows.filter(r => !isMatchedRow(r) && !isNoInvoiceRow(r));
     return cleanRows;
-  }, [cleanRows, filter, incomeRows, expenseRows]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanRows, filter, incomeRows, expenseRows, matchStatusOverrides]);
 
   const FILTER_BTN_STYLE = (active: boolean, color: string): React.CSSProperties => ({
     display: "flex", alignItems: "center", gap: "7px",
@@ -1186,23 +1223,42 @@ const SavedStmtView: React.FC<{
       </div>
 
       {/* ── Filtre sekmeleri ── */}
-      <div style={{ display: "flex", gap: "8px", padding: "10px 14px", flexWrap: "wrap" as const, background: "#07090d", borderBottom: "1px solid #141720" }}>
-        {([
-          { key: "all", label: tr("Tümü", "Alle"), count: cleanRows.length, color: "#6b7280" },
-          { key: "income", label: tr("Gelir", "Einnahmen"), count: incomeRows.length, color: "#10b981" },
-          { key: "expense", label: tr("Gider", "Ausgaben"), count: expenseRows.length, color: "#ef4444" },
-          { key: "matched", label: tr("Eşleşen", "Abgeglichen"), count: matchedCount, color: "#6366f1" },
-          { key: "unmatched", label: tr("Eşleşmeyen", "Offen"), count: unmatchedCount, color: "#f59e0b" },
-        ] as const).map(f => (
-          <button key={f.key} onClick={() => setFilter(f.key)} style={FILTER_BTN_STYLE(filter === f.key, f.color)}>
-            {f.label}
-            <span style={BADGE_STYLE(filter === f.key, f.color)}>{f.count}</span>
+      <div style={{ display: "flex", gap: "8px", padding: "10px 14px", flexWrap: "wrap" as const, background: "#07090d", borderBottom: "1px solid #141720", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" as const }}>
+          {([
+            { key: "all", label: tr("Tümü", "Alle"), count: cleanRows.length, color: "#6b7280" },
+            { key: "income", label: tr("Gelir", "Einnahmen"), count: incomeRows.length, color: "#10b981" },
+            { key: "expense", label: tr("Gider", "Ausgaben"), count: expenseRows.length, color: "#ef4444" },
+            { key: "matched", label: tr("Eşleşen", "Abgeglichen"), count: matchedCount, color: "#6366f1" },
+            { key: "no_invoice", label: tr("Faturasız", "Ohne Rg."), count: noInvoiceCount, color: "#3b82f6" },
+            { key: "unmatched", label: tr("Eşleşmeyen", "Offen"), count: unmatchedCount, color: "#f59e0b" },
+          ] as const).map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)} style={FILTER_BTN_STYLE(filter === f.key, f.color)}>
+              {f.label}
+              <span style={BADGE_STYLE(filter === f.key, f.color)}>{f.count}</span>
+            </button>
+          ))}
+        </div>
+        {onMarkAllUnmatchedAsNoInvoice && (
+          <button
+            onClick={onMarkAllUnmatchedAsNoInvoice}
+            title={tr("Tüm eşleşmeyenleri faturasız işaretle", "Alle nicht abgeglichenen als ohne Rechnung markieren")}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 8,
+              background: "rgba(59,130,246,.12)", border: "1px solid rgba(59,130,246,.45)",
+              color: "#3b82f6", fontSize: 11, fontWeight: 700,
+              fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
+            }}
+          >
+            <FileText size={12} />
+            {tr("Eşleşmeyenleri 'Faturasız' yap", "Nicht abgl. → 'Ohne Rg.'")}
           </button>
-        ))}
+        )}
       </div>
 
       {/* ── İşlem tablosu ── */}
-      <SavedTxTable rows={filtered} tr={tr} invoices={invoices} />
+      <SavedTxTable rows={filtered} tr={tr} invoices={invoices} matchStatusOverrides={matchStatusOverrides} onChangeMatchStatus={onChangeMatchStatus} />
     </div>
   );
 };
@@ -1214,7 +1270,9 @@ const SavedTxTable: React.FC<{
   rows: SavedTransaction[];
   tr: (a: string, b: string) => string;
   invoices?: Invoice[];
-}> = ({ rows, tr, invoices = [] }) => {
+  matchStatusOverrides?: Record<string, "matched" | "none" | "no_invoice">;
+  onChangeMatchStatus?: (id: string, status: "matched" | "none" | "no_invoice" | null) => void;
+}> = ({ rows, tr, invoices = [], matchStatusOverrides = {}, onChangeMatchStatus }) => {
   const checkedSet = useCheckedSet();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [manualMatchId, setManualMatchId] = useState<string | null>(null);
@@ -1264,7 +1322,10 @@ const SavedTxTable: React.FC<{
         const ov = overrides[txOrig.id];
         const tx: SavedTransaction = ov ? { ...txOrig, ...ov } : txOrig;
         const isIncome = tx.type === "income";
-        const hasMatch = !!tx.matched_invoice_id;
+        const statusOv = matchStatusOverrides[tx.id];
+        const autoHasMatch = !!tx.matched_invoice_id;
+        const hasMatch = statusOv === "matched" ? true : (statusOv === "none" || statusOv === "no_invoice") ? false : autoHasMatch;
+        const isNoInvoice = statusOv === "no_invoice";
         const isExpanded = expandedId === tx.id;
         const matchedInvoice = hasMatch
           ? invoices.find(inv => String(inv.id) === String(tx.matched_invoice_id)) ?? null
@@ -1300,7 +1361,16 @@ const SavedTxTable: React.FC<{
                 {isIncome ? `${fmtDE(tx.amount || 0)} €` : ""}
               </div>
               <div style={{ width: "80px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
-                <StatusBadge hasMatch={hasMatch} score={tx.match_score ?? undefined} tr={tr} isIncome={isIncome} isRefund={isIncome && isRefundTransaction(tx)} />
+                <StatusBadge
+                  hasMatch={hasMatch}
+                  isNoInvoice={isNoInvoice}
+                  score={tx.match_score ?? undefined}
+                  tr={tr}
+                  isIncome={isIncome}
+                  isRefund={isIncome && isRefundTransaction(tx)}
+                  onChangeMatchStatus={onChangeMatchStatus ? (s) => onChangeMatchStatus(tx.id, s) : undefined}
+                  isOverridden={!!statusOv}
+                />
               </div>
               <div style={{ width: "50px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
                 <CheckCell id={tx.id} />
@@ -1359,10 +1429,6 @@ const SavedTxTable: React.FC<{
                       ))}
                     </div>
                   </div>
-                ) : !hasMatch && isSelfTransferTransaction(tx) ? (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#a78bfa", fontFamily: "'DM Sans',sans-serif", padding: "3px 8px", borderRadius: "5px", background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.25)", alignSelf: "flex-start", fontWeight: 700 }}>
-                    ⇄ {tr("Para Transferi (Kendi Hesap)", "Eigenüberweisung")}
-                  </div>
                 ) : !hasMatch ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>
                     <AlertCircle size={10} />
@@ -1370,8 +1436,8 @@ const SavedTxTable: React.FC<{
                   </div>
                 ) : null}
 
-                {/* Manuel eşleştirme — kendi hesap transferinde gizli */}
-                {!(isSelfTransferTransaction(tx) && !hasMatch) && (
+                {/* Manuel eşleştirme — kendi hesap transferleri de faturasız sayılır */}
+                {true && (
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <button
                     onClick={e => { e.stopPropagation(); setManualMatchId(manualMatchId === tx.id ? null : tx.id); }}
@@ -1568,7 +1634,7 @@ const ManualMatchSelector: React.FC<{
         </span>
       </div>
 
-      <div style={{ maxHeight: "260px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
+      <div style={{ maxHeight: "70vh", minHeight: "360px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
         {allList.length === 0 && (
           <div style={{ fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif", padding: "10px 0", textAlign: "center" }}>
             {tr("Fatura bulunamadı.", "Keine Rechnung gefunden.")}
