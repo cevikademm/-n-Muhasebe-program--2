@@ -14,6 +14,8 @@ import {
   fetchBankStatements,
   deleteBankStatement,
   fetchStatementTransactions,
+  rematchSavedStatement,
+  updateSavedTransactionMatch,
   isRefundTransaction,
   BankStatement,
   MatchResult,
@@ -32,18 +34,75 @@ import { createUnmatchedNotifications } from "../services/notificationService";
 //  PROPS
 // ─────────────────────────────────────────────
 interface BankDocumentsPanelProps {
-  isSubscriptionExpired?: boolean;
-  subscriptionExpiresAt?: Date | null;
-  subscriptionPlan?: string;
   propUserId?: string;
-  onNavigateToSubscription?: () => void;
+  invoices?: Invoice[];
 }
+
+// Invoice nesnesini farklı kaynaklar (top-level TR alanlar, raw_ai_response.fatura_bilgileri,
+// raw_ai_response.header) arasında normalize ederek display alanlarını üretir.
+const normalizeInvoiceDisplay = (inv: Invoice | null | undefined) => {
+  if (!inv) return null;
+  const fb = (inv as any).raw_ai_response?.fatura_bilgileri || (inv as any).raw_ai_response?.header || {};
+  return {
+    id: inv.id,
+    invoice_number:
+      (inv as any).invoice_number || inv.fatura_no || fb.invoice_number || fb.fatura_no || null,
+    invoice_date:
+      (inv as any).invoice_date || inv.tarih || fb.invoice_date || fb.tarih || null,
+    supplier_name:
+      (inv as any).supplier_name || (inv as any).satici_adi || fb.supplier_name || fb.satici_adi || inv.satici_vkn || null,
+    total_net:
+      (inv as any).total_net ?? inv.ara_toplam ?? fb.total_net ?? fb.ara_toplam ?? null,
+    total_vat:
+      (inv as any).total_vat ?? inv.toplam_kdv ?? fb.total_vat ?? fb.toplam_kdv ?? null,
+    total_gross:
+      (inv as any).total_gross ?? inv.genel_toplam ?? fb.total_gross ?? fb.genel_toplam ?? null,
+    currency: (inv as any).currency || fb.currency || "EUR",
+    status: inv.status,
+  };
+};
 
 // ─────────────────────────────────────────────
 //  YARDIMCILAR
 // ─────────────────────────────────────────────
 const fmtDE = (n: number) =>
   new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+// ── İşlem kontrol (checked) state — localStorage + subscription ──
+const CHECKED_KEY = "muhasys_bank_tx_checked";
+let checkedStore: Set<string> = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem(CHECKED_KEY) || "[]")); } catch { return new Set(); }
+})();
+const checkedListeners = new Set<() => void>();
+const useCheckedSet = (): Set<string> => {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const fn = () => force(n => n + 1);
+    checkedListeners.add(fn);
+    return () => { checkedListeners.delete(fn); };
+  }, []);
+  return checkedStore;
+};
+const toggleChecked = (id: string) => {
+  const next = new Set(checkedStore);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  checkedStore = next;
+  try { localStorage.setItem(CHECKED_KEY, JSON.stringify(Array.from(next))); } catch { /* ignore */ }
+  checkedListeners.forEach(fn => fn());
+};
+const CheckCell: React.FC<{ id: string }> = ({ id }) => {
+  const set = useCheckedSet();
+  return (
+    <input
+      type="checkbox"
+      checked={set.has(id)}
+      onClick={(e) => e.stopPropagation()}
+      onChange={() => toggleChecked(id)}
+      style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "#10b981" }}
+      title="Kontrol edildi"
+    />
+  );
+};
 
 const fmtDate = (iso: string | null) => {
   if (!iso) return "—";
@@ -126,8 +185,8 @@ const parseStmtDate = (s: SavedBankStatement): { year: number; month: number } =
 // ─────────────────────────────────────────────
 //  ANA PANEL
 // ─────────────────────────────────────────────
-export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscriptionExpired, subscriptionExpiresAt, subscriptionPlan, propUserId, onNavigateToSubscription }) => {
-  const invoices: any[] = [];
+export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUserId, invoices: invoicesProp }) => {
+  const invoices: any[] = invoicesProp || [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => (lang === "tr" ? a : b);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -183,6 +242,13 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
   const [search, setSearch] = useState("");
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [manualMatchTxId, setManualMatchTxId] = useState<string | null>(null);
+  const [txKindOverrides, setTxKindOverrides] = useState<Record<string, "income" | "expense" | "refund">>({});
+  const [matchStatusOverrides, setMatchStatusOverrides] = useState<Record<string, "matched" | "none">>(() => {
+    try { return JSON.parse(localStorage.getItem("bank_match_overrides") || "{}"); } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("bank_match_overrides", JSON.stringify(matchStatusOverrides)); } catch {}
+  }, [matchStatusOverrides]);
 
   // ── Arşiv state
   const [savedStatements, setSavedStatements] = useState<SavedBankStatement[]>([]);
@@ -236,13 +302,19 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
 
   // ── Fatura listesi (eşleştirme için)
   const invoiceList = useMemo(() =>
-    invoices.map(inv => ({
-      id: inv.id,
-      invoice_number: inv.invoice_number,
-      supplier_name: inv.supplier_name,
-      invoice_date: inv.invoice_date,
-      total_gross: inv.total_gross,
-    })), [invoices]);
+    invoices.map(inv => {
+      const fb = (inv as any).raw_ai_response?.fatura_bilgileri || (inv as any).raw_ai_response?.header || {};
+      return {
+        id: inv.id,
+        invoice_number: inv.fatura_no ?? (inv as any).invoice_number ?? fb.invoice_number ?? fb.fatura_no ?? null,
+        supplier_name: (inv as any).satici_adi ?? (inv as any).supplier_name ?? fb.satici_adi ?? fb.supplier_name ?? null,
+        supplier_vat_id: inv.satici_vkn ?? (inv as any).supplier_vat_id ?? fb.supplier_vat_id ?? fb.satici_vkn ?? null,
+        supplier_iban: (inv as any).satici_iban ?? (inv as any).supplier_iban ?? fb.supplier_iban ?? fb.satici_iban ?? fb.iban ?? null,
+        supplier_creditor_id: (inv as any).satici_glaeubiger_id ?? (inv as any).supplier_creditor_id ?? fb.creditor_id ?? fb.glaeubiger_id ?? fb.glaubiger_id ?? null,
+        invoice_date: inv.tarih ?? (inv as any).invoice_date ?? fb.invoice_date ?? fb.tarih ?? null,
+        total_gross: inv.genel_toplam ?? (inv as any).total_gross ?? fb.total_gross ?? fb.genel_toplam ?? 0,
+      };
+    }), [invoices]);
 
   // ── Dosya işle
   const handleFile = async (file: File) => {
@@ -307,16 +379,26 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
 
       // ── Otomatik kaydet
       const uid = userId ?? (await supabase.auth.getSession()).data.session?.user?.id ?? null;
+      if (!uid) {
+        setError(tr(
+          "Oturum bulunamadı — ekstre kaydedilemedi. Lütfen tekrar giriş yapın.",
+          "Keine Session — Kontoauszug nicht gespeichert. Bitte erneut anmelden."
+        ));
+      }
       if (uid) {
         let savedStmtId: string | null = null;
         try {
-          savedStmtId = await saveBankStatement(result, withMatches, file.name, uid);
+          savedStmtId = await saveBankStatement(result, withMatches, file.name, uid, file);
           setIsSaved(true);
           if (!userId) setUserId(uid);
           loadSaved(uid);
           setSuccessMsg(tr("Ekstre analiz edildi ve otomatik kaydedildi.", "Kontoauszug analysiert und automatisch gespeichert."));
         } catch (saveErr: any) {
           console.error("[AutoSave]", saveErr);
+          setError(tr(
+            `Ekstre kaydedilemedi: ${saveErr?.message || saveErr}`,
+            `Kontoauszug konnte nicht gespeichert werden: ${saveErr?.message || saveErr}`
+          ));
         }
 
         // ── Eşleşmeyen işlemler için bildirim oluştur
@@ -382,6 +464,34 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
     setManualMatchTxId(null);
   };
 
+  // ── Kayıtlı ekstreyi mevcut faturalarla yeniden eşleştir
+  const [rematchingId, setRematchingId] = useState<string | null>(null);
+  const handleRematch = async (id: string) => {
+    setRematchingId(id);
+    setError(null); setSuccessMsg(null);
+    try {
+      const res = await rematchSavedStatement(id, invoiceList);
+      // Cache'i tazele
+      setStmtTxs(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+      if (expandedStmt === id) {
+        const rows = await fetchStatementTransactions(id);
+        setStmtTxs(prev => ({ ...prev, [id]: rows }));
+      }
+      setSuccessMsg(tr(
+        `Yeniden eşleştirme tamamlandı: ${res.matched}/${res.total} işlem eşleşti.`,
+        `Neuabgleich abgeschlossen: ${res.matched}/${res.total} Buchungen abgeglichen.`
+      ));
+    } catch (e: any) {
+      setError(e.message || tr("Yeniden eşleştirme başarısız.", "Neuabgleich fehlgeschlagen."));
+    } finally {
+      setRematchingId(null);
+    }
+  };
+
   // ── Sil
   const handleDelete = async (id: string) => {
     try {
@@ -435,7 +545,9 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
 
   // ── Arşiv: yıl/ay grupla
   const availableYears = useMemo(() => {
-    const years = new Set<number>([new Date().getFullYear()]);
+    const currentYear = new Date().getFullYear();
+    // Varsayılan: son 3 yılı her zaman göster (geçmiş ekstrelere erişim için)
+    const years = new Set<number>([currentYear, currentYear - 1, currentYear - 2]);
     savedStatements.forEach(s => years.add(parseStmtDate(s).year));
     return Array.from(years).sort((a, b) => b - a);
   }, [savedStatements]);
@@ -467,9 +579,10 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
 
       {/* HEADER */}
       <div style={{
-        padding: "13px 22px", background: "#0d0f15",
+        padding: "13px 16px", background: "#0d0f15",
         borderBottom: "1px solid #1c1f27", flexShrink: 0,
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px",
+        flexWrap: "wrap",
       }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "15px", color: "#cbd5e1" }}>
@@ -504,7 +617,7 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
 
       {/* İÇERİK */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "14px 22px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "14px 16px" }}>
 
           {/* Mesajlar */}
           {error && <Msg type="error" text={error} />}
@@ -666,6 +779,14 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
                 onUpdateMatch={handleUpdateMatch}
                 bankRules={bankRules}
                 onSaveRule={saveAsKesinKural}
+                kindOverrides={txKindOverrides}
+                onChangeKind={(id, k) => setTxKindOverrides(p => ({ ...p, [id]: k }))}
+                matchStatusOverrides={matchStatusOverrides}
+                onChangeMatchStatus={(id, s) => setMatchStatusOverrides(p => {
+                  const next = { ...p };
+                  if (s === null) delete next[id]; else next[id] = s;
+                  return next;
+                })}
               />
             </div>
           )}
@@ -677,6 +798,8 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
             </div>
           ) : (
             <div style={{ border: "1px solid #1c1f27", borderRadius: "9px", overflow: "hidden" }}>
+             <div style={{ overflowX: "auto" }}>
+              <div style={{ minWidth: "600px" }}>
               {/* Tablo başlığı */}
               <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "#0d0f15", borderBottom: "1px solid #1c1f27" }}>
                 {[
@@ -711,6 +834,16 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
                         ? <Loader2 size={11} style={{ color: "#374151", animation: "spin 1s linear infinite" }} />
                         : <ChevronDown size={11} style={{ color: "#374151", transform: expandedStmt === s.id ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                       }
+                      <button
+                        onClick={e => { e.stopPropagation(); handleRematch(s.id); }}
+                        disabled={rematchingId === s.id}
+                        title={tr("Mevcut faturalarla yeniden eşleştir", "Mit aktuellen Rechnungen neu abgleichen")}
+                        style={{ background: "none", border: "none", color: "#06b6d4", cursor: "pointer", padding: "2px", lineHeight: 0 }}
+                      >
+                        {rematchingId === s.id
+                          ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                          : <RefreshCw size={11} />}
+                      </button>
                       <button onClick={e => { e.stopPropagation(); handleDelete(s.id); }} style={{ background: "none", border: "none", color: "#2a3040", cursor: "pointer", padding: "2px", lineHeight: 0 }}>
                         <Trash2 size={10} />
                       </button>
@@ -724,6 +857,8 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ isSubscr
                   )}
                 </div>
               ))}
+              </div>
+             </div>
             </div>
           )}
         </div>{/* inner flex column */}
@@ -749,8 +884,21 @@ const TxTable: React.FC<{
   onUpdateMatch: (txId: string, inv: Invoice | null) => void;
   bankRules?: Array<{ counterpart: string; supplierKeyword: string; invoiceId: string }>;
   onSaveRule?: (counterpart: string, supplierKeyword: string, invoiceId: string) => void;
-}> = ({ rows, tr, expandedId, onToggle, invoices, manualMatchTxId, onToggleManualMatch, onUpdateMatch, bankRules = [], onSaveRule }) => (
+  kindOverrides?: Record<string, "income" | "expense" | "refund">;
+  onChangeKind?: (id: string, kind: "income" | "expense" | "refund") => void;
+  matchStatusOverrides?: Record<string, "matched" | "none">;
+  onChangeMatchStatus?: (id: string, status: "matched" | "none" | null) => void;
+}> = ({ rows, tr, expandedId, onToggle, invoices, manualMatchTxId, onToggleManualMatch, onUpdateMatch, bankRules = [], onSaveRule, kindOverrides = {}, onChangeKind, matchStatusOverrides = {}, onChangeMatchStatus }) => {
+  const checkedSet = useCheckedSet();
+  const usedInvoiceIds = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach(r => { if (r.match?.invoiceId) s.add(String(r.match.invoiceId)); });
+    return s;
+  }, [rows]);
+  return (
   <div style={{ border: "1px solid #1c1f27", borderRadius: "9px", overflow: "hidden" }}>
+   <div style={{ overflowX: "auto" }}>
+    <div style={{ minWidth: "720px" }}>
     {/* Başlıklar */}
     <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "#0d0f15", borderBottom: "1px solid #1c1f27" }}>
       <ColHead w="84px">{tr("Tarih", "Datum")}</ColHead>
@@ -759,6 +907,7 @@ const TxTable: React.FC<{
       <ColHead w="105px" align="right" color="#ef4444">{tr("Gider", "Ausgabe")}</ColHead>
       <ColHead w="105px" align="right" color="#10b981">{tr("Gelir", "Einnahme")}</ColHead>
       <ColHead w="80px" align="center">{tr("Durum", "Status")}</ColHead>
+      <ColHead w="50px" align="center">{tr("Kontrol", "Geprüft")}</ColHead>
       <div style={{ width: "18px" }} />
     </div>
 
@@ -769,10 +918,15 @@ const TxTable: React.FC<{
     )}
 
     {rows.map(({ tx, match }, idx) => {
-      const isIncome = tx.type === "income";
-      const hasMatch = !!match;
+      const defaultKind: "income" | "expense" | "refund" =
+        tx.type === "income" ? (isRefundTransaction(tx) ? "refund" : "income") : "expense";
+      const effectiveKind = kindOverrides[tx.id] ?? defaultKind;
+      const isIncome = effectiveKind === "income" || effectiveKind === "refund";
+      const autoHasMatch = !!match;
+      const statusOverride = matchStatusOverrides[tx.id];
+      const hasMatch = statusOverride === "matched" ? true : statusOverride === "none" ? false : autoHasMatch;
       const isExpanded = expandedId === tx.id;
-      const matchedInvoice = hasMatch && match ? invoices.find(inv => String(inv.id) === String(match.invoiceId)) ?? null : null;
+      const matchedInvoice = autoHasMatch && match ? invoices.find(inv => String(inv.id) === String(match.invoiceId)) ?? null : null;
 
       return (
         <React.Fragment key={tx.id}>
@@ -781,7 +935,8 @@ const TxTable: React.FC<{
             style={{
               display: "flex", alignItems: "center", padding: "9px 12px",
               borderBottom: idx < rows.length - 1 || isExpanded ? "1px solid #141720" : "none",
-              background: hasMatch ? "rgba(99,102,241,.04)" : "#0a0c11",
+              background: checkedSet.has(tx.id) ? "rgba(16,185,129,.12)" : hasMatch ? "rgba(99,102,241,.04)" : "#0a0c11",
+              borderLeft: checkedSet.has(tx.id) ? "3px solid #10b981" : "3px solid transparent",
               cursor: "pointer",
             }}
           >
@@ -808,7 +963,10 @@ const TxTable: React.FC<{
               {isIncome ? `${fmtDE(tx.amount)} €` : ""}
             </div>
             <div style={{ width: "80px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
-              <StatusBadge hasMatch={hasMatch} score={match?.score} tr={tr} isIncome={isIncome} isRefund={isIncome && isRefundTransaction(tx)} />
+              <StatusBadge hasMatch={hasMatch} score={match?.score} tier={match?.tier} tr={tr} isIncome={isIncome} isRefund={effectiveKind === "refund"} currentKind={effectiveKind} onChangeKind={onChangeKind ? (k) => onChangeKind(tx.id, k) : undefined} onChangeMatchStatus={onChangeMatchStatus ? (s) => onChangeMatchStatus(tx.id, s) : undefined} isOverridden={!!statusOverride} />
+            </div>
+            <div style={{ width: "50px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
+              <CheckCell id={tx.id} />
             </div>
             <div style={{ width: "18px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
               <ChevronDown size={11} style={{ color: "#374151", transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
@@ -873,6 +1031,9 @@ const TxTable: React.FC<{
                   onSelect={inv => onUpdateMatch(tx.id, inv)}
                   onClear={() => onUpdateMatch(tx.id, null)}
                   onClose={() => onToggleManualMatch(tx.id)}
+                  usedInvoiceIds={usedInvoiceIds}
+                  currentInvoiceId={match?.invoiceId ?? null}
+                  txDate={tx.date ?? null}
                 />
               )}
             </div>
@@ -880,8 +1041,11 @@ const TxTable: React.FC<{
         </React.Fragment>
       );
     })}
+    </div>
+   </div>
   </div>
-);
+  );
+};
 
 // ─────────────────────────────────────────────
 //  ARŞİV EKSTRESİ GENİŞLETİLMİŞ GÖRÜNÜM
@@ -989,7 +1153,39 @@ const SavedTxTable: React.FC<{
   tr: (a: string, b: string) => string;
   invoices?: Invoice[];
 }> = ({ rows, tr, invoices = [] }) => {
+  const checkedSet = useCheckedSet();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [manualMatchId, setManualMatchId] = useState<string | null>(null);
+  // Local override haritası — DB güncellemesinden sonra anında yansıması için.
+  const [overrides, setOverrides] = useState<Record<string, { matched_invoice_id: string | null; match_score: number | null; match_reasons: string[] }>>({});
+
+  // Bu ekstrede zaten eşleşmiş fatura id'leri (uyarı göstermek için)
+  const savedUsedInvoiceIds = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach(r => {
+      const ov = overrides[r.id];
+      const id = ov ? ov.matched_invoice_id : r.matched_invoice_id;
+      if (id) s.add(String(id));
+    });
+    return s;
+  }, [rows, overrides]);
+
+  const applyManualMatch = async (txId: string, inv: Invoice | null) => {
+    try {
+      await updateSavedTransactionMatch(txId, inv ? { id: inv.id } : null);
+      setOverrides(p => ({
+        ...p,
+        [txId]: {
+          matched_invoice_id: inv?.id ?? null,
+          match_score: inv ? 100 : null,
+          match_reasons: inv ? ["Manuel eşleştirme"] : [],
+        },
+      }));
+    } catch (e: any) {
+      alert(tr("Eşleştirme kaydedilemedi: ", "Abgleich fehlgeschlagen: ") + (e?.message || ""));
+    }
+  };
+
   return (
     <div>
       {/* Başlıklar */}
@@ -999,25 +1195,30 @@ const SavedTxTable: React.FC<{
         <ColHead w="105px" align="right" color="#ef4444">{tr("Gider", "Ausgabe")}</ColHead>
         <ColHead w="105px" align="right" color="#10b981">{tr("Gelir", "Einnahme")}</ColHead>
         <ColHead w="80px" align="center">{tr("Durum", "Status")}</ColHead>
+        <ColHead w="50px" align="center">{tr("Kontrol", "Geprüft")}</ColHead>
         <div style={{ width: "18px" }} />
       </div>
-      {rows.map((tx, idx) => {
+      {rows.map((txOrig, idx) => {
+        const ov = overrides[txOrig.id];
+        const tx: SavedTransaction = ov ? { ...txOrig, ...ov } : txOrig;
         const isIncome = tx.type === "income";
         const hasMatch = !!tx.matched_invoice_id;
         const isExpanded = expandedId === tx.id;
         const matchedInvoice = hasMatch
           ? invoices.find(inv => String(inv.id) === String(tx.matched_invoice_id)) ?? null
           : null;
+        const matchedDisplay = normalizeInvoiceDisplay(matchedInvoice);
 
         return (
           <React.Fragment key={tx.id}>
             <div
-              onClick={() => hasMatch && setExpandedId(isExpanded ? null : tx.id)}
+              onClick={() => setExpandedId(isExpanded ? null : tx.id)}
               style={{
                 display: "flex", alignItems: "center", padding: "8px 16px",
                 borderBottom: idx < rows.length - 1 || isExpanded ? "1px solid #0d0f15" : "none",
-                background: isExpanded ? "rgba(99,102,241,.06)" : hasMatch ? "rgba(99,102,241,.03)" : "transparent",
-                cursor: hasMatch ? "pointer" : "default",
+                background: checkedSet.has(tx.id) ? "rgba(16,185,129,.12)" : isExpanded ? "rgba(99,102,241,.06)" : hasMatch ? "rgba(99,102,241,.03)" : "transparent",
+                borderLeft: checkedSet.has(tx.id) ? "3px solid #10b981" : "3px solid transparent",
+                cursor: "pointer",
               }}>
               <div style={{ width: "84px", fontSize: "10px", color: "#6b7280", fontFamily: "'DM Sans',sans-serif", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                 {fmtDate(tx.transaction_date)}
@@ -1039,53 +1240,55 @@ const SavedTxTable: React.FC<{
               <div style={{ width: "80px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
                 <StatusBadge hasMatch={hasMatch} score={tx.match_score ?? undefined} tr={tr} isIncome={isIncome} isRefund={isIncome && isRefundTransaction(tx)} />
               </div>
+              <div style={{ width: "50px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
+                <CheckCell id={tx.id} />
+              </div>
               <div style={{ width: "18px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
-                {hasMatch && (
-                  <ChevronDown size={11} style={{ color: "#6366f1", transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-                )}
+                <ChevronDown size={11} style={{ color: hasMatch ? "#6366f1" : "#4b5563", transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
               </div>
             </div>
 
-            {/* Genişletilmiş fatura detayı */}
-            {isExpanded && hasMatch && (
-              <div style={{ padding: "10px 16px 12px", background: "#080a0e", borderBottom: idx < rows.length - 1 ? "1px solid #0d0f15" : "none" }}>
-                {/* Eşleşme özeti */}
-                <div style={{ padding: "8px 10px", borderRadius: "7px", border: "1px solid rgba(99,102,241,.18)", background: "rgba(99,102,241,.05)", marginBottom: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: "9px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif" }}>{tr("Eşleşen Fatura", "Abgeglichene Rechnung")}</span>
-                    {tx.match_score != null && (
-                      <span style={{ fontSize: "9px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>%{tx.match_score} {tr("güven", "Konfidenz")}</span>
+            {/* Genişletilmiş alan */}
+            {isExpanded && (
+              <div style={{ padding: "10px 16px 12px", background: "#080a0e", borderBottom: idx < rows.length - 1 ? "1px solid #0d0f15" : "none", display: "flex", flexDirection: "column", gap: "8px" }}>
+                {hasMatch && (
+                  <div style={{ padding: "8px 10px", borderRadius: "7px", border: "1px solid rgba(99,102,241,.18)", background: "rgba(99,102,241,.05)", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "9px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif" }}>{tr("Eşleşen Fatura", "Abgeglichene Rechnung")}</span>
+                      {tx.match_score != null && (
+                        <span style={{ fontSize: "9px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>%{tx.match_score} {tr("güven", "Konfidenz")}</span>
+                      )}
+                    </div>
+                    {tx.match_reasons && tx.match_reasons.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "3px" }}>
+                        {tx.match_reasons.map((r, i) => (
+                          <span key={i} style={{ padding: "1px 6px", borderRadius: "3px", background: "rgba(99,102,241,.1)", border: "1px solid rgba(99,102,241,.15)", fontSize: "9px", color: "#818cf8", fontFamily: "'DM Sans',sans-serif" }}>{r}</span>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  {tx.match_reasons && tx.match_reasons.length > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "3px" }}>
-                      {tx.match_reasons.map((r, i) => (
-                        <span key={i} style={{ padding: "1px 6px", borderRadius: "3px", background: "rgba(99,102,241,.1)", border: "1px solid rgba(99,102,241,.15)", fontSize: "9px", color: "#818cf8", fontFamily: "'DM Sans',sans-serif" }}>{r}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {/* Fatura detayı */}
-                {matchedInvoice ? (
+                {hasMatch && matchedDisplay ? (
                   <div style={{ padding: "10px 14px", borderRadius: "8px", border: "1px solid rgba(99,102,241,.2)", background: "#0d0f15", display: "flex", flexDirection: "column", gap: "8px" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "6px", borderBottom: "1px solid #1c1f27" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <CheckCircle2 size={12} style={{ color: "#6366f1" }} />
-                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#818cf8", fontFamily: "'DM Sans',sans-serif" }}>{matchedInvoice.supplier_name || "—"}</span>
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#818cf8", fontFamily: "'DM Sans',sans-serif" }}>{matchedDisplay.supplier_name || "—"}</span>
                       </div>
                       <span style={{ padding: "2px 7px", borderRadius: "4px", background: "rgba(16,185,129,.1)", border: "1px solid rgba(16,185,129,.2)", fontSize: "9px", fontWeight: 700, color: "#10b981", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase" }}>
-                        {matchedInvoice.status}
+                        {matchedDisplay.status}
                       </span>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8px" }}>
                       {[
-                        { l: tr("Fatura No", "Rech.-Nr."), v: matchedInvoice.invoice_number ? `#${matchedInvoice.invoice_number}` : "—" },
-                        { l: tr("Tarih", "Datum"), v: fmtDate(matchedInvoice.invoice_date) },
-                        { l: tr("Net", "Netto"), v: matchedInvoice.total_net != null ? `${fmtDE(matchedInvoice.total_net)} €` : "—" },
-                        { l: tr("KDV", "MwSt."), v: matchedInvoice.total_vat != null ? `${fmtDE(matchedInvoice.total_vat)} €` : "—" },
-                        { l: tr("Brüt", "Brutto"), v: matchedInvoice.total_gross != null ? `${fmtDE(matchedInvoice.total_gross)} €` : "—" },
-                        { l: tr("Para Birimi", "Währung"), v: matchedInvoice.currency || "EUR" },
+                        { l: tr("Fatura No", "Rech.-Nr."), v: matchedDisplay.invoice_number ? `#${matchedDisplay.invoice_number}` : "—" },
+                        { l: tr("Tarih", "Datum"), v: fmtDate(matchedDisplay.invoice_date) },
+                        { l: tr("Net", "Netto"), v: matchedDisplay.total_net != null ? `${fmtDE(matchedDisplay.total_net)} €` : "—" },
+                        { l: tr("KDV", "MwSt."), v: matchedDisplay.total_vat != null ? `${fmtDE(matchedDisplay.total_vat)} €` : "—" },
+                        { l: tr("Brüt", "Brutto"), v: matchedDisplay.total_gross != null ? `${fmtDE(matchedDisplay.total_gross)} €` : "—" },
+                        { l: tr("Para Birimi", "Währung"), v: matchedDisplay.currency || "EUR" },
                       ].map((row, i) => (
                         <div key={i}>
                           <div style={{ fontSize: "9px", color: "#374151", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: "2px" }}>{row.l}</div>
@@ -1094,10 +1297,38 @@ const SavedTxTable: React.FC<{
                       ))}
                     </div>
                   </div>
-                ) : (
-                  <div style={{ fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
-                    {tr(`Fatura ID: ${tx.matched_invoice_id}`, `Rechnungs-ID: ${tx.matched_invoice_id}`)}
+                ) : !hasMatch ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>
+                    <AlertCircle size={10} />
+                    {tr("Eşleşen fatura bulunamadı.", "Keine passende Rechnung gefunden.")}
                   </div>
+                ) : null}
+
+                {/* Manuel eşleştirme */}
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); setManualMatchId(manualMatchId === tx.id ? null : tx.id); }}
+                    style={{ padding: "4px 11px", borderRadius: "5px", border: "1px solid rgba(99,102,241,.3)", background: manualMatchId === tx.id ? "rgba(99,102,241,.15)" : "transparent", color: manualMatchId === tx.id ? "#818cf8" : "#6366f1", fontSize: "10px", fontFamily: "'DM Sans',sans-serif", cursor: "pointer", fontWeight: 600 }}
+                  >
+                    {manualMatchId === tx.id
+                      ? tr("✕ Kapat", "✕ Schließen")
+                      : hasMatch
+                        ? tr("Eşleşmeyi Değiştir", "Abgleich ändern")
+                        : tr("Manuel Eşleştir", "Manuell abgleichen")}
+                  </button>
+                </div>
+                {manualMatchId === tx.id && (
+                  <ManualMatchSelector
+                    invoices={invoices}
+                    tr={tr}
+                    hasCurrentMatch={hasMatch}
+                    onSelect={(inv) => { applyManualMatch(tx.id, inv); setManualMatchId(null); }}
+                    onClear={() => { applyManualMatch(tx.id, null); setManualMatchId(null); }}
+                    onClose={() => setManualMatchId(null)}
+                    currentInvoiceId={(overrides[tx.id]?.matched_invoice_id ?? tx.matched_invoice_id) ?? null}
+                    usedInvoiceIds={savedUsedInvoiceIds}
+                    txDate={tx.date ?? null}
+                  />
                 )}
               </div>
             )}
@@ -1128,17 +1359,78 @@ const ManualMatchSelector: React.FC<{
   onSelect: (inv: Invoice) => void;
   onClear: () => void;
   onClose: () => void;
-}> = ({ invoices, tr, hasCurrentMatch, onSelect, onClear, onClose }) => {
+  usedInvoiceIds?: Set<string>;
+  currentInvoiceId?: string | null;
+  txDate?: string | null;
+}> = ({ invoices, tr, hasCurrentMatch, onSelect, onClear, onClose, usedInvoiceIds, currentInvoiceId, txDate }) => {
   const [q, setQ] = useState("");
-  const list = useMemo(() => {
-    const base = invoices.filter(inv => inv.status !== "duplicate");
-    if (!q) return base.slice(0, 15);
-    const lq = q.toLowerCase();
-    return base.filter(inv =>
-      (inv.supplier_name || "").toLowerCase().includes(lq) ||
-      (inv.invoice_number || "").toLowerCase().includes(lq)
-    ).slice(0, 15);
+
+  // Manuel eşleştirme: kullanıcının kendi seçmesi için TÜM faturalar listelenir
+  // (dönem filtresi yok), tutara göre büyükten küçüğe sıralanır.
+  const allList = useMemo(() => {
+    const valid = invoices.filter(inv => inv.status !== "duplicate");
+    const lq = q.trim().toLowerCase();
+    const filtered = valid.filter(inv => {
+      if (!lq) return true;
+      const d = normalizeInvoiceDisplay(inv)!;
+      return (d.supplier_name || "").toLowerCase().includes(lq) ||
+             (d.invoice_number || "").toLowerCase().includes(lq);
+    });
+    return filtered.sort((a, b) => {
+      const ga = normalizeInvoiceDisplay(a)!.total_gross ?? 0;
+      const gb = normalizeInvoiceDisplay(b)!.total_gross ?? 0;
+      return gb - ga;
+    });
   }, [invoices, q]);
+
+  const renderRow = (inv: Invoice) => {
+    const d = normalizeInvoiceDisplay(inv)!;
+    const isCurrent = String(inv.id) === String(currentInvoiceId);
+    const isUsedElsewhere = !isCurrent && !!usedInvoiceIds && usedInvoiceIds.has(String(inv.id));
+    const bg = isCurrent
+      ? "rgba(16,185,129,.12)"
+      : isUsedElsewhere
+        ? "rgba(249,115,22,.08)"
+        : "#0d0f15";
+    const border = isCurrent
+      ? "1px solid rgba(16,185,129,.45)"
+      : isUsedElsewhere
+        ? "1px solid rgba(249,115,22,.35)"
+        : "1px solid #141720";
+    return (
+      <div
+        key={inv.id}
+        onClick={() => { onSelect(inv); onClose(); }}
+        title={isUsedElsewhere ? tr("Bu fatura başka bir hareketle eşleşmiş", "Diese Rechnung ist bereits einem anderen Vorgang zugeordnet") : ""}
+        style={{ padding: "7px 9px", borderRadius: "6px", background: bg, border, cursor: "pointer", display: "flex", flexDirection: "column", gap: "3px", position: "relative" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: isCurrent ? "#10b981" : isUsedElsewhere ? "#fb923c" : "#9ca3af", fontFamily: "'DM Sans',sans-serif", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {d.supplier_name || "—"}
+          </div>
+          {isCurrent && (
+            <span style={{ fontSize: "8px", fontWeight: 700, color: "#10b981", background: "rgba(16,185,129,.18)", border: "1px solid rgba(16,185,129,.4)", borderRadius: "3px", padding: "1px 5px", textTransform: "uppercase", letterSpacing: ".05em" }}>
+              {tr("Seçili", "Aktiv")}
+            </span>
+          )}
+          {isUsedElsewhere && (
+            <span style={{ fontSize: "8px", fontWeight: 700, color: "#fb923c", background: "rgba(249,115,22,.15)", border: "1px solid rgba(249,115,22,.35)", borderRadius: "3px", padding: "1px 5px", textTransform: "uppercase", letterSpacing: ".05em" }}>
+              {tr("Eşleşti", "Belegt")}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          {d.invoice_number && (
+            <span style={{ fontSize: "9px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>#{d.invoice_number}</span>
+          )}
+          <span style={{ fontSize: "9px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>{fmtDate(d.invoice_date)}</span>
+          {d.total_gross != null && (
+            <span style={{ fontSize: "9px", color: "#6366f1", fontFamily: "'DM Sans',sans-serif", fontWeight: 700, marginLeft: "auto" }}>{fmtDE(d.total_gross)} €</span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -1169,77 +1461,195 @@ const ManualMatchSelector: React.FC<{
         </button>
       )}
 
-      <div style={{ maxHeight: "180px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
-        {list.length === 0 && (
+      {/* Lejant */}
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: "9px", fontFamily: "'DM Sans',sans-serif", color: "#4b5563" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "rgba(16,185,129,.3)", border: "1px solid rgba(16,185,129,.5)" }} />
+          {tr("Şu an seçili", "Aktuell")}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "rgba(249,115,22,.2)", border: "1px solid rgba(249,115,22,.45)" }} />
+          {tr("Başka eşleşme var", "Bereits belegt")}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#0d0f15", border: "1px solid #1c1f27" }} />
+          {tr("Boşta", "Frei")}
+        </span>
+      </div>
+
+      <div style={{ maxHeight: "260px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
+        {allList.length === 0 && (
           <div style={{ fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif", padding: "10px 0", textAlign: "center" }}>
             {tr("Fatura bulunamadı.", "Keine Rechnung gefunden.")}
           </div>
         )}
-        {list.map(inv => (
-          <div
-            key={inv.id}
-            onClick={() => { onSelect(inv); onClose(); }}
-            style={{ padding: "7px 9px", borderRadius: "6px", background: "#0d0f15", border: "1px solid #141720", cursor: "pointer", display: "flex", flexDirection: "column", gap: "3px" }}
-          >
-            <div style={{ fontSize: "11px", fontWeight: 600, color: "#9ca3af", fontFamily: "'DM Sans',sans-serif" }}>
-              {inv.supplier_name || "—"}
-            </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              {inv.invoice_number && (
-                <span style={{ fontSize: "9px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>#{inv.invoice_number}</span>
-              )}
-              <span style={{ fontSize: "9px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>{fmtDate(inv.invoice_date)}</span>
-              {inv.total_gross != null && (
-                <span style={{ fontSize: "9px", color: "#6366f1", fontFamily: "'DM Sans',sans-serif", fontWeight: 700, marginLeft: "auto" }}>{fmtDE(inv.total_gross)} €</span>
-              )}
-            </div>
+
+        {allList.length > 0 && (
+          <div style={{ fontSize: "9px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".06em", padding: "4px 2px 2px" }}>
+            {tr(`Tüm faturalar (tutara göre)`, `Alle Rechnungen (nach Betrag)`)} · {allList.length}
           </div>
-        ))}
+        )}
+        {allList.map(renderRow)}
       </div>
     </div>
+  );
+};
+
+type TxKind = "income" | "expense" | "refund";
+
+const TypeSelect: React.FC<{
+  value: TxKind;
+  tr: (a: string, b: string) => string;
+  onChange: (v: TxKind) => void;
+}> = ({ value, tr, onChange }) => {
+  const styles: Record<TxKind, { bg: string; border: string; color: string }> = {
+    income:  { bg: "rgba(16,185,129,.12)", border: "rgba(16,185,129,.30)", color: "#10b981" },
+    expense: { bg: "rgba(239,68,68,.12)",  border: "rgba(239,68,68,.30)",  color: "#ef4444" },
+    refund:  { bg: "rgba(249,115,22,.12)", border: "rgba(249,115,22,.30)", color: "#f97316" },
+  };
+  const s = styles[value];
+  return (
+    <select
+      value={value}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => { e.stopPropagation(); onChange(e.target.value as TxKind); }}
+      style={{
+        appearance: "none", WebkitAppearance: "none", MozAppearance: "none",
+        padding: "2px 16px 2px 7px",
+        borderRadius: "4px",
+        background: `${s.bg} url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(s.color)}' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 4px center`,
+        backgroundSize: "8px 8px",
+        border: `1px solid ${s.border}`,
+        color: s.color,
+        fontSize: "8px",
+        fontWeight: 700,
+        fontFamily: "'DM Sans',sans-serif",
+        cursor: "pointer",
+        outline: "none",
+      }}
+    >
+      <option value="income"  style={{ background: "#ffffff", color: "#10b981" }}>{tr("GELİR", "EINN.")}</option>
+      <option value="expense" style={{ background: "#ffffff", color: "#ef4444" }}>{tr("GİDER", "AUSG.")}</option>
+      <option value="refund"  style={{ background: "#ffffff", color: "#f97316" }}>{tr("İADE",  "ERST.")}</option>
+    </select>
   );
 };
 
 const StatusBadge: React.FC<{
   hasMatch: boolean;
   score?: number;
+  tier?: "confident" | "probable";
   tr: (a: string, b: string) => string;
   isIncome?: boolean;
   isRefund?: boolean;
-}> = ({ hasMatch, score, tr, isIncome, isRefund }) => (
-  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
-    {/* Gelir/İade etiketi — sadece gelir işlemlerinde göster */}
-    {isIncome && (
-      isRefund ? (
-        <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(249,115,22,.12)", border: "1px solid rgba(249,115,22,.25)" }}>
-          <span style={{ fontSize: "8px", fontWeight: 700, color: "#f97316", fontFamily: "'DM Sans',sans-serif" }}>
-            {tr("İADE", "ERST.")}
-          </span>
-        </div>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(16,185,129,.12)", border: "1px solid rgba(16,185,129,.25)" }}>
-          <span style={{ fontSize: "8px", fontWeight: 700, color: "#10b981", fontFamily: "'DM Sans',sans-serif" }}>
-            {tr("GELİR", "EINN.")}
-          </span>
-        </div>
-      )
-    )}
-    {/* Eşleşme durumu */}
-    {hasMatch ? (
-      <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)" }}>
-        <CheckCircle2 size={8} style={{ color: "#6366f1" }} />
-        <span style={{ fontSize: "8px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif" }}>
-          {tr("EŞLEŞTİ", "ABGL.")}
+  currentKind?: TxKind;
+  onChangeKind?: (v: TxKind) => void;
+  onChangeMatchStatus?: (s: "matched" | "none" | null) => void;
+  isOverridden?: boolean;
+}> = ({ hasMatch, score, tier, tr, isIncome, isRefund, currentKind, onChangeKind, onChangeMatchStatus, isOverridden }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const isProbable = hasMatch && tier === "probable" && !isOverridden;
+  const badgeBtn = hasMatch ? (
+    isProbable ? (
+      <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>
+        <AlertCircle size={8} style={{ color: "#f59e0b" }} />
+        <span style={{ fontSize: "8px", fontWeight: 800, color: "#f59e0b", fontFamily: "'DM Sans',sans-serif" }}>
+          {tr("OLASI", "MÖGL.")}{typeof score === "number" ? ` ${score}` : ""}
         </span>
+        {onChangeMatchStatus && <ChevronDown size={8} style={{ color: "#f59e0b" }} />}
       </div>
     ) : (
-      <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "#0d0f15", border: "1px solid #1c1f27" }}>
-        <AlertCircle size={8} style={{ color: "#374151" }} />
-        <span style={{ fontSize: "8px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>{tr("Yok", "Kein")}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(16,185,129,.15)", border: `1px solid ${isOverridden ? "rgba(245,158,11,.55)" : "rgba(16,185,129,.35)"}` }}>
+        <CheckCircle2 size={8} style={{ color: "#10b981" }} />
+        <span style={{ fontSize: "8px", fontWeight: 800, color: "#10b981", fontFamily: "'DM Sans',sans-serif" }}>
+          {tr("EŞLEŞTİ", "ABGL.")}
+        </span>
+        {onChangeMatchStatus && <ChevronDown size={8} style={{ color: "#10b981" }} />}
       </div>
-    )}
-  </div>
-);
+    )
+  ) : (
+    <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "#0d0f15", border: `1px solid ${isOverridden ? "rgba(245,158,11,.55)" : "#1c1f27"}` }}>
+      <AlertCircle size={8} style={{ color: "#374151" }} />
+      <span style={{ fontSize: "8px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>{tr("Yok", "Kein")}</span>
+      {onChangeMatchStatus && <ChevronDown size={8} style={{ color: "#374151" }} />}
+    </div>
+  );
+
+  const opt = (label: string, color: string, bg: string, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); setOpen(false); }}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6,
+        width: "100%", padding: "6px 10px", border: "none", background: "transparent",
+        color, fontSize: 10, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
+        cursor: "pointer", textAlign: "left",
+      }}
+      onMouseEnter={e => (e.currentTarget.style.background = bg)}
+      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div ref={ref} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", position: "relative" }}>
+      {/* Gelir/Gider/İade dropdown */}
+      {onChangeKind && currentKind ? (
+        <TypeSelect value={currentKind} tr={tr} onChange={onChangeKind} />
+      ) : isIncome && (
+        isRefund ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(249,115,22,.12)", border: "1px solid rgba(249,115,22,.25)" }}>
+            <span style={{ fontSize: "8px", fontWeight: 700, color: "#f97316", fontFamily: "'DM Sans',sans-serif" }}>
+              {tr("İADE", "ERST.")}
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(16,185,129,.12)", border: "1px solid rgba(16,185,129,.25)" }}>
+            <span style={{ fontSize: "8px", fontWeight: 700, color: "#10b981", fontFamily: "'DM Sans',sans-serif" }}>
+              {tr("GELİR", "EINN.")}
+            </span>
+          </div>
+        )
+      )}
+      {/* Eşleşme durumu (clickable) */}
+      {onChangeMatchStatus ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+          style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+        >
+          {badgeBtn}
+        </button>
+      ) : badgeBtn}
+      {open && onChangeMatchStatus && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 100,
+            minWidth: 130, background: "#0d0f15", border: "1px solid #1c1f27",
+            borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.45)", overflow: "hidden",
+          }}
+        >
+          {opt("✓ " + tr("EŞLEŞTİ", "ABGL."), "#10b981", "rgba(16,185,129,.1)", () => onChangeMatchStatus("matched"))}
+          {onChangeKind && opt("↩ " + tr("İADE", "ERSTATTUNG"), "#f97316", "rgba(249,115,22,.1)", () => onChangeKind("refund"))}
+          {opt("○ " + tr("YOK", "KEIN"), "#9ca3af", "rgba(156,163,175,.1)", () => onChangeMatchStatus("none"))}
+          {isOverridden && opt("⟲ " + tr("Otomatik", "Auto"), "#6b7280", "rgba(107,114,128,.1)", () => onChangeMatchStatus(null))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const MatchDetail: React.FC<{
   match: MatchResult;
@@ -1300,27 +1710,29 @@ const MatchDetail: React.FC<{
       </div>
 
       {/* Fatura detay — her zaman açık */}
-      {invoice ? (
+      {invoice ? (() => {
+        const d = normalizeInvoiceDisplay(invoice)!;
+        return (
         <div style={{ padding: "12px 14px", borderRadius: "8px", border: "1px solid rgba(99,102,241,.2)", background: "#0d0f15", display: "flex", flexDirection: "column", gap: "10px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "8px", borderBottom: "1px solid #1c1f27" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <CheckCircle2 size={12} style={{ color: "#6366f1" }} />
               <span style={{ fontSize: "11px", fontWeight: 700, color: "#818cf8", fontFamily: "'DM Sans',sans-serif" }}>
-                {invoice.supplier_name || "—"}
+                {d.supplier_name || "—"}
               </span>
             </div>
             <span style={{ padding: "2px 8px", borderRadius: "4px", background: "rgba(16,185,129,.1)", border: "1px solid rgba(16,185,129,.2)", fontSize: "9px", fontWeight: 700, color: "#10b981", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase" }}>
-              {invoice.status}
+              {d.status}
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "10px" }}>
             {[
-              { l: tr("Fatura No", "Rech.-Nr."), v: invoice.invoice_number ? `#${invoice.invoice_number}` : "—" },
-              { l: tr("Fatura Tarihi", "Rechnungsdatum"), v: fmtDate(invoice.invoice_date) },
-              { l: tr("Para Birimi", "Währung"), v: invoice.currency || "EUR" },
-              { l: tr("Net Tutar", "Netto"), v: invoice.total_net != null ? `${fmtDE(invoice.total_net)} €` : "—" },
-              { l: tr("KDV", "MwSt."), v: invoice.total_vat != null ? `${fmtDE(invoice.total_vat)} €` : "—" },
-              { l: tr("Brüt Tutar", "Brutto"), v: invoice.total_gross != null ? `${fmtDE(invoice.total_gross)} €` : "—" },
+              { l: tr("Fatura No", "Rech.-Nr."), v: d.invoice_number ? `#${d.invoice_number}` : "—" },
+              { l: tr("Fatura Tarihi", "Rechnungsdatum"), v: fmtDate(d.invoice_date) },
+              { l: tr("Para Birimi", "Währung"), v: d.currency || "EUR" },
+              { l: tr("Net Tutar", "Netto"), v: d.total_net != null ? `${fmtDE(d.total_net)} €` : "—" },
+              { l: tr("KDV", "MwSt."), v: d.total_vat != null ? `${fmtDE(d.total_vat)} €` : "—" },
+              { l: tr("Brüt Tutar", "Brutto"), v: d.total_gross != null ? `${fmtDE(d.total_gross)} €` : "—" },
             ].map((row, i) => (
               <div key={i}>
                 <div style={{ fontSize: "9px", color: "#374151", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: "2px" }}>{row.l}</div>
@@ -1329,7 +1741,8 @@ const MatchDetail: React.FC<{
             ))}
           </div>
         </div>
-      ) : (
+        );
+      })() : (
         <div style={{ padding: "10px 12px", borderRadius: "7px", border: "1px solid #1c1f27", background: "#0d0f15", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
           {tr("Fatura detayı bulunamadı.", "Rechnungsdetails nicht gefunden.")}
         </div>

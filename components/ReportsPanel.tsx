@@ -24,14 +24,23 @@ type Tab = "overview" | "categories" | "skr03" | "suppliers" | "vat" | "susa" | 
 export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices: rawInvoices = [] }) => {
   // ── Fatura verilerini raporlama formatına dönüştür ──
   const invoices = useMemo(() =>
-    rawInvoices.map(inv => ({
+    rawInvoices.map(inv => {
+      const fb: any = (inv as any).raw_ai_response?.fatura_bilgileri || (inv as any).raw_ai_response?.header || {};
+      const h: any = (inv as any).raw_ai_response?.header || {};
+      // Rapor dönemi: InvoiceCenterPanel ile aynı mantık — önce period_start, sonra fatura tarihi.
+      // Tarihi YYYY-MM-DD biçimine sabitle ki string karşılaştırmaları ve getMonth() saat dilimi
+      // farkları yüzünden kayma yapmasın.
+      const rawDate = fb.period_start || inv.tarih || fb.tarih || h.invoice_date || null;
+      const normDate = rawDate ? String(rawDate).slice(0, 10) : null;
+      return {
       ...inv,
-      invoice_date: inv.tarih || null,
+      invoice_date: normDate,
       total_net: inv.ara_toplam || 0,
       total_vat: inv.toplam_kdv || 0,
       total_gross: inv.genel_toplam || 0,
       supplier_name: inv.satici_adi || inv.raw_ai_response?.header?.supplier_name || inv.raw_ai_response?.fatura_bilgileri?.satici_adi || inv.satici_vkn || null,
-    })),
+      };
+    }),
     [rawInvoices]
   );
 
@@ -119,12 +128,20 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices: rawInvoice
   const onManualDateFrom = (v: string) => { setDateFrom(v); setQuickMonth(undefined); };
   const onManualDateTo = (v: string) => { setDateTo(v); setQuickMonth(undefined); };
 
+  /** YYYY-MM-DD → {year, month} (timezone bağımsız) */
+  const parseYMD = (s: string | null | undefined): { y: number; m: number } | null => {
+    if (!s) return null;
+    const str = String(s).slice(0, 10);
+    const [y, mo] = str.split("-").map(Number);
+    if (!y || !mo) return null;
+    return { y, m: mo - 1 };
+  };
+
   /** Ay için fatura sayısı */
   const monthCount = (m: number) =>
     invoices.filter(inv => {
-      if (!inv.invoice_date) return false;
-      const d = new Date(inv.invoice_date);
-      return d.getFullYear() === yearA && d.getMonth() === m;
+      const p = parseYMD(inv.invoice_date);
+      return !!p && p.y === yearA && p.m === m;
     }).length;
 
   // ── Date-filtered invoices ──
@@ -158,8 +175,8 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices: rawInvoice
   const itemsByYear = useCallback((y: number) =>
     invoiceItems.filter(item => {
       const inv = invoices.find(i => i.id === item.invoice_id);
-      if (!inv?.invoice_date) return false;
-      return new Date(inv.invoice_date).getFullYear() === y;
+      const p = parseYMD(inv?.invoice_date);
+      return !!p && p.y === y;
     }),
     [invoices, invoiceItems]);
 
@@ -177,14 +194,12 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices: rawInvoice
   const monthlyData = useMemo((): MonthlyDataItem[] => {
     return Array.from({ length: 12 }, (_, m) => {
       const invA = filteredInvoices.filter(inv => {
-        if (!inv.invoice_date) return false;
-        const d = new Date(inv.invoice_date);
-        return d.getFullYear() === yearA && d.getMonth() === m;
+        const p = parseYMD(inv.invoice_date);
+        return !!p && p.y === yearA && p.m === m;
       });
       const invB = compare ? invoices.filter(inv => {
-        if (!inv.invoice_date) return false;
-        const d = new Date(inv.invoice_date);
-        return d.getFullYear() === yearB && d.getMonth() === m;
+        const p = parseYMD(inv.invoice_date);
+        return !!p && p.y === yearB && p.m === m;
       }) : [];
       return {
         label: MONTHS[m],
@@ -266,9 +281,8 @@ export const ReportsPanel: React.FC<ReportsPanelProps> = ({ invoices: rawInvoice
       arr.reduce((s, i) => s + Number((i as any)[field] || 0), 0);
     const monthly = Array.from({ length: 12 }, (_, m) => {
       const inv = filteredInvoices.filter(i => {
-        if (!i.invoice_date) return false;
-        const d = new Date(i.invoice_date);
-        return d.getFullYear() === yearA && d.getMonth() === m;
+        const p = parseYMD(i.invoice_date);
+        return !!p && p.y === yearA && p.m === m;
       });
       const ids = new Set(inv.map(i => i.id));
       const mItems = enrichedItems.filter(i => i.invoice_id && ids.has(i.invoice_id));
