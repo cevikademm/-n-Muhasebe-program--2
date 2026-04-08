@@ -4,7 +4,7 @@ import { Invoice, InvoiceItem } from "../types";
 import {
   Upload, Search, Loader2, FileText, Calendar, Clock,
   AlertCircle, ChevronDown, ChevronUp, Building2,
-  AlertTriangle, Package, TrendingUp, Crown, Trash2, PlusCircle, Copy, Edit3,
+  AlertTriangle, Package, TrendingUp, Crown, Trash2, PlusCircle, Copy, Edit3, RefreshCw,
 } from "lucide-react";
 import { ManualInvoiceModal, ManualInvoiceInitial } from "./ManualInvoiceModal";
 // freePlanLimits importları kaldırıldı — abonelik sistemi devre dışı
@@ -23,6 +23,8 @@ interface InvoiceCenterPanelProps {
   onUpdateInvoice?: (invoiceId: string, updates: Partial<Invoice>) => void;
   onUpdateInvoiceItems?: (invoiceId: string, items: any[]) => void;
   userId?: string;
+  userRole?: string;
+  onReanalyze?: (invoice: Invoice) => Promise<void>;
 }
 
 const fmtEur = (n: number) =>
@@ -36,8 +38,26 @@ const STATUS_MAP: Record<string, { label: [string, string]; color: string; bg: s
 
 export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
   invoices, loading, uploading, selectedInvoice, onSelectInvoice, onUpload, fetchItems, onAccountClick,
-  onDelete, onCreateManual, onUpdateInvoice, onUpdateInvoiceItems, userId,
+  onDelete, onCreateManual, onUpdateInvoice, onUpdateInvoiceItems, userId, userRole, onReanalyze,
 }) => {
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+  const isAdmin = userRole === "admin";
+
+  const handleReanalyze = async (invoice: Invoice) => {
+    if (!onReanalyze) return;
+    if (!window.confirm(tr(
+      `Bu fatura Claude Haiku 4.5 ile yeniden analiz edilecek. Mevcut alanlar (manuel düzenlemeler dahil) üzerine yazılacak. Devam edilsin mi?\n\n${invoice.fatura_no || "(no)"}`,
+      `Diese Rechnung wird mit Claude Haiku 4.5 neu analysiert. Bestehende Werte (auch manuelle Änderungen) werden überschrieben. Fortfahren?\n\n${invoice.fatura_no || "(ohne Nr.)"}`
+    ))) return;
+    setReanalyzingId(invoice.id);
+    try {
+      await onReanalyze(invoice);
+    } catch (e: any) {
+      alert(tr("Tekrar analiz hatası: ", "Re-Analyse Fehler: ") + (e?.message || e));
+    } finally {
+      setReanalyzingId(null);
+    }
+  };
   // Inline edit handler for an item's account code
   const handleEditItemAccount = (invoice: Invoice, item: any, idx: number, allItems: any[]) => {
     const desc = item.description || item.urun_adi || "";
@@ -659,6 +679,28 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                       <Copy size={13} />
                     </button>
                   )}
+                  {/* TEKRAR ANALİZ — yalnızca admin */}
+                  {isAdmin && onReanalyze && invoice.file_url && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleReanalyze(invoice); }}
+                      disabled={reanalyzingId === invoice.id}
+                      title={tr("Tekrar Analiz Et (Claude Haiku 4.5)", "Neu analysieren (Claude Haiku 4.5)")}
+                      style={{
+                        position: "absolute", top: "10px", right: onDelete ? "78px" : "44px", zIndex: 3,
+                        width: "28px", height: "28px", borderRadius: "8px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "rgba(6,182,212,.15)", border: "1px solid rgba(6,182,212,.4)",
+                        color: "#22d3ee", cursor: reanalyzingId === invoice.id ? "wait" : "pointer", transition: "all .15s",
+                        backdropFilter: "blur(6px)",
+                      }}
+                      onMouseEnter={(e) => { if (reanalyzingId !== invoice.id) { e.currentTarget.style.background = "rgba(6,182,212,.3)"; e.currentTarget.style.transform = "scale(1.08)"; } }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(6,182,212,.15)"; e.currentTarget.style.transform = "scale(1)"; }}
+                    >
+                      {reanalyzingId === invoice.id
+                        ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                        : <RefreshCw size={13} />}
+                    </button>
+                  )}
                   {onDelete && (
                     <button
                       onClick={(e) => {
@@ -703,15 +745,52 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                           <div style={{
                             padding: "10px 12px", borderRadius: "8px",
                             background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.06)",
+                            position: "relative",
                           }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                               <Building2 size={12} style={{ color: "#06b6d4" }} />
                               <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>
                                 {tr("Satici", "Verkaufer")}
                               </span>
+                              {onUpdateInvoice && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const curName = fb?.satici_adi || h?.supplier_name || "";
+                                    const curVkn = invoice.satici_vkn || fb?.satici_vkn || h?.supplier_vat_id || "";
+                                    const curAdr = invoice.satici_adres || fb?.satici_adres || h?.supplier_address || "";
+                                    const newName = window.prompt(tr("Satici adi:", "Verkaufer Name:"), curName);
+                                    if (newName === null) return;
+                                    const newVkn = window.prompt(tr("Vergi no (VKN/USt-IdNr):", "Steuernummer (USt-IdNr):"), curVkn);
+                                    if (newVkn === null) return;
+                                    const newAdr = window.prompt(tr("Adres:", "Adresse:"), curAdr);
+                                    if (newAdr === null) return;
+                                    const raw = invoice.raw_ai_response || {};
+                                    const newRaw = {
+                                      ...raw,
+                                      header: { ...(raw.header || {}), supplier_name: newName, supplier_vat_id: newVkn, supplier_address: newAdr },
+                                      fatura_bilgileri: { ...(raw.fatura_bilgileri || {}), satici_adi: newName, satici_vkn: newVkn, satici_adres: newAdr, supplier_name: newName, supplier_vat_id: newVkn, supplier_address: newAdr },
+                                    };
+                                    onUpdateInvoice(invoice.id, {
+                                      satici_adi: newName,
+                                      satici_vkn: newVkn,
+                                      satici_adres: newAdr,
+                                      raw_ai_response: newRaw,
+                                    } as any);
+                                  }}
+                                  title={tr("Satici bilgilerini duzenle", "Verkaufer bearbeiten")}
+                                  style={{
+                                    marginLeft: "auto", background: "transparent", border: "none",
+                                    color: "#06b6d4", cursor: "pointer", padding: "2px",
+                                    display: "flex", alignItems: "center",
+                                  }}
+                                >
+                                  <Edit3 size={11} />
+                                </button>
+                              )}
                             </div>
                             <div style={{ fontSize: "12px", fontWeight: 600, color: "#e2e8f0", marginBottom: "2px" }}>
-                              {fb?.satici_adi || h?.supplier_name || "---"}
+                              {invoice.satici_adi || fb?.satici_adi || h?.supplier_name || "---"}
                             </div>
                             <div style={{ fontSize: "10px", color: "var(--text-dim)", fontFamily: "'Space Grotesk', sans-serif" }}>
                               {invoice.satici_vkn || fb?.satici_vkn || h?.supplier_vat_id || "---"}
