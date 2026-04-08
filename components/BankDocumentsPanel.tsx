@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import ReactDOM from "react-dom";
 import { useLang } from "../LanguageContext";
 import { Invoice } from "../types";
 import {
@@ -17,6 +18,7 @@ import {
   rematchSavedStatement,
   updateSavedTransactionMatch,
   isRefundTransaction,
+  isSelfTransferTransaction,
   BankStatement,
   MatchResult,
   SavedBankStatement,
@@ -1004,25 +1006,33 @@ const TxTable: React.FC<{
                   onSaveRule={onSaveRule}
                 />
               )}
-              {!hasMatch && manualMatchTxId !== tx.id && (
-                <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
-                  <AlertCircle size={10} style={{ color: "#374151" }} />
-                  {tr("Eşleşen fatura bulunamadı.", "Keine passende Rechnung gefunden.")}
+              {isSelfTransferTransaction(tx) && !hasMatch ? (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#a78bfa", fontFamily: "'DM Sans',sans-serif", padding: "3px 8px", borderRadius: "5px", background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.25)", alignSelf: "flex-start", fontWeight: 700 }}>
+                  ⇄ {tr("Para Transferi (Kendi Hesap)", "Eigenüberweisung")}
                 </div>
+              ) : (
+                <>
+                  {!hasMatch && manualMatchTxId !== tx.id && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif" }}>
+                      <AlertCircle size={10} style={{ color: "#374151" }} />
+                      {tr("Eşleşen fatura bulunamadı.", "Keine passende Rechnung gefunden.")}
+                    </div>
+                  )}
+                  {/* Manuel eşleştirme butonu */}
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); onToggleManualMatch(tx.id); }}
+                      style={{ padding: "3px 10px", borderRadius: "5px", border: "1px solid #1c1f27", background: "transparent", color: manualMatchTxId === tx.id ? "#06b6d4" : "#4b5563", fontSize: "9px", fontFamily: "'DM Sans',sans-serif", cursor: "pointer", fontWeight: 600 }}
+                    >
+                      {manualMatchTxId === tx.id
+                        ? tr("✕ Kapat", "✕ Schließen")
+                        : hasMatch
+                          ? tr("Eşleşmeyi Değiştir", "Abgleich ändern")
+                          : tr("Manuel Eşleştir", "Manuell abgleichen")}
+                    </button>
+                  </div>
+                </>
               )}
-              {/* Manuel eşleştirme butonu */}
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <button
-                  onClick={e => { e.stopPropagation(); onToggleManualMatch(tx.id); }}
-                  style={{ padding: "3px 10px", borderRadius: "5px", border: "1px solid #1c1f27", background: "transparent", color: manualMatchTxId === tx.id ? "#06b6d4" : "#4b5563", fontSize: "9px", fontFamily: "'DM Sans',sans-serif", cursor: "pointer", fontWeight: 600 }}
-                >
-                  {manualMatchTxId === tx.id
-                    ? tr("✕ Kapat", "✕ Schließen")
-                    : hasMatch
-                      ? tr("Eşleşmeyi Değiştir", "Abgleich ändern")
-                      : tr("Manuel Eşleştir", "Manuell abgleichen")}
-                </button>
-              </div>
               {manualMatchTxId === tx.id && (
                 <ManualMatchSelector
                   invoices={invoices}
@@ -1297,6 +1307,10 @@ const SavedTxTable: React.FC<{
                       ))}
                     </div>
                   </div>
+                ) : !hasMatch && isSelfTransferTransaction(tx) ? (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#a78bfa", fontFamily: "'DM Sans',sans-serif", padding: "3px 8px", borderRadius: "5px", background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.25)", alignSelf: "flex-start", fontWeight: 700 }}>
+                    ⇄ {tr("Para Transferi (Kendi Hesap)", "Eigenüberweisung")}
+                  </div>
                 ) : !hasMatch ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10px", color: "#4b5563", fontFamily: "'DM Sans',sans-serif" }}>
                     <AlertCircle size={10} />
@@ -1304,7 +1318,8 @@ const SavedTxTable: React.FC<{
                   </div>
                 ) : null}
 
-                {/* Manuel eşleştirme */}
+                {/* Manuel eşleştirme — kendi hesap transferinde gizli */}
+                {!(isSelfTransferTransaction(tx) && !hasMatch) && (
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <button
                     onClick={e => { e.stopPropagation(); setManualMatchId(manualMatchId === tx.id ? null : tx.id); }}
@@ -1317,6 +1332,7 @@ const SavedTxTable: React.FC<{
                         : tr("Manuel Eşleştir", "Manuell abgleichen")}
                   </button>
                 </div>
+                )}
                 {manualMatchId === tx.id && (
                   <ManualMatchSelector
                     invoices={invoices}
@@ -1432,17 +1448,40 @@ const ManualMatchSelector: React.FC<{
     );
   };
 
-  return (
+  // ESC ile kapat
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const modal = (
     <div
-      onClick={e => e.stopPropagation()}
-      style={{ border: "1px solid rgba(99,102,241,.25)", borderRadius: "8px", background: "#0a0c11", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(0,0,0,.65)", backdropFilter: "blur(6px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "20px",
+      }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: "9px", fontWeight: 700, color: "#6366f1", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".07em" }}>
-          {tr("Fatura Seç", "Rechnung auswählen")}
-        </span>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: "13px", lineHeight: 1, padding: "0 2px" }}>✕</button>
-      </div>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "min(560px, 100%)", maxHeight: "82vh",
+          border: "1px solid rgba(99,102,241,.35)", borderRadius: "14px",
+          background: "#0a0c11",
+          boxShadow: "0 24px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(99,102,241,.15)",
+          padding: "16px", display: "flex", flexDirection: "column", gap: "10px",
+          animation: "fadeIn .15s ease",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "#818cf8", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".08em" }}>
+            {tr("Fatura Seç", "Rechnung auswählen")}
+          </span>
+          <button onClick={onClose} style={{ width: "26px", height: "26px", borderRadius: "6px", background: "rgba(255,255,255,.05)", border: "1px solid #1c1f27", color: "#6b7280", cursor: "pointer", fontSize: "13px", lineHeight: 1 }}>✕</button>
+        </div>
 
       <input
         autoFocus
@@ -1490,9 +1529,14 @@ const ManualMatchSelector: React.FC<{
           </div>
         )}
         {allList.map(renderRow)}
+        </div>
       </div>
     </div>
   );
+
+  return typeof document !== "undefined"
+    ? ReactDOM.createPortal(modal, document.body)
+    : modal;
 };
 
 type TxKind = "income" | "expense" | "refund";
