@@ -12,8 +12,6 @@ interface SettingsPanelProps {
   userEmail: string | undefined;
   userRole: string;
   userId: string | undefined;
-  subscriptionPlan?: string;
-  onNavigateToSubscription?: () => void;
 }
 
 type Tab = "company" | "accounting" | "matching" | "export" | "security";
@@ -69,7 +67,7 @@ const ProLockedOverlay: React.FC<{
 );
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  userEmail, userRole, userId, subscriptionPlan, onNavigateToSubscription,
+  userEmail, userRole, userId,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;

@@ -11,6 +11,35 @@ import { SuSaReport } from "./SuSaReport";
 import { supabase } from "../services/supabaseService";
 import { SavedTransaction, fetchUserIncomeTransactions, isRefundTransaction } from "../services/bankService";
 
+// ── Tx kind override store (income | expense | refund) ──
+type TxKind = "income" | "expense" | "refund";
+const KIND_KEY = "mm_tx_kind_overrides";
+let kindStore: Record<string, TxKind> = (() => {
+  try { return JSON.parse(localStorage.getItem(KIND_KEY) || "{}"); } catch { return {}; }
+})();
+const kindListeners = new Set<() => void>();
+const useKindOverrides = (): Record<string, TxKind> => {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const fn = () => force(n => n + 1);
+    kindListeners.add(fn);
+    return () => { kindListeners.delete(fn); };
+  }, []);
+  return kindStore;
+};
+const cycleKind = (id: string, current: TxKind) => {
+  const order: TxKind[] = ["income", "refund", "expense"];
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  const updated = { ...kindStore, [id]: next };
+  kindStore = updated;
+  try { localStorage.setItem(KIND_KEY, JSON.stringify(updated)); } catch {}
+  kindListeners.forEach(fn => fn());
+};
+const getEffectiveKind = (tx: SavedTransaction, overrides: Record<string, TxKind>): TxKind => {
+  if (overrides[tx.id]) return overrides[tx.id];
+  return isRefundTransaction(tx) ? "refund" : "income";
+};
+
 interface Props {
   invoices: Invoice[];
   fetchItems: (invoiceId: string) => Promise<InvoiceItem[]>;
@@ -278,9 +307,17 @@ const AusgangsbuchDoc: React.FC<{
   period: string;
   companyInfo: CompanyInfoSnapshot | null;
   tr: (a: string, b: string) => string;
-}> = ({ bankIncomes, period, companyInfo, tr }) => {
-  const totalBankIncome = bankIncomes.reduce((s, tx) => s + (tx.amount || 0), 0);
-  const matchedCount = bankIncomes.filter(tx => tx.matched_invoice_id).length;
+}> = ({ bankIncomes: rawBankIncomes, period, companyInfo, tr }) => {
+  const overrides = useKindOverrides();
+  // Tabloda tüm raw işlemleri göster (kullanıcı buradan tipini değiştirebilsin)
+  const bankIncomes = rawBankIncomes;
+  // KPI ve toplam: yalnızca effective income olanlar
+  const incomeOnly = useMemo(
+    () => rawBankIncomes.filter(tx => getEffectiveKind(tx, overrides) === "income"),
+    [rawBankIncomes, overrides]
+  );
+  const totalBankIncome = incomeOnly.reduce((s, tx) => s + (tx.amount || 0), 0);
+  const matchedCount = incomeOnly.filter(tx => tx.matched_invoice_id).length;
 
   const hasSteuernummer = !!(companyInfo?.steuernummer?.trim());
   const hasUstId = !!(companyInfo?.ust_id?.trim());
@@ -393,6 +430,7 @@ const AusgangsbuchDoc: React.FC<{
               <th style={TH}>{tr("Karşı Taraf (Auftraggeber)", "Auftraggeber")}</th>
               <th style={TH}>{tr("Açıklama / Referans", "Verwendungszweck")}</th>
               <th style={TH}>{tr("Eşleşme", "Zuordnung")}</th>
+              <th style={TH}>{tr("Tip", "Typ")}</th>
               <th style={{ ...TH, textAlign: "right" }}>{tr("Tutar (€)", "Betrag (€)")}</th>
             </tr>
           </thead>
@@ -429,7 +467,35 @@ const AusgangsbuchDoc: React.FC<{
                     <span style={{ color: "#94a3b8", fontSize: "9px" }}>—</span>
                   )}
                 </td>
-                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: "#15803d" }}>
+                <td
+                  style={{ ...TD, fontSize: "9px", cursor: "pointer" }}
+                  onClick={(e) => { e.stopPropagation(); cycleKind(tx.id, getEffectiveKind(tx, overrides)); }}
+                >
+                  {(() => {
+                    const k = getEffectiveKind(tx, overrides);
+                    const cfg: Record<TxKind, { label: [string, string]; bg: string; color: string; border: string }> = {
+                      income:  { label: ["Gelir", "Einnahme"],  bg: "#dcfce7", color: "#15803d", border: "#bbf7d0" },
+                      refund:  { label: ["İade",  "Erstattung"], bg: "#fef3c7", color: "#b45309", border: "#fde68a" },
+                      expense: { label: ["Gider", "Ausgabe"],   bg: "#fee2e2", color: "#b91c1c", border: "#fecaca" },
+                    };
+                    const c = cfg[k];
+                    return (
+                      <span
+                        title={tr("Tıklayarak Gelir → İade → Gider arasında değiştir", "Klicken zum Wechseln Einnahme → Erstattung → Ausgabe")}
+                        style={{
+                          display: "inline-block",
+                          padding: "3px 9px", borderRadius: "5px",
+                          background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+                          fontSize: "9px", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px",
+                          userSelect: "none",
+                        }}
+                      >
+                        {tr(c.label[0], c.label[1])}
+                      </span>
+                    );
+                  })()}
+                </td>
+                <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: getEffectiveKind(tx, overrides) === "income" ? "#15803d" : "#94a3b8" }}>
                   {fmt(tx.amount || 0)}
                 </td>
               </tr>
@@ -437,7 +503,7 @@ const AusgangsbuchDoc: React.FC<{
           </tbody>
           <tfoot>
             <tr style={{ background: "#1e40af" }}>
-              <td colSpan={5} style={{ ...TD, color: "#fff", fontWeight: 700 }}>
+              <td colSpan={6} style={{ ...TD, color: "#fff", fontWeight: 700 }}>
                 {tr("TOPLAM GELİR", "SUMME GUTSCHRIFTEN")}
               </td>
               <td style={{ ...TD, textAlign: "right", color: "#93c5fd", fontFamily: "monospace", fontWeight: 800 }}>
@@ -1280,12 +1346,25 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
     else setInvoiceItems([]);
   }, [invoices, fetchItems]);
 
+  // Faturanın efektif dönemi: önce raw AI period_start, sonra tarih/invoice_date
+  // (InvoiceCenterPanel ile birebir aynı mantık — dönem sayıları tutarlı olsun)
+  const getInvoicePeriod = (inv: Invoice): { year: number; month: number } | null => {
+    const fb = (inv as any).raw_ai_response?.fatura_bilgileri
+      || (inv as any).raw_ai_response?.header
+      || {};
+    const ps = fb.period_start || inv.tarih || (inv as any).invoice_date;
+    if (!ps) return null;
+    const d = new Date(ps);
+    if (isNaN(d.getTime())) return null;
+    return { year: d.getFullYear(), month: d.getMonth() };
+  };
+
   const currentYear = new Date().getFullYear();
   const allYears = useMemo(() => {
     const ys = new Set<number>();
     invoices.forEach(inv => {
-      const dateStr = inv.tarih || inv.invoice_date;
-      if (dateStr) ys.add(new Date(dateStr).getFullYear());
+      const p = getInvoicePeriod(inv);
+      if (p) ys.add(p.year);
     });
     [currentYear - 1, currentYear].forEach(y => ys.add(y));
     return Array.from(ys).sort((a, b) => b - a);
@@ -1301,11 +1380,10 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
   // Filter invoices by period
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      const dateStr = inv.tarih || inv.invoice_date;
-      if (!dateStr) return false;
-      const d = new Date(dateStr);
-      if (d.getFullYear() !== selectedYear) return false;
-      if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+      const p = getInvoicePeriod(inv);
+      if (!p) return false;
+      if (p.year !== selectedYear) return false;
+      if (selectedMonth !== null && p.month !== selectedMonth) return false;
       return true;
     });
   }, [invoices, selectedYear, selectedMonth]);
@@ -1315,18 +1393,25 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
     return invoiceItems.filter(it => ids.has(it.invoice_id));
   }, [filteredInvoices, invoiceItems]);
 
-  // Seçilen döneme göre filtrelenmiş banka gelir işlemleri (iadeler hariç)
+  const kindOverrides = useKindOverrides();
+  // Seçilen döneme göre filtrelenmiş banka işlemleri — Ausgangsbuch tüm dönemi
+  // alır (kullanıcı tıklayarak tipini değiştirebilsin), diğer raporlar yalnızca
+  // efektif "income" olanları kullanır.
   const filteredBankIncomes = useMemo(() => {
     return bankIncomes.filter(tx => {
       if (!tx.transaction_date) return false;
       const d = new Date(tx.transaction_date);
       if (d.getFullYear() !== selectedYear) return false;
       if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
-      // İade işlemlerini mali müşavir raporlarından hariç tut
-      if (isRefundTransaction(tx)) return false;
       return true;
     });
   }, [bankIncomes, selectedYear, selectedMonth]);
+
+  // Diğer raporlar için yalnızca income olanlar
+  const filteredBankIncomesOnly = useMemo(
+    () => filteredBankIncomes.filter(tx => getEffectiveKind(tx, kindOverrides) === "income"),
+    [filteredBankIncomes, kindOverrides]
+  );
 
   const period = selectedMonth !== null
     ? `${MONTHS[selectedMonth]} ${selectedYear}`
@@ -1338,10 +1423,8 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
 
   const monthCount = (m: number) =>
     invoices.filter(inv => {
-      const dateStr = inv.tarih || inv.invoice_date;
-      if (!dateStr) return false;
-      const d = new Date(dateStr);
-      return d.getFullYear() === selectedYear && d.getMonth() === m;
+      const p = getInvoicePeriod(inv);
+      return p !== null && p.year === selectedYear && p.month === m;
     }).length;
 
   // A4 dik: 794×1123 px @ 96dpi (210×297 mm)
@@ -1398,7 +1481,7 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
       case "teslim": return <TeslimRaporuDoc
         invoices={filteredInvoices}
         items={filteredItems}
-        bankIncomes={filteredBankIncomes}
+        bankIncomes={filteredBankIncomesOnly}
         companyInfo={companyInfo}
         period={period}
         tr={tr}
@@ -1544,13 +1627,13 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
                 {m.slice(0, 3)}
                 {cnt > 0 && (
                   <span style={{
-                    position: "absolute", top: "-4px", right: "-3px",
-                    width: "14px", height: "14px", borderRadius: "50%",
-                    fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                    position: "absolute", top: "-5px", right: "-6px",
+                    minWidth: "16px", height: "16px", padding: "0 4px", borderRadius: "999px",
+                    fontSize: "9px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
                     background: selectedMonth === idx ? "#a78bfa" : "#334155",
-                    color: selectedMonth === idx ? "#fff" : "#94a3b8",
+                    color: selectedMonth === idx ? "#fff" : "#cbd5e1",
                   }}>
-                    {cnt > 9 ? "9+" : cnt}
+                    {cnt}
                   </span>
                 )}
               </button>

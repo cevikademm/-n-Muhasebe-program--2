@@ -234,59 +234,64 @@ Deno.serve(async (req) => {
     );
   }
 
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY_2");
-  if (!geminiApiKey) {
-    console.error("[analyze-bank] GEMINI_API_KEY_2 secret tanımlı değil");
+  const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!anthropicApiKey) {
+    console.error("[analyze-bank] ANTHROPIC_API_KEY secret tanımlı değil");
     return new Response(
       JSON.stringify({ success: false, error: "AI servisi yapılandırılmamış" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  // [FIX H-1] API anahtarı URL yerine header'da gönderiliyor
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_SMART}:generateContent`;
+  const isPdf = fileType === "application/pdf";
+  const contentBlock = isPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } }
+    : { type: "image", source: { type: "base64", media_type: fileType, data: fileBase64 } };
 
-  const geminiPayload = {
-    contents: [
-      {
-        parts: [
-          { inline_data: { mime_type: fileType, data: fileBase64 } },
-          { text: BANK_PROMPT },
-        ],
-      },
-    ],
-    generationConfig: { responseMimeType: "application/json" },
-  };
-
-  let geminiResponse: Response;
+  let anthropicResponse: Response;
   try {
-    geminiResponse = await fetch(geminiUrl, {
+    anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": geminiApiKey,
+        "x-api-key": anthropicApiKey,
+        "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify(geminiPayload),
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 16000,
+        temperature: 0.1,
+        system: BANK_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: [
+              contentBlock,
+              { type: "text", text: "Banka ekstresini analiz et ve istenen JSON formatında döndür. Sadece JSON, başka açıklama yok." },
+            ],
+          },
+        ],
+      }),
     });
   } catch (fetchErr) {
-    console.error("[analyze-bank] Gemini bağlantı hatası:", fetchErr);
+    console.error("[analyze-bank] Anthropic bağlantı hatası:", fetchErr);
     return new Response(
       JSON.stringify({ success: false, error: "AI servisine ulaşılamıyor" }),
       { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  if (!geminiResponse.ok) {
-    const errText = await geminiResponse.text();
-    console.error("[analyze-bank] Gemini hatası:", geminiResponse.status, errText.substring(0, 300));
+  if (!anthropicResponse.ok) {
+    const errText = await anthropicResponse.text();
+    console.error("[analyze-bank] Anthropic hatası:", anthropicResponse.status, errText.substring(0, 500));
     return new Response(
-      JSON.stringify({ success: false, error: `AI servisi hatası: ${geminiResponse.status}` }),
+      JSON.stringify({ success: false, error: `AI servisi hatası: ${anthropicResponse.status}` }),
       { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  const geminiData = await geminiResponse.json();
-  const rawText: string = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const anthropicData = await anthropicResponse.json();
+  const rawText: string = anthropicData?.content?.[0]?.text ?? "";
 
   let parsed: unknown;
   try {

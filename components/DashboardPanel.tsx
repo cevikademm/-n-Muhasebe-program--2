@@ -11,6 +11,7 @@ import { MagicCard } from "./ui/magic-card";
 
 interface DashboardPanelProps {
   onNavigate: (menu: MenuKey) => void;
+  onUploadInvoice?: (file: File) => void | Promise<void>;
 }
 
 const fmt = (n: number) =>
@@ -43,7 +44,8 @@ function useCountUp(target: number, duration = 900) {
   return val;
 }
 
-export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) => {
+export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUploadInvoice }) => {
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const invoices: any[] = [];
   const invoiceItems: any[] = [];
   const { lang } = useLang();
@@ -180,15 +182,15 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
       style={{
         flex: 1, display: "flex", flexDirection: "column",
         height: "100%", overflowY: "auto",
-        background: "linear-gradient(160deg, #090c12 0%, #0c0f16 50%, #090c12 100%)",
+        background: "linear-gradient(160deg, #ffffff 0%, #f8fafc 50%, #ffffff 100%)",
       }}
     >
       {/* ── Hero Header ─────────────────────────────────────────── */}
       <div className="dp-hero" style={{
         position: "relative", overflow: "hidden",
         padding: "32px 32px 28px",
-        borderBottom: "1px solid #111520",
-        background: "linear-gradient(135deg, #0a0d14 0%, #0d1018 100%)",
+        borderBottom: "1px solid #e2e8f0",
+        background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
         flexShrink: 0,
       }}>
         {/* Background grid */}
@@ -238,7 +240,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             }}>
               {tr("Muhasebe Merkezi", "Buchhaltungs-Hub")}
             </h1>
-            <p className="hidden sm:block" style={{ fontSize: "13px", color: "#2a3040", marginTop: "6px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            <p className="hidden sm:block" style={{ fontSize: "13px", color: "#64748b", marginTop: "6px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
               {tr("Tüm finansal verileriniz tek ekranda", "Alle Finanzdaten auf einen Blick")}
             </p>
           </div>
@@ -281,6 +283,105 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
 
       {/* ── Content ─────────────────────────────────────────────── */}
       <div className="dp-content" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px", paddingBottom: "32px" }}>
+
+        {/* ── Upload Shortcut (büyük, dikkat çekici, mobil uyumlu) ── */}
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="application/pdf,image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f && onUploadInvoice) onUploadInvoice(f);
+            if (e.target) e.target.value = "";
+          }}
+        />
+        <button
+          onClick={() => uploadInputRef.current?.click()}
+          className="dp-upload-shortcut"
+          style={{
+            position: "relative", overflow: "hidden",
+            width: "100%",
+            display: "flex", alignItems: "center", gap: "20px",
+            padding: "26px 28px",
+            borderRadius: "20px",
+            border: "1px solid rgba(6,182,212,.35)",
+            background: "linear-gradient(135deg, #06b6d4 0%, #0891b2 45%, #8b5cf6 100%)",
+            color: "#ffffff",
+            cursor: "pointer",
+            textAlign: "left",
+            boxShadow: "0 18px 50px rgba(6,182,212,.35), 0 0 0 1px rgba(255,255,255,.08) inset",
+            transition: "transform .2s, box-shadow .2s",
+            animation: "fadeUp .4s ease both",
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-3px)";
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 24px 60px rgba(6,182,212,.5), 0 0 0 1px rgba(255,255,255,.12) inset";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 18px 50px rgba(6,182,212,.35), 0 0 0 1px rgba(255,255,255,.08) inset";
+          }}
+        >
+          {/* parıltı orb */}
+          <div style={{
+            position: "absolute", top: "-60px", right: "-60px",
+            width: "240px", height: "240px", borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(255,255,255,.25) 0%, transparent 70%)",
+            pointerEvents: "none",
+          }} />
+          <div style={{
+            position: "absolute", bottom: "-50px", left: "20%",
+            width: "180px", height: "180px", borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(139,92,246,.35) 0%, transparent 70%)",
+            pointerEvents: "none",
+          }} />
+
+          <div className="dp-upload-icon" style={{
+            flexShrink: 0,
+            width: "64px", height: "64px",
+            borderRadius: "18px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(255,255,255,.18)",
+            border: "1px solid rgba(255,255,255,.25)",
+            backdropFilter: "blur(12px)",
+            boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+            position: "relative", zIndex: 1,
+          }}>
+            <Upload size={30} strokeWidth={2.4} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, position: "relative", zIndex: 1 }}>
+            <div style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: "22px", fontWeight: 800, lineHeight: 1.15,
+              letterSpacing: "-.01em",
+            }}>
+              {tr("Fatura Yükle", "Rechnung hochladen")}
+            </div>
+            <div className="dp-upload-sub" style={{
+              fontSize: "13px", fontWeight: 500, opacity: .92, marginTop: "4px",
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+            }}>
+              {tr("PDF veya görsel — saniyeler içinde AI ile analiz", "PDF oder Bild — KI-Analyse in Sekunden")}
+            </div>
+          </div>
+
+          <div className="dp-upload-cta" style={{
+            flexShrink: 0,
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "12px 18px",
+            borderRadius: "12px",
+            background: "rgba(255,255,255,.18)",
+            border: "1px solid rgba(255,255,255,.3)",
+            fontSize: "13px", fontWeight: 700,
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            backdropFilter: "blur(12px)",
+            position: "relative", zIndex: 1,
+          }}>
+            {tr("Başla", "Los")} <ArrowRight size={16} />
+          </div>
+        </button>
 
         {/* ── KPI Cards ── */}
         <div className="dp-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
@@ -373,7 +474,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
               </div>
 
               {/* Sub */}
-              <div style={{ fontSize: "11px", color: "#1e2530", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              <div style={{ fontSize: "11px", color: "#475569", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 {card.sub}
               </div>
             </MagicCard>
@@ -388,8 +489,8 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             gradientColor="rgba(6, 182, 212, 0.12)"
             style={{
               borderRadius: "18px",
-              border: "1px solid #111520",
-              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              border: "1px solid #e2e8f0",
+              background: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
               padding: "24px",
               position: "relative",
               overflow: "hidden",
@@ -407,7 +508,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#e2e8f0", marginBottom: "4px" }}>
                   {tr("Aylık Ciro Hacmi", "Monatliches Volumen")}
                 </div>
-                <div style={{ fontSize: "11px", color: "#2a3040", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                   {tr("Son 6 ay — Brüt €", "Letzte 6 Monate — Brutto €")}
                 </div>
               </div>
@@ -483,9 +584,9 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                     return (
                       <g key={f}>
                         <line x1={padL} y1={y} x2={W - padR} y2={y}
-                          stroke="#141820" strokeWidth="1" strokeDasharray="5,4" />
+                          stroke="#e2e8f0" strokeWidth="1" strokeDasharray="5,4" />
                         <text x={padL} y={y - 2}
-                          fill="#1e2530" fontSize="7" fontFamily="monospace">
+                          fill="#94a3b8" fontSize="7" fontFamily="monospace">
                           {fmtShort(maxV * f)}
                         </text>
                       </g>
@@ -494,7 +595,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
 
                   {/* Taban çizgisi */}
                   <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH}
-                    stroke="#1e2530" strokeWidth="1" />
+                    stroke="#cbd5e1" strokeWidth="1" />
 
                   {/* Sütunlar */}
                   {monthlyData.map((m, i) => {
@@ -557,7 +658,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                         {/* Ay etiketi */}
                         <text x={cx} y={padT + chartH + 12}
                           textAnchor="middle"
-                          fill={isLast || isH ? "#06b6d4" : "#1e2530"}
+                          fill={isLast || isH ? "#06b6d4" : "#94a3b8"}
                           fontSize="9" fontFamily="monospace"
                           fontWeight={isLast || isH ? "700" : "400"}>
                           {m.label}
@@ -575,8 +676,8 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             gradientColor="rgba(139, 92, 246, 0.12)"
             style={{
               borderRadius: "18px",
-              border: "1px solid #111520",
-              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              border: "1px solid #e2e8f0",
+              background: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
               padding: "24px",
               display: "flex",
               flexDirection: "column",
@@ -594,7 +695,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
               <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#e2e8f0", marginBottom: "4px" }}>
                 {tr("Vorsteuer Özeti", "Vorsteuer-Übersicht")}
               </div>
-              <div style={{ fontSize: "11px", color: "#2a3040", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 {tr("İndirilebilir KDV", "Abziehbare Vorsteuer")}
               </div>
             </div>
@@ -625,7 +726,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
                   <svg width="100" height="100" viewBox="0 0 100 100" style={{ overflow: "visible" }}>
                     {/* Track */}
-                    <circle cx={cx} cy={cy} r={R} fill="none" stroke="#12151e" strokeWidth="8"
+                    <circle cx={cx} cy={cy} r={R} fill="none" stroke="#e2e8f0" strokeWidth="8"
                       transform={`rotate(-90 ${cx} ${cy})`} />
                     {/* Arc segments */}
                     {segs.map((s, i) => (
@@ -639,9 +740,9 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                       />
                     ))}
                     {/* Center */}
-                    <circle cx={cx} cy={cy} r={27} fill="#090c12" />
+                    <circle cx={cx} cy={cy} r={27} fill="#ffffff" />
                     <text x={cx} y={cy - 5} textAnchor="middle" dominantBaseline="middle"
-                      fill="#2a3040" fontSize="7" fontFamily="monospace">
+                      fill="#64748b" fontSize="7" fontFamily="monospace">
                       {tr("Net", "Netto")}
                     </text>
                     <text x={cx} y={cy + 7} textAnchor="middle" dominantBaseline="middle"
@@ -689,8 +790,8 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             gradientColor="rgba(16, 185, 129, 0.12)"
             style={{
               borderRadius: "18px",
-              border: "1px solid #111520",
-              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              border: "1px solid #e2e8f0",
+              background: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
               padding: "22px",
             }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
@@ -698,7 +799,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#e2e8f0" }}>
                   {tr("Top Tedarikçiler", "Top-Lieferanten")}
                 </div>
-                <div style={{ fontSize: "11px", color: "#2a3040", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "3px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "3px" }}>
                   {tr("Hacme göre sıralı", "Nach Volumen sortiert")}
                 </div>
               </div>
@@ -706,7 +807,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             </div>
 
             {topSuppliers.length === 0 ? (
-              <div style={{ padding: "32px 0", textAlign: "center", color: "#1e2530", fontSize: "12px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              <div style={{ padding: "32px 0", textAlign: "center", color: "#475569", fontSize: "12px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 {tr("Henüz veri yok", "Noch keine Daten")}
               </div>
             ) : (
@@ -733,7 +834,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                           <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'Plus Jakarta Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "140px" }}>
                             {s.name}
                           </span>
-                          <span style={{ fontSize: "10px", color: "#1e2530", fontFamily: "'Plus Jakarta Sans', sans-serif", flexShrink: 0 }}>
+                          <span style={{ fontSize: "10px", color: "#475569", fontFamily: "'Plus Jakarta Sans', sans-serif", flexShrink: 0 }}>
                             {s.count}×
                           </span>
                         </div>
@@ -742,7 +843,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                         </span>
                       </div>
                       {/* Progress bar */}
-                      <div style={{ height: "3px", borderRadius: "3px", background: "#111520", overflow: "hidden" }}>
+                      <div style={{ height: "3px", borderRadius: "3px", background: "#e2e8f0", overflow: "hidden" }}>
                         <div style={{
                           height: "100%", borderRadius: "3px",
                           width: `${pct}%`,
@@ -763,8 +864,8 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             gradientColor="rgba(6, 182, 212, 0.12)"
             style={{
               borderRadius: "18px",
-              border: "1px solid #111520",
-              background: "linear-gradient(145deg, #0c0f16 0%, #090c12 100%)",
+              border: "1px solid #e2e8f0",
+              background: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
               padding: "22px",
             }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
@@ -772,7 +873,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#e2e8f0" }}>
                   {tr("Son İşlemler", "Letzte Aktivitäten")}
                 </div>
-                <div style={{ fontSize: "11px", color: "#2a3040", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "3px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "3px" }}>
                   {tr("Son aktiviteler", "Letzte Aktivitäten")}
                 </div>
               </div>
@@ -794,7 +895,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
             </div>
 
             {recent.length === 0 ? (
-              <div style={{ padding: "32px 0", textAlign: "center", color: "#1e2530", fontSize: "12px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              <div style={{ padding: "32px 0", textAlign: "center", color: "#475569", fontSize: "12px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 {tr("Henüz veri yok", "Noch keine Daten")}
               </div>
             ) : (
@@ -814,7 +915,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                       }}
                       onMouseEnter={e => {
                         (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,.025)";
-                        (e.currentTarget as HTMLDivElement).style.borderColor = "#1a1f28";
+                        (e.currentTarget as HTMLDivElement).style.borderColor = "#cbd5e1";
                       }}
                       onMouseLeave={e => {
                         (e.currentTarget as HTMLDivElement).style.background = "transparent";
@@ -824,7 +925,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                       {/* Icon */}
                       <div style={{
                         width: "34px", height: "34px", borderRadius: "9px",
-                        background: "#111520", border: "1px solid #1a1f28",
+                        background: "#e2e8f0", border: "1px solid #e2e8f0",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
                       }}>
@@ -842,7 +943,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                         }}>
                           {inv.supplier_name || tr("Bilinmiyor", "Unbekannt")}
                         </div>
-                        <div style={{ fontSize: "10px", color: "#1e2530", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "2px" }}>
+                        <div style={{ fontSize: "10px", color: "#475569", fontFamily: "'Plus Jakarta Sans', sans-serif", marginTop: "2px" }}>
                           {inv.invoice_date || "—"}
                         </div>
                       </div>
@@ -935,7 +1036,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "#c4c9d4", fontFamily: "'Plus Jakarta Sans', sans-serif", marginBottom: "3px" }}>
                   {item.label}
                 </div>
-                <div style={{ fontSize: "10px", color: "#2a3040", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                <div style={{ fontSize: "10px", color: "#64748b", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                   {item.desc}
                 </div>
               </div>
@@ -963,6 +1064,10 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate }) =>
           .dp-chart { grid-template-columns: 1fr !important; }
           .dp-bottom { grid-template-columns: 1fr !important; }
           .dp-actions { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .dp-upload-shortcut { padding: 18px 16px !important; gap: 14px !important; border-radius: 16px !important; }
+          .dp-upload-icon { width: 50px !important; height: 50px !important; border-radius: 14px !important; }
+          .dp-upload-shortcut .dp-upload-sub { display: none !important; }
+          .dp-upload-cta { padding: 9px 12px !important; font-size: 12px !important; }
         }
 
         /* ── Tablet ── */

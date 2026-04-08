@@ -4,8 +4,8 @@ import { MenuKey } from "../types";
 import {
   LogOut, LayoutDashboard, BarChart3,
   ClipboardList, Building2, Settings2, Crown,
-  BookOpen, Building, ShieldCheck, LayoutGrid,
-  Zap, ChevronRight, Globe, Briefcase, Users, Tag, FileText,
+  BookOpen, Building, ShieldCheck,
+  ChevronRight, Globe, Briefcase, Users, Tag, FileText,
 } from "lucide-react";
 import { NotificationBell, NotificationDrawer } from "./NotificationDrawer";
 import { supabase } from "../services/supabaseService";
@@ -86,7 +86,6 @@ interface LeftPanelProps {
   userRole: string;
   onLogout: () => void;
   onSelectCustomer?: (userId: string) => void;
-  subInfo?: any;
 }
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -97,7 +96,6 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   invoices: <FileText size={15} />,
   maliMusavir: <Briefcase size={15} />,
   settings: <Settings2 size={15} />,
-  subscription: <Crown size={15} />,
   campaigns: <Tag size={15} />,
   accountPlans: <BookOpen size={15} />,
   hesapPlanlari2: <BookOpen size={15} />,
@@ -106,12 +104,11 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 };
 
 export const LeftPanel: React.FC<LeftPanelProps> = ({
-  activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer, subInfo,
+  activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer,
 }) => {
   const { t, lang, setLang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [quickOpen, setQuickOpen] = useState(false);
   const [time, setTime] = useState(new Date());
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUserId, setNotifUserId] = useState<string | null>(null);
@@ -124,52 +121,21 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     });
   }, []);
 
-  // Admin ise şirketleri + abonelik durumlarını çek
+  // Admin ise şirketleri çek
   useEffect(() => {
     if (userRole !== "admin") return;
     (async () => {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-
-      const [{ data: comps }, { data: subs }, { data: periods }] = await Promise.all([
-        supabase.from("companies").select("user_id, company_name").order("created_at", { ascending: false }),
-        supabase.from("subscriptions").select("user_id, status, plan"),
-        supabase.from("subscription_periods").select("user_id, period_year, period_month, plan_type"),
-      ]);
+      const { data: comps } = await supabase
+        .from("companies")
+        .select("user_id, company_name")
+        .order("created_at", { ascending: false });
       if (!comps) return;
-      const subMap = new Map((subs || []).map((s: any) => [s.user_id, s]));
-
-      // Dönem bazlı aktiflik: kullanıcının mevcut ayı satın alıp almadığını kontrol et
-      const periodMap = new Map<string, { hasCurrentPeriod: boolean; planType: string }>();
-      (periods || []).forEach((p: any) => {
-        const existing = periodMap.get(p.user_id);
-        const isCurrent = p.period_year === currentYear && p.period_month === currentMonth;
-        if (!existing) {
-          periodMap.set(p.user_id, { hasCurrentPeriod: isCurrent, planType: p.plan_type });
-        } else if (isCurrent) {
-          existing.hasCurrentPeriod = true;
-          existing.planType = p.plan_type;
-        }
-      });
-
-      setCustomers(comps.map((c: any) => {
-        const periodInfo = periodMap.get(c.user_id);
-        const subData = subMap.get(c.user_id);
-
-        // Dönem bazlı durum: mevcut ayı satın almışsa aktif
-        const status = periodInfo?.hasCurrentPeriod
-          ? "active"
-          : subData?.status ?? null;
-        const plan = periodInfo?.planType || subData?.plan || null;
-
-        return {
-          company_name: c.company_name,
-          user_id: c.user_id,
-          status,
-          plan,
-        };
-      }));
+      setCustomers(comps.map((c: any) => ({
+        company_name: c.company_name,
+        user_id: c.user_id,
+        status: null,
+        plan: null,
+      })));
     })();
   }, [userRole]);
 
@@ -202,14 +168,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   }, []);
 
   const userItems: { key: MenuKey; label: string; color: string }[] = [
+    { key: "invoices", label: t.invoices, color: "#f97316" },
     { key: "dashboard", label: t.dashboard, color: "#06b6d4" },
     { key: "reports", label: t.reports, color: "#10b981" },
     { key: "forms", label: t.forms, color: "#f59e0b" },
     { key: "bankDocuments", label: t.bankDocuments, color: "#f43f5e" },
-    { key: "invoices", label: t.invoices, color: "#f97316" },
     { key: "maliMusavir", label: t.maliMusavir, color: "#a78bfa" },
     { key: "settings", label: t.settings, color: "#64748b" },
-    { key: "subscription", label: t.subscription, color: "#a855f7" },
   ];
 
   const adminItems: { key: MenuKey; label: string; color: string }[] = [
@@ -652,86 +617,6 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           <span style={{ fontSize: "11px", color: "#06b6d4", fontFamily: "'Space Mono', monospace", fontWeight: 700 }}>{timeStr}</span>
         </div>
 
-        {/* Quick-switch button */}
-        <button
-          onClick={() => setQuickOpen(v => !v)}
-          style={{
-            width: "36px", height: "36px", borderRadius: "10px",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer",
-            border: `1px solid ${quickOpen ? "rgba(6,182,212,.4)" : "rgba(255,255,255,.08)"}`,
-            background: quickOpen ? "rgba(6,182,212,.12)" : "rgba(7,10,16,.88)",
-            backdropFilter: "blur(16px)",
-            color: quickOpen ? "#06b6d4" : "var(--text-3)",
-            transition: "all .2s",
-            boxShadow: quickOpen ? "0 0 20px rgba(6,182,212,.2)" : "none",
-          }}
-          onMouseEnter={e => { if (!quickOpen) { e.currentTarget.style.borderColor = "rgba(6,182,212,.25)"; e.currentTarget.style.color = "#06b6d4"; } }}
-          onMouseLeave={e => { if (!quickOpen) { e.currentTarget.style.borderColor = "rgba(255,255,255,.08)"; e.currentTarget.style.color = "var(--text-3)"; } }}
-        >
-          <LayoutGrid size={15} />
-        </button>
-
-        {/* Quick-switch dropdown */}
-        {quickOpen && (
-          <>
-            <div style={{ position: "fixed", inset: 0, zIndex: -1 }} onClick={() => setQuickOpen(false)} />
-            <div className="slide-down" style={{
-              position: "absolute", top: "calc(100% + 8px)", right: 0, width: "270px",
-              borderRadius: "16px",
-              background: "rgba(8,11,18,.96)",
-              border: "1px solid rgba(255,255,255,.09)",
-              backdropFilter: "blur(24px)",
-              boxShadow: "0 24px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(6,182,212,.05)",
-              overflow: "hidden",
-            }}>
-              <div style={{ padding: "13px 16px 10px", borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", gap: "8px" }}>
-                <Zap size={13} style={{ color: "#06b6d4" }} />
-                <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: ".09em", textTransform: "uppercase", color: "var(--text-3)" }}>
-                  {tr("Hızlı Geçiş", "Schnellwechsel")}
-                </span>
-              </div>
-              <div style={{ padding: "10px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-                {allVisible.map(item => {
-                  const isActive = activeMenu === item.key;
-                  const rgb = hexRgb(item.color);
-                  return (
-                    <button key={item.key}
-                      onClick={() => { setActiveMenu(item.key); setQuickOpen(false); }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: "8px",
-                        padding: "9px 10px", borderRadius: "10px",
-                        border: `1px solid ${isActive ? item.color + "44" : "rgba(255,255,255,.07)"}`,
-                        background: isActive ? `rgba(${rgb},.1)` : "rgba(255,255,255,.02)",
-                        cursor: "pointer", textAlign: "left", transition: "all .15s",
-                        color: isActive ? item.color : "var(--text-3)",
-                      }}
-                      onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = "rgba(255,255,255,.05)"; e.currentTarget.style.color = "var(--text-2)"; } }}
-                      onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = "rgba(255,255,255,.02)"; e.currentTarget.style.color = "var(--text-3)"; } }}
-                    >
-                      <span style={{ flexShrink: 0, color: "inherit" }}>{ICON_MAP[item.key]}</span>
-                      <span style={{ fontSize: "11px", fontWeight: isActive ? 600 : 500, lineHeight: 1.2 }}>{item.label}</span>
-                      {isActive && <span style={{ marginLeft: "auto", width: "5px", height: "5px", borderRadius: "50%", background: item.color, boxShadow: `0 0 6px ${item.color}`, flexShrink: 0 }} />}
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={{ padding: "10px 16px 12px", borderTop: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "10px", color: "var(--text-dim)" }}>
-                  {tr("Aktif:", "Aktiv:")} <span style={{ color: "#06b6d4" }}>{allVisible.find(i => i.key === activeMenu)?.label}</span>
-                </span>
-                <button onClick={onLogout} style={{
-                  display: "flex", alignItems: "center", gap: "5px",
-                  fontSize: "10px", fontWeight: 600, padding: "4px 10px", borderRadius: "7px",
-                  border: "1px solid rgba(244,63,94,.22)", background: "rgba(244,63,94,.08)",
-                  color: "#f87171", cursor: "pointer", transition: "all .15s",
-                }}>
-                  <LogOut size={11} /> {t.logout}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
       </div>
 
       {/* ══ DESKTOP SIDEBAR ══ */}

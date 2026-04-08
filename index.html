@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#080c13" />
+  <meta name="theme-color" content="#ffffff" />
   <!-- ⚠ GÜVENLİK (ORT-05): Güvenlik başlıkları — XSS, clickjacking, MIME sniffing koruması -->
   <meta http-equiv="X-Content-Type-Options" content="nosniff" />
   <meta http-equiv="X-Frame-Options" content="DENY" />
@@ -68,662 +68,84 @@
       }
     }
   </script>
-  <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-    }
-
-    :root {
-      --cyan: #06b6d4;
-      --cyan-dim: rgba(6, 182, 212, .12);
-      --cyan-glow: rgba(6, 182, 212, .25);
-      --purple: #8b5cf6;
-      --purple-dim: rgba(139, 92, 246, .12);
-      --green: #10b981;
-      --amber: #f59e0b;
-      --red: #f43f5e;
-      --border: rgba(255, 255, 255, .07);
-      --border-md: rgba(255, 255, 255, .11);
-      --panel: #0f1420;
-      --panel-2: #0c1018;
-      --sidebar: #070a10;
-      --bg: #090d14;
-      --text-1: #e2e8f0;
-      --text-2: #8b9ab0;
-      --text-3: #3d4e63;
-      --text-dim: #1e2a38;
-    }
-
-    html,
-    body {
-      height: 100%;
-    }
-
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text-1);
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      overscroll-behavior-y: none;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, .08);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, .14);
-    }
-
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
-
-    .no-scrollbar {
-      -ms-overflow-style: none;
-      scrollbar-width: none;
-    }
-
-    /* ── Cards ── */
-    .c-card {
-      background: linear-gradient(145deg, var(--panel) 0%, var(--panel-2) 100%);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      position: relative;
-      transition: border-color .2s;
-    }
-
-    .c-card:hover {
-      border-color: var(--border-md);
-    }
-
-    .c-card-cyan {
-      border-left: 2px solid var(--cyan) !important;
-    }
-
-    .c-card-green {
-      border-left: 2px solid var(--green) !important;
-    }
-
-    .c-card-amber {
-      border-left: 2px solid var(--amber) !important;
-    }
-
-    .c-card-red {
-      border-left: 2px solid var(--red) !important;
-    }
-
-    .c-card-purple {
-      border-left: 2px solid var(--purple) !important;
-    }
-
-    /* ── Panel section (inner content area) ── */
-    .c-panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-    }
-
-    /* ── Inputs ── */
-    .c-input {
-      width: 100%;
-      background: rgba(255, 255, 255, .03);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 9px 12px;
-      font-size: 13px;
-      color: var(--text-1);
-      outline: none;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      transition: border-color .2s, box-shadow .2s;
-    }
-
-    .c-input::placeholder {
-      color: var(--text-dim);
-    }
-
-    .c-input:focus {
-      border-color: rgba(6, 182, 212, .45);
-      box-shadow: 0 0 0 3px rgba(6, 182, 212, .09);
-    }
-
-    .c-input:hover:not(:focus) {
-      border-color: var(--border-md);
-    }
-
-    /* ── Select fix ── */
-    select.c-input {
-      appearance: none;
-      cursor: pointer;
-    }
-
-    /* ── Buttons ── */
-    .c-btn-primary {
-      background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all .2s;
-      box-shadow: 0 4px 16px rgba(6, 182, 212, .25), inset 0 1px 0 rgba(255, 255, 255, .15);
-    }
-
-    .c-btn-primary:hover {
-      box-shadow: 0 6px 24px rgba(6, 182, 212, .4), inset 0 1px 0 rgba(255, 255, 255, .15);
-      transform: translateY(-1px);
-    }
-
-    .c-btn-primary:active {
-      transform: translateY(0) scale(.98);
-    }
-
-    .c-btn-primary:disabled {
-      opacity: .4;
-      cursor: default;
-      transform: none;
-      box-shadow: none;
-    }
-
-    .c-btn-ghost {
-      background: rgba(255, 255, 255, .04);
-      color: var(--text-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all .2s;
-    }
-
-    .c-btn-ghost:hover {
-      background: rgba(255, 255, 255, .08);
-      color: var(--text-1);
-      border-color: var(--border-md);
-    }
-
-    .c-btn-danger {
-      background: rgba(244, 63, 94, .08);
-      color: #f87171;
-      border: 1px solid rgba(244, 63, 94, .18);
-      border-radius: 8px;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all .2s;
-    }
-
-    .c-btn-danger:hover {
-      background: rgba(244, 63, 94, .16);
-      border-color: rgba(244, 63, 94, .32);
-      transform: translateY(-1px);
-    }
-
-    /* ── Labels ── */
-    .c-label {
-      display: block;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .09em;
-      color: var(--text-3);
-      margin-bottom: 6px;
-    }
-
-    .c-section-title {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .10em;
-      color: var(--text-3);
-      margin-bottom: 12px;
-      display: block;
-    }
-
-    /* ── Font helpers ── */
-    .font-syne {
-      font-family: 'Space Grotesk', sans-serif !important;
-    }
-
-    .font-mono {
-      font-family: 'Space Mono', monospace !important;
-    }
-
-    /* ── Status badges ── */
-    .badge-pending {
-      background: rgba(245, 158, 11, .12);
-      color: #f59e0b;
-      border: 1px solid rgba(245, 158, 11, .2);
-      border-radius: 20px;
-      padding: 2px 9px;
-      font-size: 10px;
-      font-weight: 700;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      letter-spacing: .04em;
-      display: inline-block;
-    }
-
-    .badge-analyzed {
-      background: rgba(16, 185, 129, .12);
-      color: #10b981;
-      border: 1px solid rgba(16, 185, 129, .2);
-      border-radius: 20px;
-      padding: 2px 9px;
-      font-size: 10px;
-      font-weight: 700;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      letter-spacing: .04em;
-      display: inline-block;
-    }
-
-    .badge-duplicate {
-      background: rgba(244, 63, 94, .12);
-      color: #f43f5e;
-      border: 1px solid rgba(244, 63, 94, .2);
-      border-radius: 20px;
-      padding: 2px 9px;
-      font-size: 10px;
-      font-weight: 700;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      letter-spacing: .04em;
-      display: inline-block;
-    }
-
-    .badge-error {
-      background: rgba(239, 68, 68, .12);
-      color: #ef4444;
-      border: 1px solid rgba(239, 68, 68, .2);
-      border-radius: 20px;
-      padding: 2px 9px;
-      font-size: 10px;
-      font-weight: 700;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      letter-spacing: .04em;
-      display: inline-block;
-    }
-
-    .badge-check {
-      background: rgba(6, 182, 212, .12);
-      color: #06b6d4;
-      border: 1px solid rgba(6, 182, 212, .2);
-      border-radius: 20px;
-      padding: 2px 9px;
-      font-size: 10px;
-      font-weight: 700;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      letter-spacing: .04em;
-      display: inline-block;
-    }
-
-    /* ── Table style ── */
-    .c-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    .c-table thead th {
-      background: rgba(255, 255, 255, .02);
-      color: var(--text-3);
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .09em;
-      padding: 10px 14px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      backdrop-filter: blur(12px);
-    }
-
-    .c-table tbody tr {
-      border-bottom: 1px solid rgba(255, 255, 255, .035);
-      transition: background .12s;
-      cursor: pointer;
-    }
-
-    .c-table tbody tr:hover {
-      background: rgba(255, 255, 255, .03);
-    }
-
-    .c-table tbody tr.selected {
-      background: rgba(6, 182, 212, .06);
-      border-color: rgba(6, 182, 212, .15);
-    }
-
-    .c-table tbody td {
-      padding: 11px 14px;
-      color: var(--text-2);
-      vertical-align: middle;
-    }
-
-    /* ── Divider ── */
-    .c-divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--border-md), transparent);
-      border: none;
-      margin: 0;
-    }
-
-    /* ── Toggle ── */
-    .c-toggle {
-      position: relative;
-      display: inline-block;
-      width: 36px;
-      height: 20px;
-      flex-shrink: 0;
-      cursor: pointer;
-    }
-
-    .c-toggle input {
-      display: none;
-    }
-
-    .c-toggle-track {
-      position: absolute;
-      inset: 0;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, .08);
-      transition: background .2s;
-    }
-
-    .c-toggle-thumb {
-      position: absolute;
-      left: 3px;
-      top: 3px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--text-3);
-      transition: all .2s;
-    }
-
-    .c-toggle input:checked~.c-toggle-track {
-      background: var(--cyan);
-    }
-
-    .c-toggle input:checked~.c-toggle-thumb {
-      left: 19px;
-      background: #fff;
-    }
-
-    /* ── Pulse dot ── */
-    @keyframes pulse-dot {
-
-      0%,
-      100% {
-        opacity: 1
-      }
-
-      50% {
-        opacity: .3
-      }
-    }
-
-    .pulse-dot {
-      animation: pulse-dot 1.5s ease-in-out infinite;
-    }
-
-    /* ── Shimmer ── */
-    @keyframes shimmer {
-      0% {
-        background-position: -200% 0;
-      }
-
-      100% {
-        background-position: 200% 0;
-      }
-    }
-
-    .shimmer {
-      background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, .04) 50%, rgba(255, 255, 255, 0) 100%);
-      background-size: 200% 100%;
-      animation: shimmer 2.5s infinite;
-    }
-
-    /* ── Fade-up animation ── */
-    @keyframes fadeUp {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .fade-up {
-      animation: fadeUp .3s ease both;
-    }
-
-    /* ── Slide-down animation ── */
-    @keyframes slideDown {
-      from {
-        opacity: 0;
-        transform: translateY(-6px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .slide-down {
-      animation: slideDown .2s ease both;
-    }
-
-    /* ── Glass card ── */
-    .glass-card {
-      background: rgba(15, 20, 32, .7);
-      backdrop-filter: blur(20px);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-    }
-
-    /* ── Gradient text ── */
-    .grad-text {
-      background: linear-gradient(135deg, #f1f5f9 20%, #94a3b8 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    /* ── Neon dot ── */
-    .neon-dot {
-      display: inline-block;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 8px rgba(16, 185, 129, .8);
-      animation: pulse-dot 2s infinite;
-    }
-
-    /* ── Header row (top of a panel) ── */
-    .c-panel-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-      background: rgba(255, 255, 255, .01);
-    }
-
-    /* ── Sidebar tab ── */
-    .c-sidebar-tab {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 100%;
-      padding: 9px 12px;
-      border-radius: 10px;
-      border: none;
-      cursor: pointer;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      font-size: 13px;
-      font-weight: 500;
-      transition: all .18s;
-      background: transparent;
-      color: var(--text-3);
-      text-align: left;
-      position: relative;
-    }
-
-    .c-sidebar-tab:hover {
-      background: rgba(255, 255, 255, .04);
-      color: var(--text-2);
-    }
-
-    .c-sidebar-tab.active {
-      background: rgba(6, 182, 212, .1);
-      color: var(--cyan);
-      font-weight: 600;
-    }
-
-    .c-sidebar-tab .tab-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 7px;
-      flex-shrink: 0;
-      transition: all .18s;
-      background: rgba(255, 255, 255, .03);
-    }
-
-    .c-sidebar-tab.active .tab-icon {
-      background: rgba(6, 182, 212, .18);
-    }
-
-    /* ── Print Mode ── */
-    @media print {
-      body {
-        background: #fff !important;
-        color: #000 !important;
-      }
-
-      aside,
-      .md\:hidden,
-      button,
-      [class*="c-btn"] {
-        display: none !important;
-      }
-
-      .c-card {
-        border: 1px solid #ddd !important;
-        background: #fafafa !important;
-        page-break-inside: avoid;
-        border-radius: 4px;
-      }
-
-      .font-syne,
-      .font-mono {
-        color: #000 !important;
-      }
-    }
-
-    /* ── Mobile safe area ── */
-    .pb-safe {
-      padding-bottom: env(safe-area-inset-bottom, 12px);
-    }
-
-    .pt-safe {
-      padding-top: env(safe-area-inset-top, 0px);
-    }
-
-    /* ── Animated Glow Input Border ── */
-    @keyframes spin-border {
-      to { transform: rotate(360deg); }
-    }
-
-    .glow-wrap {
-      position: relative;
-      overflow: hidden;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      transition: border-color .2s;
-    }
-
-    .glow-wrap:hover:not(:focus-within) {
-      border-color: var(--border-md);
-    }
-
-    .glow-wrap:focus-within {
-      border-color: transparent;
-    }
-
-    .glow-wrap::before {
-      content: '';
-      position: absolute;
-      width: 200%;
-      height: 200%;
-      left: -50%;
-      top: -50%;
-      background: conic-gradient(from 0deg, #06b6d4, #8b5cf6, #06b6d4);
-      animation: spin-border 3s linear infinite;
-      opacity: 0;
-      transition: opacity .3s;
-      z-index: 0;
-    }
-
-    .glow-wrap:focus-within::before {
-      opacity: 1;
-    }
-
-    .glow-wrap::after {
-      content: '';
-      position: absolute;
-      inset: 2px;
-      background: var(--panel);
-      border-radius: 8px;
-      z-index: 1;
-    }
-
-    .glow-wrap input {
-      position: relative !important;
-      z-index: 2;
-      background: transparent !important;
-      border: none !important;
-      box-shadow: none !important;
-    }
-
-    .glow-icon {
-      z-index: 3 !important;
-    }
-
-    /* ── Mobile sidebar slide-in ── */
-    @keyframes slideInLeft {
-      from { transform: translateX(-100%); }
-      to { transform: translateX(0); }
-    }
-  </style>
+  <link rel="stylesheet" href="/app-styles.css" />
 </head>
 
 <body>
+  <script>
+    // ── LIGHT THEME RUNTIME ENFORCER ──
+    // Inline style="background:#0a0c11" gibi koyu renkleri DOM'da beyaza çevirir.
+    // CSS attribute selector React inline style'ları (rgb formatına dönüştürülmüş) için yetersiz kaldığından
+    // bu walker tüm element'leri kontrol edip koyu arka planları override eder.
+    (function () {
+      const DARK_LUM = 90;     // 0–255: bunun altı koyu sayılır
+      const LIGHT_TEXT_LUM = 200; // 0–255: bunun üstü açık metin sayılır
+      const parseRgb = (s) => {
+        const m = s && s.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s]+([\d.]+))?\)/);
+        return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] != null ? +m[4] : 1 } : null;
+      };
+      const lum = (c) => (c.r + c.g + c.b) / 3;
+
+      const fixEl = (el) => {
+        if (!(el instanceof HTMLElement)) return;
+        // Inline style varsa kontrol et — computed değil, sadece inline
+        const inline = el.getAttribute("style");
+        if (inline) {
+          // Inline style içinde koyu hex (#0xx, #1xx) varsa background-image'i sıfırla
+          if (/#0[0-9a-f]{2}|#1[0-5][0-9a-f]/i.test(inline) && /background/i.test(inline)) {
+            el.style.setProperty("background-color", "#ffffff", "important");
+            el.style.setProperty("background-image", "none", "important");
+          }
+          // background / background-color
+          const cs = getComputedStyle(el);
+          const bg = parseRgb(cs.backgroundColor);
+          if (bg && bg.a > 0.5 && lum(bg) < DARK_LUM) {
+            el.style.setProperty("background-color", "#ffffff", "important");
+            el.style.setProperty("background-image", "none", "important");
+          }
+          // border colors
+          ["borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor"].forEach((k) => {
+            const bc = parseRgb(cs[k]);
+            if (bc && bc.a > 0.3 && lum(bc) < DARK_LUM) {
+              el.style.setProperty(k.replace(/([A-Z])/g, "-$1").toLowerCase(), "rgba(15,23,42,.12)", "important");
+            }
+          });
+          // light text on light bg → koyu metin
+          const tc = parseRgb(cs.color);
+          if (tc && lum(tc) > LIGHT_TEXT_LUM) {
+            el.style.setProperty("color", "#0f172a", "important");
+          }
+        }
+      };
+
+      let scheduled = false;
+      const sweep = () => {
+        scheduled = false;
+        document.querySelectorAll("*").forEach(fixEl);
+      };
+      const schedule = () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(sweep);
+      };
+
+      const init = () => {
+        sweep();
+        const obs = new MutationObserver((muts) => {
+          for (const m of muts) {
+            if (m.type === "attributes" || m.addedNodes.length) { schedule(); break; }
+          }
+        });
+        obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+      };
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+      } else {
+        init();
+      }
+    })();
+  </script>
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

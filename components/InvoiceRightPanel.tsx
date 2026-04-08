@@ -15,10 +15,12 @@ interface InvoiceRightPanelProps {
   onDelete?: (invoice: Invoice) => void;
   detailItem?: any;
   onClearDetailItem?: () => void;
+  onUpdateItems?: (invoiceId: string, items: any[]) => void;
+  onUpdateInvoice?: (invoiceId: string, updates: Partial<Invoice>) => void;
 }
 
 export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
-  selectedInvoice, onClose, onDelete, detailItem, onClearDetailItem,
+  selectedInvoice, onClose, onDelete, detailItem, onClearDetailItem, onUpdateItems, onUpdateInvoice,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -68,8 +70,11 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
     };
   }, [fileUrl, isPdf]);
 
-  // For images: data URL works directly; for PDFs: use blob URL
-  const previewUrl = isPdf ? pdfBlobUrl : fileUrl;
+  // For images: data URL works directly
+  // For PDFs: data: → blob URL (iframe blocks data:), https:// → direct URL
+  const previewUrl = isPdf
+    ? (fileUrl?.startsWith("data:") ? pdfBlobUrl : fileUrl)
+    : fileUrl;
 
   if (!selectedInvoice) {
     return (
@@ -129,7 +134,58 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
     const expenseType = item.expense_type || "";
     const hgbRef = item.hgb_reference || "";
     const taxNote = item.tax_note || "";
-    const periodNote = item.period_note || "";
+    // Donem: kullanici secimi varsa onu kullan; yoksa fatura tarihinden otomatik turet
+    const monthsTr = ["Ocak","Subat","Mart","Nisan","Mayis","Haziran","Temmuz","Agustos","Eylul","Ekim","Kasim","Aralik"];
+    const monthsDe = ["Januar","Februar","Marz","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+    const fmtPeriod = (y: number, m: number) => `${(lang === "tr" ? monthsTr : monthsDe)[m]} ${y}`;
+    const invDate = selectedInvoice?.tarih ? new Date(selectedInvoice.tarih) : null;
+    const autoPeriod = invDate && !isNaN(invDate.getTime()) ? fmtPeriod(invDate.getFullYear(), invDate.getMonth()) : "";
+    const periodNote = item.period_note || autoPeriod;
+    // Dropdown secenekleri: 2024-2026 yillari, 12 ay
+    const periodOptions: { value: string; label: string }[] = [];
+    for (let y = 2024; y <= 2026; y++) {
+      for (let m = 0; m < 12; m++) periodOptions.push({ value: `${y}-${m}`, label: fmtPeriod(y, m) });
+    }
+    const currentPeriodValue = (() => {
+      // periodNote'tan y-m cikar
+      const all = [...monthsTr, ...monthsDe];
+      const parts = periodNote.split(" ");
+      if (parts.length >= 2) {
+        const yr = parseInt(parts[parts.length - 1], 10);
+        const mn = parts.slice(0, -1).join(" ");
+        const idx = monthsTr.indexOf(mn) >= 0 ? monthsTr.indexOf(mn) : monthsDe.indexOf(mn);
+        if (!isNaN(yr) && idx >= 0) return `${yr}-${idx}`;
+      }
+      return invDate && !isNaN(invDate.getTime()) ? `${invDate.getFullYear()}-${invDate.getMonth()}` : "";
+    })();
+    const handlePeriodChange = (val: string) => {
+      const [yStr, mStr] = val.split("-");
+      const y = parseInt(yStr, 10); const m = parseInt(mStr, 10);
+      if (isNaN(y) || isNaN(m)) return;
+      const newPeriod = fmtPeriod(y, m);
+      if (!selectedInvoice || !onUpdateItems) return;
+      const all = rawResponse?.items || rawResponse?.kalemler || [];
+      const updated = all.map((it: any) => {
+        if (it === item) {
+          return { ...it, period_note: newPeriod, user_modified: true, user_modified_at: new Date().toISOString(), user_modified_field: "period_note" };
+        }
+        return it;
+      });
+      onUpdateItems(selectedInvoice.id, updated);
+      // Faturanin tarihini ve raw period_start/period_end'i secilen donemin ilk/son gunune cek
+      if (onUpdateInvoice) {
+        const mm = String(m + 1).padStart(2, "0");
+        const lastDay = new Date(y, m + 1, 0).getDate();
+        const newStart = `${y}-${mm}-01`;
+        const newEnd = `${y}-${mm}-${String(lastDay).padStart(2, "0")}`;
+        const inv: any = selectedInvoice;
+        const raw = { ...(inv.raw_ai_response || {}) };
+        if (raw.fatura_bilgileri) raw.fatura_bilgileri = { ...raw.fatura_bilgileri, period_start: newStart, period_end: newEnd };
+        if (raw.header) raw.header = { ...raw.header, period_start: newStart, period_end: newEnd };
+        if (!raw.fatura_bilgileri && !raw.header) raw.fatura_bilgileri = { period_start: newStart, period_end: newEnd };
+        onUpdateInvoice(selectedInvoice.id, { tarih: newStart, raw_ai_response: raw } as any);
+      }
+    };
     const counterAccount = item.datev_counter_account || "";
     const category = getAccountCategory(accountCode);
     const vatRate = item.vat_rate || item.kdv_orani || 0;
@@ -150,6 +206,48 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
             }}>
               <ArrowLeft size={12} /> {tr("Onizlemeye Don", "Zuruck zur Vorschau")}
             </button>
+          )}
+
+          {/* User-modified note */}
+          {item.user_modified && (
+            <div style={{
+              padding: "10px 12px", borderRadius: "10px",
+              background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.25)",
+              display: "flex", alignItems: "flex-start", gap: 8,
+            }}>
+              <Edit3 size={13} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "10px", fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 4 }}>
+                  {tr("Kullanici Tarafindan Duzenlendi", "Vom Benutzer bearbeitet")}
+                </div>
+                <div style={{ fontSize: "11px", color: "#fbbf24", lineHeight: 1.5 }}>
+                  {tr(
+                    "Bu kalem manuel olarak guncellendi. AI analizinin orijinal sonucu degistirilmistir.",
+                    "Diese Position wurde manuell aktualisiert. Das ursprungliche KI-Analyseergebnis wurde geandert."
+                  )}
+                  {item.user_modified_old_account && (
+                    <div style={{ marginTop: 4, fontSize: "10px", color: "#fcd34d" }}>
+                      {tr("Eski hesap kodu", "Altes Konto")}: <b>{item.user_modified_old_account}</b>
+                    </div>
+                  )}
+                  {item.user_modified_old_net !== undefined && (
+                    <div style={{ marginTop: 2, fontSize: "10px", color: "#fcd34d" }}>
+                      {tr("Eski net tutar", "Alter Netto-Betrag")}: <b>{item.user_modified_old_net} EUR</b>
+                    </div>
+                  )}
+                  {item.user_modified_old !== undefined && !item.user_modified_old_account && item.user_modified_old_net === undefined && (
+                    <div style={{ marginTop: 2, fontSize: "10px", color: "#fcd34d" }}>
+                      {tr("Onceki deger", "Vorheriger Wert")}: <b>{String(item.user_modified_old)}</b>
+                    </div>
+                  )}
+                  {item.user_modified_at && (
+                    <div style={{ marginTop: 4, fontSize: "9px", color: "#fcd34d", opacity: .8 }}>
+                      {new Date(item.user_modified_at).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Item Description Header */}
@@ -356,13 +454,27 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
                   <span style={{ fontSize: "11px", fontWeight: 600, color: "#94a3b8" }}>{taxNote}</span>
                 </div>
               )}
-              {/* Period */}
-              {periodNote && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>{tr("Donem", "Periode")}</span>
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#94a3b8" }}>{periodNote}</span>
-                </div>
-              )}
+              {/* Period — kullanici degistirebilir */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "11px", color: "#64748b" }}>{tr("Donem", "Periode")}</span>
+                <select
+                  value={currentPeriodValue}
+                  onChange={(e) => handlePeriodChange(e.target.value)}
+                  style={{
+                    fontSize: "11px", fontWeight: 600, color: "#94a3b8",
+                    background: "rgba(255,255,255,.04)",
+                    border: "1px solid rgba(255,255,255,.08)",
+                    borderRadius: 4, padding: "2px 6px", cursor: "pointer",
+                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                  }}
+                >
+                  {periodOptions.map(opt => (
+                    <option key={opt.value} value={opt.value} style={{ background: "#0d0f15", color: "#e2e8f0" }}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -412,21 +524,27 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
       <div style={{
         padding: "10px 16px 0", borderBottom: "1px solid rgba(255,255,255,.06)", flexShrink: 0,
       }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <ImageIcon size={14} style={{ color: "#06b6d4" }} />
-            <span style={{ fontSize: "12px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'Space Grotesk', sans-serif" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", gap: "8px" }}>
+          <button
+            onClick={onClose}
+            title={tr("Geri", "Zurück")}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 12px", borderRadius: "8px",
+              background: "rgba(6,182,212,.12)", border: "1px solid rgba(6,182,212,.3)",
+              cursor: "pointer", color: "#06b6d4", fontSize: "12px", fontWeight: 700,
+              fontFamily: "'Plus Jakarta Sans', sans-serif", flexShrink: 0,
+            }}
+          >
+            <ArrowLeft size={14} />
+            <span>{tr("Geri", "Zurück")}</span>
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0, flex: 1, justifyContent: "flex-end" }}>
+            <ImageIcon size={14} style={{ color: "#06b6d4", flexShrink: 0 }} />
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'Space Grotesk', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {inv.fatura_no || tr("Fatura", "Rechnung")}
             </span>
           </div>
-          <button onClick={onClose} style={{
-            width: "28px", height: "28px", borderRadius: "7px",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)",
-            cursor: "pointer", color: "var(--text-dim)",
-          }}>
-            <X size={13} />
-          </button>
         </div>
         {/* Tab Bar */}
         <div style={{ display: "flex", gap: "2px" }}>
@@ -582,24 +700,55 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
                           const kTaxNote = k.tax_note || "";
                           const kPeriodNote = k.period_note || "";
                           const kCounterAccount = k.datev_counter_account || "";
+                          const modField = String(k.user_modified_field || "");
+                          const isModified = !!k.user_modified && (modField.includes("net_amount") || modField.includes("period_note") || modField.includes("amount") || modField.includes("period"));
+                          const modifiedBg = isModified
+                            ? "linear-gradient(135deg, rgba(250,204,21,.18) 0%, rgba(234,179,8,.10) 100%)"
+                            : (isOpen ? "rgba(139,92,246,.06)" : "transparent");
+                          const modifiedHoverBg = isModified
+                            ? "linear-gradient(135deg, rgba(250,204,21,.24) 0%, rgba(234,179,8,.14) 100%)"
+                            : "rgba(139,92,246,.04)";
 
                           return (
-                            <div key={i}>
+                            <div key={i} style={isModified ? {
+                              border: "1px solid rgba(250,204,21,.45)",
+                              borderRadius: "10px",
+                              boxShadow: "0 0 0 1px rgba(250,204,21,.15), 0 4px 14px rgba(250,204,21,.08)",
+                              margin: "6px 0",
+                              overflow: "hidden",
+                            } : undefined}>
                               {/* Item row (clickable) */}
                               <div
                                 onClick={() => setSelectedItemIdx(isOpen ? null : i)}
                                 style={{
-                                  padding: "8px 4px",
-                                  borderBottom: !isOpen && i < (rawResponse.items || rawResponse.kalemler)?.length - 1 ? "1px solid rgba(255,255,255,.04)" : "none",
+                                  padding: "8px 10px",
+                                  borderBottom: !isOpen && !isModified && i < (rawResponse.items || rawResponse.kalemler)?.length - 1 ? "1px solid rgba(255,255,255,.04)" : "none",
                                   fontSize: "11px",
                                   cursor: "pointer",
-                                  borderRadius: isOpen ? "8px 8px 0 0" : "0",
-                                  background: isOpen ? "rgba(139,92,246,.06)" : "transparent",
+                                  borderRadius: isModified ? "10px" : (isOpen ? "8px 8px 0 0" : "0"),
+                                  background: modifiedBg,
                                   transition: "background .15s",
                                 }}
-                                onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = "rgba(139,92,246,.04)"; }}
-                                onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = modifiedHoverBg; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = modifiedBg; }}
                               >
+                                {isModified && (
+                                  <div style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4,
+                                    padding: "2px 8px",
+                                    marginBottom: 6,
+                                    borderRadius: 999,
+                                    background: "linear-gradient(135deg, #facc15 0%, #eab308 100%)",
+                                    color: "#1a1505",
+                                    fontSize: 9,
+                                    fontWeight: 800,
+                                    letterSpacing: ".05em",
+                                    textTransform: "uppercase",
+                                    boxShadow: "0 2px 6px rgba(250,204,21,.35)",
+                                  }}>
+                                    <Edit3 size={9} /> {modField.includes("period") && modField.includes("amount") ? tr("Tutar & Donem Degisti", "Betrag & Periode geandert") : modField.includes("period") ? tr("Donem Degisti", "Periode geandert") : tr("Tutar Degisti", "Betrag geandert")}
+                                  </div>
+                                )}
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px", alignItems: "center" }}>
                                   <span style={{ color: "#e2e8f0", fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {k.urun_adi || k.description}
@@ -624,16 +773,50 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
                                       const satici = rawResponse?.header?.supplier_name || rawResponse?.fatura_bilgileri?.satici_adi || "Bilinmeyen Tedarikci";
                                       const desc = k.description || k.urun_adi || "";
                                       const oldCode = k.account_code || k.hesap_kodu || "";
-                                      const newVal = window.prompt(`'${satici}' firmasindan alinan '${desc}' kalemi icin yeni Hesap Kodunu girin:\n\nOnceki Atama: ${oldCode}`, oldCode);
-                                      if (newVal && newVal.trim() !== oldCode) {
+                                      const oldNet = Number(k.net_amount ?? k.net_tutar ?? 0);
+                                      const newCode = window.prompt(`'${desc}' kalemi icin yeni Hesap Kodu:\n\nOnceki: ${oldCode}`, String(oldCode));
+                                      if (newCode === null) return;
+                                      const newAmtStr = window.prompt(`'${desc}' kalemi icin yeni Net Tutar (EUR):\n\nOnceki: ${oldNet}`, String(oldNet));
+                                      if (newAmtStr === null) return;
+                                      const newAmt = parseFloat(String(newAmtStr).replace(",", "."));
+                                      const codeChanged = newCode.trim() && newCode.trim() !== oldCode;
+                                      const amtChanged = !isNaN(newAmt) && newAmt !== oldNet;
+                                      if (!codeChanged && !amtChanged) return;
+                                      if (codeChanged) {
                                         saveLearningRule({
                                           supplierName: satici,
                                           itemDescription: desc,
                                           oldAccountCode: oldCode,
-                                          accountCode: newVal.trim()
+                                          accountCode: newCode.trim()
                                         });
-                                        alert(tr("Kural kaydedildi! Sonraki yuklemelerde yapay zeka bu kurali dikkate alacak.", "Regel gespeichert! Die KI wird dies bei zukunftigen Uploads berucksichtigen."));
                                       }
+                                      if (selectedInvoice && onUpdateItems) {
+                                        const allItems = (rawResponse.items || rawResponse.kalemler || []).map((it: any, idx: number) => {
+                                          if (idx !== i) return it;
+                                          const upd = { ...it };
+                                          if (codeChanged) {
+                                            upd.account_code = newCode.trim();
+                                            upd.hesap_kodu = newCode.trim();
+                                          }
+                                          if (amtChanged) {
+                                            const qty = Number(upd.quantity || upd.miktar || 1) || 1;
+                                            const vatRate = Number(upd.vat_rate || upd.kdv_orani || 0);
+                                            upd.net_amount = newAmt;
+                                            upd.net_tutar = newAmt;
+                                            upd.unit_price = +(newAmt / qty).toFixed(2);
+                                            upd.vat_amount = +((newAmt * vatRate) / 100).toFixed(2);
+                                            upd.gross_amount = +(newAmt + upd.vat_amount).toFixed(2);
+                                          }
+                                          upd.user_modified = true;
+                                          upd.user_modified_at = new Date().toISOString();
+                                          upd.user_modified_field = codeChanged && amtChanged ? "account_code,net_amount" : codeChanged ? "account_code" : "net_amount";
+                                          if (codeChanged) upd.user_modified_old_account = oldCode;
+                                          if (amtChanged) upd.user_modified_old_net = oldNet;
+                                          return upd;
+                                        });
+                                        onUpdateItems(selectedInvoice.id, allItems);
+                                      }
+                                      alert(tr("Guncellendi.", "Aktualisiert."));
                                     }}
                                     title={tr("Hesap Kodunu Duzelt ve Ogret", "Konto korrigieren und lernen")}
                                     style={{

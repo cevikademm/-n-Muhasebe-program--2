@@ -5,7 +5,7 @@ import { Invoice } from "../types";
 import {
   Building2, Upload, Loader2, TrendingUp, TrendingDown,
   CheckCircle2, XCircle, AlertCircle, Search, ChevronDown,
-  Banknote, Save, Trash2, RefreshCw, ChevronRight, Download,
+  Banknote, Save, Trash2, RefreshCw, ChevronRight, Download, FileText,
 } from "lucide-react";
 import { exportBankCSV } from "../services/exportService";
 import {
@@ -240,12 +240,12 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "income" | "expense" | "matched" | "unmatched">("all");
+  const [filter, setFilter] = useState<"all" | "income" | "expense" | "matched" | "unmatched" | "no_invoice">("all");
   const [search, setSearch] = useState("");
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [manualMatchTxId, setManualMatchTxId] = useState<string | null>(null);
   const [txKindOverrides, setTxKindOverrides] = useState<Record<string, "income" | "expense" | "refund">>({});
-  const [matchStatusOverrides, setMatchStatusOverrides] = useState<Record<string, "matched" | "none">>(() => {
+  const [matchStatusOverrides, setMatchStatusOverrides] = useState<Record<string, "matched" | "none" | "no_invoice">>(() => {
     try { return JSON.parse(localStorage.getItem("bank_match_overrides") || "{}"); } catch { return {}; }
   });
   useEffect(() => {
@@ -532,8 +532,20 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
     let list = monthTxMatches;
     if (filter === "income") list = list.filter((t: TxWithMatch) => t.tx.type === "income");
     else if (filter === "expense") list = list.filter((t: TxWithMatch) => t.tx.type === "expense");
-    else if (filter === "matched") list = list.filter((t: TxWithMatch) => t.match !== null);
-    else if (filter === "unmatched") list = list.filter((t: TxWithMatch) => t.match === null);
+    else if (filter === "matched") list = list.filter((t: TxWithMatch) => {
+      const ov = matchStatusOverrides[t.tx.id];
+      if (ov === "matched") return true;
+      if (ov === "none" || ov === "no_invoice") return false;
+      return t.match !== null;
+    });
+    else if (filter === "no_invoice") list = list.filter((t: TxWithMatch) => matchStatusOverrides[t.tx.id] === "no_invoice");
+    else if (filter === "unmatched") list = list.filter((t: TxWithMatch) => {
+      const ov = matchStatusOverrides[t.tx.id];
+      if (ov === "matched") return false;
+      if (ov === "no_invoice") return false;
+      if (ov === "none") return true;
+      return t.match === null;
+    });
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(({ tx }) =>
@@ -543,7 +555,7 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
       );
     }
     return list;
-  }, [monthTxMatches, filter, search]);
+  }, [monthTxMatches, filter, search, matchStatusOverrides]);
 
   // ── Arşiv: yıl/ay grupla
   const availableYears = useMemo(() => {
@@ -573,7 +585,31 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
     [savedStatements, selectedYear, selectedMonth]
   );
 
-  const matchedCount = monthTxMatches.filter((t: TxWithMatch) => t.match !== null).length;
+  const matchedCount = monthTxMatches.filter((t: TxWithMatch) => {
+    const ov = matchStatusOverrides[t.tx.id];
+    if (ov === "matched") return true;
+    if (ov === "none" || ov === "no_invoice") return false;
+    return t.match !== null;
+  }).length;
+  const noInvoiceCount = monthTxMatches.filter((t: TxWithMatch) => matchStatusOverrides[t.tx.id] === "no_invoice").length;
+
+  // Tüm eşleşmeyenleri faturasız işaretle (bulk)
+  const markAllUnmatchedAsNoInvoice = () => {
+    if (!window.confirm(tr(
+      "Bu ekstredeki tüm eşleşmeyen işlemler 'Faturasız' olarak işaretlensin mi?",
+      "Alle nicht abgeglichenen Buchungen als 'Ohne Rechnung' markieren?"
+    ))) return;
+    setMatchStatusOverrides(p => {
+      const next = { ...p };
+      monthTxMatches.forEach((t: TxWithMatch) => {
+        const cur = next[t.tx.id];
+        if (cur === "matched") return;
+        // eşleşmeyi otomatik veya none olanları dönüştür
+        if (t.match === null || cur === "none") next[t.tx.id] = "no_invoice";
+      });
+      return next;
+    });
+  };
 
   // ─── RENDER ──────────────────────────────────────────────────────────
   return (
@@ -733,7 +769,8 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                     { key: "income", label: tr("Gelir", "Einnahmen"), count: monthTxMatches.filter((t: TxWithMatch) => t.tx.type === "income").length, color: "#10b981" },
                     { key: "expense", label: tr("Gider", "Ausgaben"), count: monthTxMatches.filter((t: TxWithMatch) => t.tx.type === "expense").length, color: "#ef4444" },
                     { key: "matched", label: tr("Eşleşen", "Abgeglichen"), count: matchedCount, color: "#6366f1" },
-                    { key: "unmatched", label: tr("Eşleşmeyen", "Nicht abgl."), count: monthTxMatches.length - matchedCount, color: "#f59e0b" },
+                    { key: "no_invoice", label: tr("Faturasız", "Ohne Rg."), count: noInvoiceCount, color: "#3b82f6" },
+                    { key: "unmatched", label: tr("Eşleşmeyen", "Nicht abgl."), count: monthTxMatches.length - matchedCount - noInvoiceCount, color: "#f59e0b" },
                   ] as const).map(f => {
                     const isActive = filter === f.key;
                     return (
@@ -760,7 +797,21 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                   })}
                 </div>
                 {/* ── Arama ── */}
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <button
+                    onClick={markAllUnmatchedAsNoInvoice}
+                    title={tr("Tüm eşleşmeyenleri faturasız işaretle", "Alle nicht abgeglichenen als ohne Rechnung markieren")}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      padding: "6px 12px", borderRadius: 7,
+                      background: "rgba(59,130,246,.08)", border: "1px solid rgba(59,130,246,.35)",
+                      color: "#3b82f6", fontSize: 10, fontWeight: 700,
+                      fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
+                    }}
+                  >
+                    <FileText size={11} />
+                    {tr("Eşleşmeyenleri 'Faturasız' yap", "Nicht abgl. als 'Ohne Rg.'")}
+                  </button>
                   <div className="glow-wrap" style={{ position: "relative", width: "180px" }}>
                     <Search size={10} className="glow-icon" style={{ position: "absolute", left: "8px", top: "50%", transform: "translateY(-50%)", color: "var(--text-3)" }} />
                     <input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
@@ -888,8 +939,8 @@ const TxTable: React.FC<{
   onSaveRule?: (counterpart: string, supplierKeyword: string, invoiceId: string) => void;
   kindOverrides?: Record<string, "income" | "expense" | "refund">;
   onChangeKind?: (id: string, kind: "income" | "expense" | "refund") => void;
-  matchStatusOverrides?: Record<string, "matched" | "none">;
-  onChangeMatchStatus?: (id: string, status: "matched" | "none" | null) => void;
+  matchStatusOverrides?: Record<string, "matched" | "none" | "no_invoice">;
+  onChangeMatchStatus?: (id: string, status: "matched" | "none" | "no_invoice" | null) => void;
 }> = ({ rows, tr, expandedId, onToggle, invoices, manualMatchTxId, onToggleManualMatch, onUpdateMatch, bankRules = [], onSaveRule, kindOverrides = {}, onChangeKind, matchStatusOverrides = {}, onChangeMatchStatus }) => {
   const checkedSet = useCheckedSet();
   const usedInvoiceIds = useMemo(() => {
@@ -926,7 +977,8 @@ const TxTable: React.FC<{
       const isIncome = effectiveKind === "income" || effectiveKind === "refund";
       const autoHasMatch = !!match;
       const statusOverride = matchStatusOverrides[tx.id];
-      const hasMatch = statusOverride === "matched" ? true : statusOverride === "none" ? false : autoHasMatch;
+      const hasMatch = statusOverride === "matched" ? true : statusOverride === "none" || statusOverride === "no_invoice" ? false : autoHasMatch;
+      const isNoInvoice = statusOverride === "no_invoice";
       const isExpanded = expandedId === tx.id;
       const matchedInvoice = autoHasMatch && match ? invoices.find(inv => String(inv.id) === String(match.invoiceId)) ?? null : null;
 
@@ -965,7 +1017,7 @@ const TxTable: React.FC<{
               {isIncome ? `${fmtDE(tx.amount)} €` : ""}
             </div>
             <div style={{ width: "80px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
-              <StatusBadge hasMatch={hasMatch} score={match?.score} tier={match?.tier} tr={tr} isIncome={isIncome} isRefund={effectiveKind === "refund"} currentKind={effectiveKind} onChangeKind={onChangeKind ? (k) => onChangeKind(tx.id, k) : undefined} onChangeMatchStatus={onChangeMatchStatus ? (s) => onChangeMatchStatus(tx.id, s) : undefined} isOverridden={!!statusOverride} />
+              <StatusBadge hasMatch={hasMatch} isNoInvoice={isNoInvoice} score={match?.score} tier={match?.tier} tr={tr} isIncome={isIncome} isRefund={effectiveKind === "refund"} currentKind={effectiveKind} onChangeKind={onChangeKind ? (k) => onChangeKind(tx.id, k) : undefined} onChangeMatchStatus={onChangeMatchStatus ? (s) => onChangeMatchStatus(tx.id, s) : undefined} isOverridden={!!statusOverride} />
             </div>
             <div style={{ width: "50px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
               <CheckCell id={tx.id} />
@@ -1069,7 +1121,7 @@ const SavedStmtView: React.FC<{
   tr: (a: string, b: string) => string;
   invoices?: Invoice[];
 }> = ({ rows, stmt, tr, invoices = [] }) => {
-  const [filter, setFilter] = useState<"all" | "income" | "expense" | "matched" | "unmatched">("all");
+  const [filter, setFilter] = useState<"all" | "income" | "expense" | "matched" | "unmatched" | "no_invoice">("all");
 
   // RESERV / Vormerkung girişlerini arşiv görünümünden de gizle
   const cleanRows = useMemo(() => rows.filter(r => {
@@ -1581,6 +1633,7 @@ const TypeSelect: React.FC<{
 
 const StatusBadge: React.FC<{
   hasMatch: boolean;
+  isNoInvoice?: boolean;
   score?: number;
   tier?: "confident" | "probable";
   tr: (a: string, b: string) => string;
@@ -1588,9 +1641,9 @@ const StatusBadge: React.FC<{
   isRefund?: boolean;
   currentKind?: TxKind;
   onChangeKind?: (v: TxKind) => void;
-  onChangeMatchStatus?: (s: "matched" | "none" | null) => void;
+  onChangeMatchStatus?: (s: "matched" | "none" | "no_invoice" | null) => void;
   isOverridden?: boolean;
-}> = ({ hasMatch, score, tier, tr, isIncome, isRefund, currentKind, onChangeKind, onChangeMatchStatus, isOverridden }) => {
+}> = ({ hasMatch, isNoInvoice, score, tier, tr, isIncome, isRefund, currentKind, onChangeKind, onChangeMatchStatus, isOverridden }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1603,7 +1656,15 @@ const StatusBadge: React.FC<{
   }, [open]);
 
   const isProbable = hasMatch && tier === "probable" && !isOverridden;
-  const badgeBtn = hasMatch ? (
+  const badgeBtn = isNoInvoice ? (
+    <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(59,130,246,.14)", border: "1px solid rgba(59,130,246,.45)" }}>
+      <FileText size={8} style={{ color: "#3b82f6" }} />
+      <span style={{ fontSize: "8px", fontWeight: 800, color: "#3b82f6", fontFamily: "'DM Sans',sans-serif" }}>
+        {tr("FATURASIZ", "OHNE RG.")}
+      </span>
+      {onChangeMatchStatus && <ChevronDown size={8} style={{ color: "#3b82f6" }} />}
+    </div>
+  ) : hasMatch ? (
     isProbable ? (
       <div style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 7px", borderRadius: "4px", background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>
         <AlertCircle size={8} style={{ color: "#f59e0b" }} />
@@ -1686,6 +1747,7 @@ const StatusBadge: React.FC<{
           }}
         >
           {opt("✓ " + tr("EŞLEŞTİ", "ABGL."), "#10b981", "rgba(16,185,129,.1)", () => onChangeMatchStatus("matched"))}
+          {opt("📄 " + tr("FATURASIZ", "OHNE RG."), "#3b82f6", "rgba(59,130,246,.1)", () => onChangeMatchStatus("no_invoice"))}
           {onChangeKind && opt("↩ " + tr("İADE", "ERSTATTUNG"), "#f97316", "rgba(249,115,22,.1)", () => onChangeKind("refund"))}
           {opt("○ " + tr("YOK", "KEIN"), "#9ca3af", "rgba(156,163,175,.1)", () => onChangeMatchStatus("none"))}
           {isOverridden && opt("⟲ " + tr("Otomatik", "Auto"), "#6b7280", "rgba(107,114,128,.1)", () => onChangeMatchStatus(null))}

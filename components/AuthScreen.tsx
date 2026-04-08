@@ -3,33 +3,26 @@ import { motion, AnimatePresence } from "motion/react";
 import { supabase } from "../services/supabaseService";
 import { useLang } from "../LanguageContext";
 import { TubesBackground } from "./TubesBackground";
-import { getPlans, PlanCard, useCampaignDiscounts } from "./SubscriptionPanel";
 import {
   ArrowLeft,
   ArrowRight,
   Loader2,
   Lock,
   X,
-  CreditCard,
-  CheckCircle2,
   FileText,
   ShieldAlert,
   Truck,
 } from "lucide-react";
-import { PeriodPicker } from "./PeriodPicker";
-import { UpgradePrompt } from "./UpgradePrompt";
 import { PrivacyPolicyPanel as PrivacyPolicyPanelInline } from "./PrivacyPolicyPanel";
 import { DistanceSellingPanel as DistanceSellingPanelInline } from "./DistanceSellingPanel";
 import { DeliveryReturnPanel as DeliveryReturnPanelInline } from "./DeliveryReturnPanel";
-import { formatPeriodLabel, type Language } from "../services/periodUtils";
 
 interface AuthScreenProps { onAuth: (session: any) => void; initialRegister?: boolean; onBack?: () => void; }
 
-type ScreenState = "auth" | "register-modal" | "period-select" | "payment";
+type ScreenState = "auth" | "register-modal";
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister, onBack }) => {
   const { t, lang, setLang } = useLang();
-  const campaignDiscounts = useCampaignDiscounts();
 
   // ─── Auth Form ────────────────────────────────────────
   const [isLogin, setIsLogin] = useState(!initialRegister);
@@ -39,11 +32,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ─── Plan / Modal ─────────────────────────────────────
-  const [screenState, setScreenState] = useState<ScreenState>("auth");
-  const [selectedPlan, setSelectedPlan] = useState<any>(null);
-  const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
-  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+  // ─── Modal ─────────────────────────────────────
+  const [screenState, setScreenState] = useState<ScreenState>(initialRegister ? "register-modal" : "auth");
 
   // ─── Registration Modal Fields ────────────────────────
   const [regEmail, setRegEmail] = useState("");
@@ -65,7 +55,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
   const [showAgreementModal, setShowAgreementModal] = useState<"privacy" | "distance" | "delivery" | null>(null);
 
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
-  const plans = getPlans(tr, campaignDiscounts);
 
   // ─── Login Submit ─────────────────────────────────────
   const handleLoginSubmit = async () => {
@@ -97,14 +86,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
     } finally { setLoading(false); }
   };
 
-  // ─── Plan Selected → open modal ───────────────────────
-  const handlePlanSelect = (plan: any) => {
-    setSelectedPlan(plan);
-    setModalError("");
-    setScreenState("register-modal");
-  };
-
-  // ─── Register (modal) + goto payment ─────────────────
+  // ─── Register ─────────────────────────────────────
   const handleRegisterAndPay = async () => {
     setModalError("");
     if (!companyName.trim()) { setModalError(t.companyRequired); return; }
@@ -141,257 +123,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
           { user_id: data.user.id, agreement_type: "distance_selling" },
           { user_id: data.user.id, agreement_type: "delivery_return" },
         ];
-        await supabase.from("user_agreements").insert(agreementRows);
+        try { await supabase.from("user_agreements").insert(agreementRows); } catch (e) { console.warn("user_agreements skipped:", e); }
       }
-      // Free plan → direkt giriş yap (ödeme ekranını atla)
-      if (selectedPlan?.key === "free") {
-        // Otomatik login yap
-        const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-          email: regEmail,
-          password: regPassword,
-        });
-        if (loginError) throw loginError;
-        if (loginData.session) {
-          onAuth(loginData.session);
-          return;
-        }
-      } else {
-        setScreenState("period-select");
+      // Otomatik login
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: regEmail,
+        password: regPassword,
+      });
+      if (loginError) throw loginError;
+      if (loginData.session) {
+        onAuth(loginData.session);
+        return;
       }
     } catch (err: any) {
       setModalError(err.message || t.registerError);
     } finally { setModalLoading(false); }
   };
 
-  // ─── Period Selection Screen ──────────────────────────
-  if (screenState === "period-select" && selectedPlan) {
-    return (
-      <div className="min-h-screen flex relative overflow-hidden" style={{ background: "#0d0f15" }}>
-        <div className="absolute inset-0 z-0 pointer-events-auto"><TubesBackground /></div>
-        <div className="absolute inset-0 pointer-events-none z-0" style={{
-          backgroundImage: "linear-gradient(rgba(6,182,212,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,.04) 1px, transparent 1px)",
-          backgroundSize: "40px 40px"
-        }} />
-
-        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 pt-16 sm:p-6 sm:pt-16 pt-safe">
-          {/* Seçili plan bilgisi */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{ marginBottom: "24px", textAlign: "center" }}
-          >
-            <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
-              {tr("Seçili Plan:", "Ausgewählter Plan:")}
-            </span>
-            <span style={{
-              fontSize: "15px", fontWeight: 700, color: "#f97316", marginLeft: "8px",
-            }}>
-              {selectedPlan.title} — {selectedPlan.price}€{selectedPlan.period}
-            </span>
-          </motion.div>
-
-          <PeriodPicker
-            planType={selectedPlan.key}
-            purchasedPeriods={[]}
-            onPeriodsSelected={(periods) => {
-              setSelectedPeriods(periods);
-              setScreenState("payment");
-            }}
-            onUpgradeRequest={() => setShowUpgradePrompt(true)}
-          />
-
-          <UpgradePrompt
-            visible={showUpgradePrompt}
-            onClose={() => setShowUpgradePrompt(false)}
-            onSelectPlan={(planKey) => {
-              setShowUpgradePrompt(false);
-              const plan = plans.find(p => p.key === planKey);
-              if (plan) {
-                setSelectedPlan(plan);
-              }
-            }}
-            currentPlanType={selectedPlan.key}
-          />
-
-          <button
-            onClick={() => setScreenState("register-modal")}
-            style={{
-              marginTop: "16px", background: "none", border: "none",
-              color: "rgba(255,255,255,0.3)", fontSize: "12px", cursor: "pointer",
-            }}
-          >
-            ← {tr("Geri dön", "Zurück")}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Payment Screen ───────────────────────────────────
-  if (screenState === "payment") {
-    return (
-      <div className="min-h-screen flex relative overflow-hidden" style={{ background: "#0d0f15" }}>
-        <div className="absolute inset-0 z-0 pointer-events-auto"><TubesBackground /></div>
-        <div className="absolute inset-0 pointer-events-none z-0" style={{
-          backgroundImage: "linear-gradient(rgba(6,182,212,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,.04) 1px, transparent 1px)",
-          backgroundSize: "40px 40px"
-        }} />
-
-        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen p-4 pt-16 sm:p-6 sm:pt-16 pt-safe">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 30 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: [0.23, 1, 0.32, 1] }}
-            style={{
-              width: "100%",
-              maxWidth: "480px",
-              borderRadius: "24px",
-              border: "1px solid rgba(255,255,255,0.1)",
-              background: "rgba(15, 17, 21, 0.88)",
-              backdropFilter: "blur(28px)",
-              overflow: "hidden",
-            }}
-          >
-            {/* Header */}
-            <div style={{
-              background: "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(15,15,20,0.0) 60%)",
-              borderBottom: "1px solid rgba(255,255,255,0.07)",
-              padding: "32px 36px 28px",
-            }}>
-              <div className="flex items-center gap-3 mb-6">
-                <img src="/logo.png" alt="FikoAI" className="w-8 h-8 rounded-lg object-contain" />
-                <span className="font-syne font-bold text-lg text-slate-100">FikoAI</span>
-              </div>
-
-              <div className="flex items-center gap-3 mb-1">
-                <CreditCard size={20} style={{ color: "#f97316" }} />
-                <h2 className="font-syne font-bold text-xl text-white">
-                  {tr("Güvenli Ödeme", "Sichere Zahlung")}
-                </h2>
-              </div>
-              <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)", marginLeft: "32px" }}>
-                {tr("Seçilen plan:", "Gewählter Plan:")} <span style={{ color: "#f97316", fontWeight: 600 }}>
-                  {selectedPlan?.title} — {selectedPlan?.price === 0 ? tr("Ücretsiz", "Kostenlos") : `${selectedPlan?.price}€${selectedPlan?.period}`}
-                </span>
-              </p>
-              {selectedPeriods.length > 0 && (
-                <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)", marginLeft: "32px", marginTop: "4px" }}>
-                  {tr("Dönemler:", "Zeiträume:")}{" "}
-                  <span style={{ color: "#06b6d4" }}>
-                    {selectedPeriods.map(p => formatPeriodLabel(p, lang as Language)).join(", ")}
-                  </span>
-                </p>
-              )}
-            </div>
-
-            {/* Body */}
-            <div style={{ padding: "28px 36px 36px" }}>
-              {/* [FIX C-2] Güvenli ödeme bildirimi — ham kart girişi kaldırıldı */}
-              <div style={{
-                borderRadius: "14px",
-                border: "1px solid rgba(255,255,255,0.08)",
-                background: "rgba(255,255,255,0.02)",
-                padding: "20px",
-                marginBottom: "20px",
-                textAlign: "center",
-              }}>
-                <p style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: "12px" }}>
-                  {tr("Kart Bilgileri", "Kartendaten")}
-                </p>
-                <div style={{
-                  padding: "16px",
-                  borderRadius: "10px",
-                  background: "rgba(249,115,22,0.06)",
-                  border: "1px dashed rgba(249,115,22,0.3)",
-                }}>
-                  <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-                    {tr(
-                      "Odeme islemi Stripe guvenli odeme altyapisi uzerinden gerceklestirilecektir. Kayit olduktan sonra guvenli odeme sayfasina yonlendirileceksiniz.",
-                      "Die Zahlung wird uber die sichere Stripe-Zahlungsinfrastruktur abgewickelt. Nach der Registrierung werden Sie zur sicheren Zahlungsseite weitergeleitet."
-                    )}
-                  </p>
-                  <div style={{ marginTop: "10px", display: "flex", justifyContent: "center", gap: "8px", opacity: 0.4 }}>
-                    <span style={{ fontSize: "20px" }}>VISA</span>
-                    <span style={{ fontSize: "20px" }}>MC</span>
-                    <span style={{ fontSize: "20px" }}>AMEX</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div style={{
-                borderRadius: "12px",
-                border: "1px solid rgba(249,115,22,0.2)",
-                background: "rgba(249,115,22,0.05)",
-                padding: "14px 16px",
-                marginBottom: "20px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}>
-                <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }}>
-                  {selectedPlan?.title}
-                </span>
-                <span style={{ fontSize: "18px", fontWeight: 800, color: "#f97316" }}>
-                  {selectedPlan?.price === 0 ? tr("Ücretsiz", "Kostenlos") : `${selectedPlan?.price}€`}
-                </span>
-              </div>
-
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                style={{
-                  width: "100%",
-                  padding: "15px",
-                  borderRadius: "12px",
-                  border: "none",
-                  background: "linear-gradient(135deg, #f97316, #ea580c)",
-                  color: "#fff",
-                  fontSize: "15px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  letterSpacing: "0.3px",
-                  boxShadow: "0 4px 20px rgba(249,115,22,0.35)",
-                }}
-              >
-                <CreditCard size={17} />
-                {selectedPlan?.price === 0
-                  ? tr("Ücretsiz Başla", "Kostenlos starten")
-                  : tr("Ödemeyi Tamamla", "Zahlung abschließen")}
-              </motion.button>
-
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginTop: "14px" }}>
-                <CheckCircle2 size={13} style={{ color: "#22c55e" }} />
-                <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>
-                  {tr("256-bit SSL ile güvenli şifreleme", "256-bit SSL-Verschlüsselung")}
-                </span>
-              </div>
-            </div>
-          </motion.div>
-
-          <button
-            onClick={() => setScreenState("auth")}
-            style={{
-              marginTop: "16px",
-              background: "none",
-              border: "none",
-              color: "rgba(255,255,255,0.3)",
-              fontSize: "12px",
-              cursor: "pointer",
-            }}
-          >
-            ← {tr("Geri dön", "Zurück")}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Main Auth Screen (with plans) ────────────────────
+  // ─── Main Auth Screen ────────────────────
   return (
     <div className="min-h-screen flex relative overflow-hidden" style={{ background: "#0d0f15" }}>
 
@@ -501,77 +250,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 </button>
               </div>
 
-              <p className="text-xs text-center mt-4" style={{ color: "rgba(255,255,255,0.25)" }}>
-                {tr("Hesabınız yok mu? Bir plan seçin.", "Kein Konto? Wählen Sie einen Plan.")}
-              </p>
+              <button
+                onClick={() => { setModalError(""); setScreenState("register-modal"); }}
+                className="w-full mt-4 py-3 text-sm font-semibold rounded-lg"
+                style={{ background: "rgba(6,182,212,0.1)", color: "#06b6d4", border: "1px solid rgba(6,182,212,0.3)", cursor: "pointer" }}
+              >
+                {tr("Hesap Oluştur", "Konto erstellen")}
+              </button>
 
             </div>
           </div>
-        </div>
-
-        {/* CENTER: Subscription plans */}
-        <div className="flex-1 flex flex-col justify-center px-4 xl:px-6 py-8 lg:py-16 overflow-y-auto">
-          <div className="text-center mb-8">
-            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "#06b6d4", letterSpacing: "0.2em" }}>
-              {tr("Abonelik Planları", "Abonnementpläne")}
-            </p>
-            <h2 style={{
-              fontSize: "clamp(20px, 2.4vw, 32px)",
-              fontWeight: 800,
-              color: "#fff",
-              margin: 0,
-              letterSpacing: "-0.5px",
-              lineHeight: 1.25,
-            }}>
-              {tr("Planınızı Seçin", "Wählen Sie Ihren Plan")}
-            </h2>
-            <p style={{
-              fontSize: "13px",
-              color: "rgba(255,255,255,0.4)",
-              marginTop: "8px",
-              maxWidth: "380px",
-              marginLeft: "auto",
-              marginRight: "auto",
-              lineHeight: 1.6,
-            }}>
-              {tr(
-                "İhtiyacınıza uygun planı seçin, hemen kullanmaya başlayın.",
-                "Wählen Sie den passenden Plan und legen Sie sofort los."
-              )}
-            </p>
-          </div>
-
-          <div className="auth-plans-grid" style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "14px",
-            maxWidth: "820px",
-            margin: "0 auto",
-            width: "100%",
-          }}>
-            {plans.map((plan, index) => (
-              <PlanCard
-                key={plan.title}
-                plan={plan}
-                index={index}
-                tr={tr}
-                lang={lang}
-                onSelect={() => handlePlanSelect(plan)}
-              />
-            ))}
-          </div>
-
-          <p style={{
-            textAlign: "center",
-            fontSize: "11px",
-            color: "rgba(255,255,255,0.2)",
-            marginTop: "24px",
-          }}>
-            {tr(
-              "Tüm fiyatlara KDV dahildir. İstediğiniz zaman iptal edebilirsiniz.",
-              "Alle Preise verstehen sich inkl. MwSt. Jederzeit kündbar."
-            )}
-          </p>
         </div>
 
         {/* RIGHT: Promo card */}
@@ -781,9 +469,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                     {tr("Hesap Oluştur", "Konto erstellen")}
                   </h3>
                   <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "13px", marginTop: "4px" }}>
-                    {tr("Seçilen plan:", "Gewählter Plan:")} <span style={{ color: "#f97316", fontWeight: 600 }}>
-                      {selectedPlan?.title} {selectedPlan?.price > 0 && `— ${selectedPlan?.price}€${selectedPlan?.period}`}
-                    </span>
+                    {tr("Yeni hesap için bilgilerinizi girin.", "Geben Sie Ihre Daten ein, um ein Konto zu erstellen.")}
                   </p>
                 </div>
                 <button
@@ -985,7 +671,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                   {modalLoading ? (
                     <><Loader2 size={16} className="animate-spin" /> {t.loading}</>
                   ) : (
-                    <>{tr("Ödeme Adımına Geç", "Weiter zur Zahlung")} <ArrowRight size={16} /></>
+                    <>{tr("Hesap Oluştur", "Konto erstellen")} <ArrowRight size={16} /></>
                   )}
                 </motion.button>
 

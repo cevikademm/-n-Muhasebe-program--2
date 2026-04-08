@@ -20,7 +20,6 @@ import { FormsPanel } from "./components/FormsPanel";
 import { BankDocumentsPanel } from "./components/BankDocumentsPanel";
 import { MaliMusavirPanel } from "./components/MaliMusavirPanel";
 import { AdminPanel } from "./components/AdminPanel";
-import { SubscriptionPanel } from "./components/SubscriptionPanel";
 import { CampaignsPanel } from "./components/CampaignsPanel";
 import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
 import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
@@ -32,10 +31,8 @@ import { DeliveryReturnPanel } from "./components/DeliveryReturnPanel";
 import { PrivacyPolicyPanel } from "./components/PrivacyPolicyPanel";
 import { DistanceSellingPanel } from "./components/DistanceSellingPanel";
 import { ToastProvider } from "./contexts/ToastContext";
-import { SubscriptionCountdown } from "./components/SubscriptionCountdown";
 import { useAccountPlans } from "./services/useAccountPlans";
 import { useCompanies } from "./services/useCompanies";
-import { useSubscriptionTimer } from "./services/useSubscriptionTimer";
 import { useInvoices } from "./services/useInvoices";
 
 export default function App() {
@@ -47,7 +44,6 @@ export default function App() {
 
   // UI States
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
-  const [hasSubscription, setHasSubscription] = useState(false);
   const [userRole, setUserRole] = useState("user");
 
   // Selection States
@@ -73,13 +69,11 @@ export default function App() {
     userRole
   );
 
-  const subInfo = useSubscriptionTimer(session, userRole);
-
   const {
     invoices, loading: invoicesLoading, uploading: invoiceUploading,
-    uploadAndAnalyze, deleteInvoice, fetchInvoiceItems,
+    uploadAndAnalyze, createManualInvoice, deleteInvoice, fetchInvoiceItems,
     updateInvoice, updateInvoiceItems,
-  } = useInvoices(session, subInfo);
+  } = useInvoices(session);
 
   // ─── Auth & Session ───────────────────────────────────────────────
   useEffect(() => {
@@ -113,7 +107,6 @@ export default function App() {
 
       if (isPrivileged) {
         setUserRole("admin");
-        setHasSubscription(true);
       } else {
         // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
         supabase
@@ -124,16 +117,11 @@ export default function App() {
           .then(({ data, error }) => {
             if (!error && data?.role) {
               setUserRole(data.role);
-              if (data.role === "admin") {
-                setHasSubscription(true);
-              }
             } else {
               setUserRole("user");
             }
           });
       }
-
-      // Abonelik kontrolü kaldırıldı — tüm kullanıcılar sınırsız erişime sahip
     }
   }, [session]);
 
@@ -226,6 +214,15 @@ export default function App() {
       return (
         <DashboardPanel
           onNavigate={(menu) => handleMenuChange(menu as any)}
+          onUploadInvoice={async (file) => {
+            handleMenuChange("invoices" as any);
+            try {
+              await uploadAndAnalyze(file);
+            } catch (err: any) {
+              console.error("[App] Dashboard upload error:", err);
+              alert(`Hata: ${err?.message || "Bilinmeyen hata"}`);
+            }
+          }}
         />
       );
     }
@@ -236,8 +233,6 @@ export default function App() {
           userEmail={session?.user?.email}
           userRole={userRole}
           userId={session?.user?.id}
-          subscriptionPlan={subInfo.plan}
-          onNavigateToSubscription={() => handleMenuChange("subscription" as any)}
         />
       );
     }
@@ -262,13 +257,7 @@ export default function App() {
 
     if (activeMenu === "bankDocuments") {
       return (
-        <BankDocumentsPanel
-          isSubscriptionExpired={subInfo.isExpired}
-          subscriptionExpiresAt={subInfo.expiresAt}
-          subscriptionPlan={subInfo.plan}
-          propUserId={session?.user?.id}
-          onNavigateToSubscription={() => handleMenuChange("subscription" as any)}
-        />
+        <BankDocumentsPanel propUserId={session?.user?.id} invoices={invoices} />
       );
     }
 
@@ -280,11 +269,15 @@ export default function App() {
           uploading={invoiceUploading}
           selectedInvoice={selectedInvoice}
           onSelectInvoice={setSelectedInvoice}
-          isSubscriptionExpired={subInfo.isExpired}
-          subscriptionExpiresAt={subInfo.expiresAt}
-          subscriptionPlan={subInfo.plan}
           userId={session?.user?.id}
-          onNavigateToSubscription={() => handleMenuChange("subscription" as any)}
+          onDelete={async (inv) => {
+            try {
+              await deleteInvoice(inv.id);
+              if (selectedInvoice?.id === inv.id) setSelectedInvoice(null);
+            } catch (err: any) {
+              alert(`Silme hatası: ${err?.message || err}`);
+            }
+          }}
           onUpload={async (files) => {
             for (const file of files) {
               try {
@@ -296,6 +289,10 @@ export default function App() {
             }
           }}
           fetchItems={fetchInvoiceItems}
+          onCreateManual={async (payload: any) => {
+            const inv = await createManualInvoice(payload);
+            setSelectedInvoice(inv);
+          }}
           onAccountClick={(item: any) => setSelectedDetailItem(item)}
           onUpdateInvoice={updateInvoice}
           onUpdateInvoiceItems={updateInvoiceItems}
@@ -318,76 +315,6 @@ export default function App() {
 
     if (activeMenu === "hesapPlanlari2" && userRole === "admin") {
       return <HesapPlanlari2Panel />;
-    }
-
-    if (activeMenu === "subscription") {
-      return (
-        <SubscriptionPanel
-          purchasedPeriods={subInfo.purchasedPeriods}
-          onPlanSelected={async (plan: any, selectedPeriods?: string[]) => {
-            if (session?.user?.id) {
-              // ⚠ GÜVENLİK (YKS-04): Abonelik kaydı Supabase'e yazılır.
-              // Ödeme entegrasyonu (Stripe vb.) tamamlanınca bu kayıt
-              // webhook üzerinden sunucu tarafında oluşturulmalıdır.
-              try {
-                let dbSuccess = false;
-                if (selectedPeriods && selectedPeriods.length > 0) {
-                  // Dönemsel kayıtlar oluştur
-                  const rows = selectedPeriods.map(p => {
-                    const [year, month] = p.split("-").map(Number);
-                    return {
-                      user_id: session.user.id,
-                      period_year: year,
-                      period_month: month,
-                      plan_type: plan?.key || "monthly",
-                      price_paid: (plan?.price || 0) / selectedPeriods.length,
-                    };
-                  });
-                  const { error: upsertError } = await supabase
-                    .from("subscription_periods")
-                    .upsert(rows, { onConflict: "user_id,period_year,period_month" });
-
-                  if (upsertError) {
-                    console.warn("[App] subscription_periods upsert hatası:", upsertError.message);
-                  } else {
-                    dbSuccess = true;
-                  }
-                }
-
-                // Geriye uyumluluk: eski subscriptions tablosuna da özet kayıt
-                try {
-                  await supabase.from("subscriptions").upsert({
-                    user_id: session.user.id,
-                    status: "active",
-                    plan: plan?.key || "monthly",
-                    updated_at: new Date().toISOString(),
-                  }, { onConflict: "user_id" });
-                } catch { /* eski tablo yoksa görmezden gel */ }
-
-                // Her durumda localStorage'ı da güncelle (DB + localStorage senkron)
-                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
-                  periods: selectedPeriods || [],
-                  plan: plan?.key || "monthly",
-                }));
-
-                if (!dbSuccess) {
-                  console.warn("[App] DB yazılamadı, localStorage fallback aktif");
-                }
-              } catch (e) {
-                console.error("[App] Abonelik kayıt hatası:", e);
-                // localStorage fallback — her durumda kaydet
-                localStorage.setItem(`periods_${session.user.id}`, JSON.stringify({
-                  periods: selectedPeriods || [],
-                  plan: plan?.key || "monthly",
-                }));
-              }
-              window.dispatchEvent(new Event("subscription_updated"));
-              setHasSubscription(true);
-              setActiveMenu("dashboard");
-            }
-          }}
-        />
-      );
     }
 
     if (activeMenu === "about") return <AboutUsPanel />;
@@ -453,6 +380,8 @@ export default function App() {
           }}
           detailItem={selectedDetailItem}
           onClearDetailItem={() => setSelectedDetailItem(null)}
+          onUpdateItems={updateInvoiceItems}
+          onUpdateInvoice={updateInvoice}
         />
       );
     }
@@ -488,29 +417,19 @@ export default function App() {
               userRole={userRole}
               onLogout={handleLogout}
               onSelectCustomer={userRole === "admin" ? handleSelectCustomer : undefined}
-              subInfo={subInfo}
             />
 
             <div
-              className={`flex-1 flex flex-col overflow-hidden pb-0 ${isRightPanelOpen ? "hidden md:flex" : "flex"
+              className={`flex-1 flex flex-col overflow-hidden pb-0 pt-safe md:pt-0 ${isRightPanelOpen ? "hidden md:flex" : "flex"
                 }`}
               style={{ minWidth: 0, minHeight: 0 }}
             >
-              {subInfo && subInfo.plan !== 'free' && (
-                <SubscriptionCountdown
-                  plan={subInfo.plan}
-                  purchasedPeriods={subInfo.purchasedPeriods || []}
-                  currentPeriod={subInfo.currentPeriod || ""}
-                  remainingMonths={subInfo.remainingMonths || 0}
-                  isExpired={subInfo.isExpired}
-                />
-              )}
               {renderCenterPanel()}
             </div>
 
             <div
               className={`${isRightPanelOpen
-                ? "fixed inset-0 z-50 md:static md:w-auto md:block"
+                ? "fixed inset-0 z-50 pt-safe md:pt-0 md:static md:w-auto md:block"
                 : "hidden md:block"
                 }`}
               style={{ background: "#111318", flexShrink: 0 }}
