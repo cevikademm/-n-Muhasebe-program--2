@@ -252,29 +252,6 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
     try { localStorage.setItem("bank_match_overrides", JSON.stringify(matchStatusOverrides)); } catch {}
   }, [matchStatusOverrides]);
 
-  // ── Otomatik migration: "Kendi Hesap Transferi" (Eigenüberweisung) olan
-  // tüm işlemleri — hem canlı analiz hem arşiv — "faturasız" olarak işaretle.
-  // Kullanıcı manuel olarak "matched" seçmediyse self-transferler her zaman
-  // no_invoice sayılır. Bir kez set ediliyor, tekrar döndürülmüyor.
-  useEffect(() => {
-    setMatchStatusOverrides(prev => {
-      const next = { ...prev };
-      let changed = false;
-      const markIfSelfTransfer = (tx: any) => {
-        if (!tx || !tx.id) return;
-        if (!isSelfTransferTransaction(tx)) return;
-        if (next[tx.id] === "matched") return; // kullanıcı manuel eşleştirdiyse dokunma
-        if (next[tx.id] !== "no_invoice") {
-          next[tx.id] = "no_invoice";
-          changed = true;
-        }
-      };
-      txMatches.forEach(t => markIfSelfTransfer(t.tx));
-      Object.values(stmtTxs).forEach(rows => rows.forEach(markIfSelfTransfer));
-      return changed ? next : prev;
-    });
-  }, [txMatches, stmtTxs]);
-
   // ── Arşiv state
   const [savedStatements, setSavedStatements] = useState<SavedBankStatement[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
@@ -284,6 +261,33 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
   const [expandedStmt, setExpandedStmt] = useState<string | null>(null);
   const [stmtTxs, setStmtTxs] = useState<Record<string, SavedTransaction[]>>({});
   const [loadingTxs, setLoadingTxs] = useState<string | null>(null);
+
+  // ── Otomatik migration: "Kendi Hesap Transferi" (Eigenüberweisung) olan
+  // tüm işlemleri — hem canlı analiz hem arşiv — "faturasız" olarak işaretle.
+  // (Hook'lar txMatches ve stmtTxs tanımlandıktan SONRA çağrılmalı, aksi
+  // halde TDZ ReferenceError → app crash.)
+  useEffect(() => {
+    setMatchStatusOverrides(prev => {
+      const next = { ...prev };
+      let changed = false;
+      const markIfSelfTransfer = (tx: any) => {
+        if (!tx || !tx.id) return;
+        try { if (!isSelfTransferTransaction(tx)) return; } catch { return; }
+        if (next[tx.id] === "matched") return;
+        if (next[tx.id] !== "no_invoice") {
+          next[tx.id] = "no_invoice";
+          changed = true;
+        }
+      };
+      try {
+        (txMatches || []).forEach(t => markIfSelfTransfer(t?.tx));
+        Object.values(stmtTxs || {}).forEach(rows => Array.isArray(rows) && rows.forEach(markIfSelfTransfer));
+      } catch (e) {
+        console.warn("[auto-faturasız] migration skipped:", e);
+      }
+      return changed ? next : prev;
+    });
+  }, [txMatches, stmtTxs]);
 
   // ── Banka Kesin Kurallar (counterpart → supplier eşleştirmesi)
   const BANK_RULES_KEY = "muhasys_bank_match_rules";
