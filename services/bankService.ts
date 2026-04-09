@@ -363,6 +363,7 @@ export interface SavedBankStatement {
   total_income: number;
   total_expense: number;
   file_name: string;
+  file_url: string | null;
   created_at: string;
 }
 

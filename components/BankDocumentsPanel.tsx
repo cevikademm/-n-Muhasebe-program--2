@@ -910,6 +910,19 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                         ? <Loader2 size={11} style={{ color: "#374151", animation: "spin 1s linear infinite" }} />
                         : <ChevronDown size={11} style={{ color: "#374151", transform: expandedStmt === s.id ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                       }
+                      {s.file_url && (
+                        <a
+                          href={s.file_url}
+                          download={s.file_name || "bank-ekstre.pdf"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          title={tr("PDF indir", "PDF herunterladen")}
+                          style={{ color: "#10b981", padding: "2px", lineHeight: 0, display: "inline-flex" }}
+                        >
+                          <Download size={11} />
+                        </a>
+                      )}
                       <button
                         onClick={e => { e.stopPropagation(); handleRematch(s.id); }}
                         disabled={rematchingId === s.id}
