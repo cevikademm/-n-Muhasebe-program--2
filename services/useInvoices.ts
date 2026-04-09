@@ -45,6 +45,42 @@ export function useInvoices(session: any) {
     fetchInvoices();
   }, [fetchInvoices]);
 
+  // ── Canlı senkron: Supabase Realtime + sekme/odak değişiminde refetch ──
+  // Mobil tarayıcılarda uygulama arka plana alınıp tekrar açıldığında veriyi
+  // taze tutmak için visibilitychange/focus, ve diğer cihazlardan yapılan
+  // değişiklikleri anında yansıtmak için Postgres changes aboneliği kullanılır.
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+
+    // 1) Realtime kanal — bu kullanıcıya ait invoices satırlarındaki değişiklikler
+    const channel = supabase
+      .channel(`invoices-rt-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "invoices", filter: `user_id=eq.${userId}` },
+        () => { fetchInvoices(); }
+      )
+      .subscribe();
+
+    // 2) Sekme tekrar görünür olduğunda / pencere odaklandığında / online olunca
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchInvoices();
+    };
+    const onFocus = () => fetchInvoices();
+    const onOnline = () => fetchInvoices();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [session?.user?.id, fetchInvoices]);
+
   const fetchInvoiceItems = useCallback(async (invoiceId: string): Promise<InvoiceItem[]> => {
     const { data, error } = await supabase
       .from("invoice_items")
