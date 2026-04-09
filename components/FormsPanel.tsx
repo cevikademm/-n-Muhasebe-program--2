@@ -235,13 +235,6 @@ const DocSummary: React.FC<{
         </tbody>
       </table>
 
-      {/* VERIFICATION WARNING */}
-      {!allOk && (
-        <div style={{ background: "#fef2f2", borderLeft: "4px solid #ef4444", padding: "8px 12px", color: "#991b1b", fontSize: "11px", fontWeight: 600 }}>
-          ⚠ {tr("Tutar uyuşmazlığı — başlık ile kalem toplamları kontrol edilmeli.", "Betragsabweichung — Kopf und Positionen prüfen.")}
-          <span style={{ marginLeft: "10px", fontSize: "10px", color: "#dc2626" }}>(Net: {fmt(iNet)} | VAT: {fmt(iVat)} | Gross: {fmt(iGross)})</span>
-        </div>
-      )}
     </div>
   );
 };
