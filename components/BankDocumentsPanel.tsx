@@ -237,6 +237,9 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
     return () => clearInterval(timerId);
   }, [analyzing]);
 
+  // userId burada erken tanımlanmalı: aşağıdaki override-sync useEffect'i
+  // dep array'inde [userId] kullanıyor ve TDZ'ye takılırsa sayfa çöker.
+  const [userId, setUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -438,7 +441,6 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
   // ── Arşiv state
   const [savedStatements, setSavedStatements] = useState<SavedBankStatement[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [expandedStmt, setExpandedStmt] = useState<string | null>(null);
