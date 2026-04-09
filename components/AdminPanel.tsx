@@ -47,10 +47,45 @@ interface AllCompany {
   invoiceCount?: number;
   totalVolume?: number;
   userEmail?: string;
+  pendingEditRequestCount?: number;
 }
 
 // ── Admin detail tab type
-type AdminDetailTab = "invoices" | "susa";
+type AdminDetailTab = "invoices" | "susa" | "requests";
+
+// ── Edit request helper shape
+type EditRequest = {
+  requested?: boolean;
+  note?: string;
+  at?: string;
+  resolved_at?: string;
+};
+const getEditRequest = (inv: Invoice): EditRequest | null => {
+  const r = (inv as any).raw_ai_response?.edit_request;
+  return r && typeof r === "object" ? r : null;
+};
+const isPendingRequest = (inv: Invoice): boolean => {
+  const r = getEditRequest(inv);
+  return !!(r && r.requested === true);
+};
+const hasAnyRequest = (inv: Invoice): boolean => {
+  const r = getEditRequest(inv);
+  return !!(r && (r.requested === true || r.at || r.resolved_at));
+};
+
+// Fatura alan çıkarıcıları — raw_ai_response fallback ile (DB kolonları Türkçe)
+const getSupplierName = (inv: Invoice): string => {
+  const raw: any = (inv as any).raw_ai_response || {};
+  const fb = raw.fatura_bilgileri || {};
+  const h  = raw.header || {};
+  return (
+    (inv as any).satici_adi ||
+    fb.satici_adi ||
+    h.supplier_name ||
+    (inv as any).satici_vkn ||
+    ""
+  );
+};
 
 // ─────────────────────────────────────────
 // MAIN COMPONENT
@@ -71,6 +106,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
   const [saving,           setSaving]           = useState<string | null>(null); // itemId being saved
 
   const [coSearch,         setCoSearch]         = useState("");
+  const [onlyWithRequests, setOnlyWithRequests] = useState(false);
+  const [requestFilter,    setRequestFilter]    = useState<"pending" | "resolved" | "all">("pending");
   const [invSearch,        setInvSearch]        = useState("");
   const [statusFilter,     setStatusFilter]     = useState<string>("all");
   const [yearFilter,       setYearFilter]       = useState<string>("all");
@@ -107,11 +144,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
         (cos || []).map(async (co: any) => {
           const { data: invs } = await supabase
             .from("invoices")
-            .select("id, total_gross")
+            .select("id, genel_toplam, raw_ai_response")
             .eq("user_id", co.user_id);
 
           const invoiceCount = invs?.length ?? 0;
-          const totalVolume  = invs?.reduce((s: number, i: any) => s + (i.total_gross ?? 0), 0) ?? 0;
+          const totalVolume  = invs?.reduce((s: number, i: any) => s + (i.genel_toplam ?? 0), 0) ?? 0;
+          const pendingEditRequestCount = invs?.reduce((s: number, i: any) => {
+            const r = i?.raw_ai_response?.edit_request;
+            return s + (r && r.requested === true ? 1 : 0);
+          }, 0) ?? 0;
 
           // Kullanıcı e-posta: profiles tablosu veya auth.users — profiles'dan dene
           let userEmail = "";
@@ -122,7 +163,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
             .maybeSingle();
           userEmail = prof?.email || co.email || co.user_id.substring(0, 8) + "…";
 
-          return { ...co, invoiceCount, totalVolume, userEmail };
+          return { ...co, invoiceCount, totalVolume, userEmail, pendingEditRequestCount };
         })
       );
 
@@ -147,7 +188,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
         .from("invoices")
         .select("*")
         .eq("user_id", userId)
-        .order("invoice_date", { ascending: false });
+        .order("tarih", { ascending: false });
 
       if (error) throw error;
       setInvoices((invs || []) as Invoice[]);
@@ -177,26 +218,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
 
   // ── Filtered companies
   const filteredCompanies = useMemo(() =>
-    companies.filter(co =>
-      !coSearch ||
-      co.company_name.toLowerCase().includes(coSearch.toLowerCase()) ||
-      co.userEmail?.toLowerCase().includes(coSearch.toLowerCase()) ||
-      co.city?.toLowerCase().includes(coSearch.toLowerCase())
-    ), [companies, coSearch]);
+    companies.filter(co => {
+      if (onlyWithRequests && !(co.pendingEditRequestCount && co.pendingEditRequestCount > 0)) return false;
+      if (!coSearch) return true;
+      const q = coSearch.toLowerCase();
+      return (
+        co.company_name.toLowerCase().includes(q) ||
+        !!co.userEmail?.toLowerCase().includes(q) ||
+        !!co.city?.toLowerCase().includes(q)
+      );
+    }), [companies, coSearch, onlyWithRequests]);
+
+  const totalPendingRequests = useMemo(
+    () => companies.reduce((s, c) => s + (c.pendingEditRequestCount || 0), 0),
+    [companies]
+  );
 
   // ── Filtered invoices
   const years = useMemo(() => {
-    const ys = new Set(invoices.map(i => i.invoice_date?.substring(0, 4)).filter(Boolean));
+    const ys = new Set(invoices.map(i => (i as any).tarih?.substring(0, 4)).filter(Boolean));
     return Array.from(ys).sort().reverse() as string[];
   }, [invoices]);
 
   const filteredInvoices = useMemo(() =>
     invoices.filter(inv => {
       if (statusFilter !== "all" && inv.status !== statusFilter) return false;
-      if (yearFilter   !== "all" && !inv.invoice_date?.startsWith(yearFilter)) return false;
+      if (yearFilter   !== "all" && !(inv as any).tarih?.startsWith(yearFilter)) return false;
       if (invSearch && !(
-        inv.supplier_name?.toLowerCase().includes(invSearch.toLowerCase()) ||
-        inv.invoice_number?.toLowerCase().includes(invSearch.toLowerCase())
+        getSupplierName(inv)?.toLowerCase().includes(invSearch.toLowerCase()) ||
+        inv.fatura_no?.toLowerCase().includes(invSearch.toLowerCase())
       )) return false;
       return true;
     }), [invoices, statusFilter, yearFilter, invSearch]);
@@ -250,6 +300,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
       setSaving(null);
     }
   };
+
+  // ── Admin: talebi çözüldü işaretle (JSONB raw_ai_response.edit_request güncellenir)
+  const resolveEditRequest = async (invoice: Invoice) => {
+    if (!window.confirm(tr(
+      "Bu düzenleme talebini çözüldü olarak işaretle?",
+      "Diese Bearbeitungsanfrage als erledigt markieren?"
+    ))) return;
+    try {
+      const raw: any = (invoice as any).raw_ai_response || {};
+      const newRaw = {
+        ...raw,
+        edit_request: {
+          ...(raw.edit_request || {}),
+          requested: false,
+          resolved_at: new Date().toISOString(),
+        },
+      };
+      const { error } = await supabase
+        .from("invoices")
+        .update({ raw_ai_response: newRaw })
+        .eq("id", invoice.id);
+      if (error) throw error;
+
+      // Local state güncelle
+      setInvoices(prev => prev.map(i =>
+        i.id === invoice.id ? ({ ...i, raw_ai_response: newRaw } as any) : i
+      ));
+      // Sol listedeki rozet sayısını azalt
+      if (selectedCompany) {
+        setCompanies(prev => prev.map(c =>
+          c.user_id === selectedCompany.user_id
+            ? { ...c, pendingEditRequestCount: Math.max(0, (c.pendingEditRequestCount || 1) - 1) }
+            : c
+        ));
+      }
+      flash(tr("✓ Talep çözüldü olarak işaretlendi", "✓ Anfrage als erledigt markiert"));
+    } catch (e: any) {
+      flash(tr("Hata: ", "Fehler: ") + e.message, false);
+    }
+  };
+
+  // ── Requests tabı için hesaplanan listeler
+  const editRequestInvoices = useMemo(() => {
+    const all = invoices.filter(hasAnyRequest);
+    if (requestFilter === "pending")  return all.filter(isPendingRequest);
+    if (requestFilter === "resolved") return all.filter(i => !isPendingRequest(i));
+    return all;
+  }, [invoices, requestFilter]);
+
+  const pendingRequestsForSelected = useMemo(
+    () => invoices.filter(isPendingRequest).length,
+    [invoices]
+  );
 
   // ─────────────────────────────────────────
   // RENDER
@@ -306,7 +409,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
           style={{ borderRight:"1px solid #1c1f27", background:"#0d0f15" }}>
 
           <div className="px-4 py-3 shrink-0" style={{ borderBottom:"1px solid #1c1f27" }}>
-            <div className="c-section-title mb-2">{tr("Şirketler","Firmen")}</div>
+            <div className="c-section-title mb-2 flex items-center justify-between">
+              <span>{tr("Şirketler","Firmen")}</span>
+              {totalPendingRequests > 0 && (
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full font-mono"
+                  style={{ background:"rgba(245,158,11,.12)", color:"#f59e0b", border:"1px solid rgba(245,158,11,.25)" }}
+                  title={tr("Bekleyen düzenleme talepleri","Offene Bearbeitungsanfragen")}
+                >
+                  🔔 {totalPendingRequests}
+                </span>
+              )}
+            </div>
             <input
               className="c-input text-xs w-full"
               placeholder={tr("İsim, e-posta veya şehir ara...","Name, E-Mail oder Stadt...")}
@@ -314,6 +428,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
               onChange={e => setCoSearch(e.target.value)}
               style={{ padding:"6px 10px" }}
             />
+            <label
+              className="flex items-center gap-1.5 mt-2 text-[10px] cursor-pointer select-none"
+              style={{ color: onlyWithRequests ? "#f59e0b" : "#64748b" }}
+            >
+              <input
+                type="checkbox"
+                checked={onlyWithRequests}
+                onChange={e => setOnlyWithRequests(e.target.checked)}
+                style={{ accentColor:"#f59e0b" }}
+              />
+              {tr("Sadece talepli şirketler", "Nur Firmen mit Anfragen")}
+            </label>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -345,10 +471,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                       <span className="font-syne font-semibold text-sm text-slate-200 leading-tight line-clamp-1">
                         {co.company_name}
                       </span>
-                      <span className="font-mono text-[9px] shrink-0 px-1.5 py-0.5 rounded"
-                        style={{ background:"rgba(6,182,212,.1)", color:"#06b6d4", marginTop:"2px" }}>
-                        {co.invoiceCount} {tr("fatura","Rech.")}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0" style={{ marginTop:"2px" }}>
+                        {!!co.pendingEditRequestCount && co.pendingEditRequestCount > 0 && (
+                          <span
+                            className="font-mono text-[9px] px-1.5 py-0.5 rounded-full"
+                            style={{
+                              background:"rgba(245,158,11,.14)",
+                              color:"#f59e0b",
+                              border:"1px solid rgba(245,158,11,.3)",
+                            }}
+                            title={tr("Bekleyen düzenleme talebi", "Offene Bearbeitungsanfragen")}
+                          >
+                            🔔 {co.pendingEditRequestCount}
+                          </span>
+                        )}
+                        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+                          style={{ background:"rgba(6,182,212,.1)", color:"#06b6d4" }}>
+                          {co.invoiceCount} {tr("fatura","Rech.")}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="text-[10px] space-y-0.5">
@@ -417,24 +558,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                 {/* Tab butonları */}
                 <div className="flex items-center gap-1 shrink-0">
                   {([
-                    { key: "invoices" as AdminDetailTab, icon: "◧", label: tr("Faturalar", "Rechnungen") },
-                    { key: "susa"     as AdminDetailTab, icon: "≡", label: tr("SuSa Raporu", "Summen & Salden") },
+                    { key: "invoices" as AdminDetailTab, icon: "◧", label: tr("Faturalar", "Rechnungen"), badge: 0 },
+                    { key: "requests" as AdminDetailTab, icon: "🔔", label: tr("Talepler", "Anfragen"), badge: pendingRequestsForSelected },
+                    { key: "susa"     as AdminDetailTab, icon: "≡", label: tr("SuSa Raporu", "Summen & Salden"), badge: 0 },
                   ]).map(tab => {
                     const isActive = detailTab === tab.key;
+                    const isRequestTab = tab.key === "requests";
+                    const activeColor = isRequestTab ? "#f59e0b" : "#06b6d4";
+                    const activeBg    = isRequestTab ? "rgba(245,158,11,.1)" : "rgba(6,182,212,.1)";
                     return (
                       <button
                         key={tab.key}
                         onClick={() => {
                           setDetailTab(tab.key);
-                          if (tab.key === "susa") {
-                            setSelectedInvoice(null); // SuSa'ya geçince fatura seçimini kaldır
+                          if (tab.key !== "invoices") {
+                            setSelectedInvoice(null);
                           }
                         }}
                         className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-t-md transition-all border-none cursor-pointer"
                         style={{
-                          background: isActive ? "rgba(6,182,212,.1)" : "transparent",
-                          color:      isActive ? "#06b6d4" : "#64748b",
-                          borderBottom: isActive ? "2px solid #06b6d4" : "2px solid transparent",
+                          background: isActive ? activeBg : "transparent",
+                          color:      isActive ? activeColor : "#64748b",
+                          borderBottom: isActive ? `2px solid ${activeColor}` : "2px solid transparent",
                           fontWeight:  isActive ? 700 : 500,
                           marginBottom: "-1px",
                         }}
@@ -447,6 +592,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                       >
                         <span className="font-mono text-xs">{tab.icon}</span>
                         {tab.label}
+                        {tab.badge > 0 && (
+                          <span
+                            className="text-[9px] font-bold px-1.5 py-0.5 rounded-full font-mono ml-1"
+                            style={{
+                              background: "rgba(245,158,11,.18)",
+                              color: "#f59e0b",
+                              border: "1px solid rgba(245,158,11,.3)",
+                            }}
+                          >
+                            {tab.badge}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -488,6 +645,162 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                       clientNumber={selectedCompany.tax_number || `${selectedCompany.id}`}
                     />
                   )}
+                </div>
+              )}
+
+              {/* ───── TAB: Talepler (düzenleme talepleri) ───── */}
+              {detailTab === "requests" && (
+                <div className="flex-1 overflow-y-auto" style={{ background:"#111318" }}>
+                  {/* Filtre bar */}
+                  <div className="shrink-0 px-5 py-3 flex items-center gap-2"
+                    style={{ background:"#0d0f15", borderBottom:"1px solid #1c1f27" }}>
+                    <span className="text-[10px] font-syne font-semibold" style={{ color:"#64748b" }}>
+                      {tr("Durum:", "Status:")}
+                    </span>
+                    {([
+                      { key: "pending"  as const, label: tr("Bekleyen",  "Offen")     },
+                      { key: "resolved" as const, label: tr("Çözüldü",   "Erledigt")  },
+                      { key: "all"      as const, label: tr("Tümü",      "Alle")      },
+                    ]).map(f => {
+                      const active = requestFilter === f.key;
+                      return (
+                        <button
+                          key={f.key}
+                          onClick={() => setRequestFilter(f.key)}
+                          className="px-2.5 py-1 text-[10px] rounded-md border-none cursor-pointer font-mono"
+                          style={{
+                            background: active ? "rgba(245,158,11,.14)" : "rgba(255,255,255,.03)",
+                            color:      active ? "#f59e0b" : "#64748b",
+                            border:     active ? "1px solid rgba(245,158,11,.3)" : "1px solid transparent",
+                            fontWeight: active ? 700 : 500,
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="p-4">
+                    {loadingInv ? (
+                      <div className="flex items-center justify-center py-20">
+                        <div className="w-6 h-6 border-2 rounded-full animate-spin"
+                          style={{ borderColor:"rgba(245,158,11,.2)", borderTopColor:"#f59e0b" }} />
+                      </div>
+                    ) : editRequestInvoices.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <div className="font-mono text-4xl mb-4" style={{ color:"#1c1f27" }}>🔔</div>
+                        <p className="font-syne font-semibold text-slate-400 mb-1">
+                          {requestFilter === "pending"
+                            ? tr("Bekleyen talep yok", "Keine offenen Anfragen")
+                            : requestFilter === "resolved"
+                              ? tr("Çözülmüş talep yok", "Keine erledigten Anfragen")
+                              : tr("Bu şirkette talep bulunamadı", "Keine Anfragen gefunden")}
+                        </p>
+                        <p className="text-xs" style={{ color:"#3a3f4a" }}>
+                          {tr(
+                            "Kullanıcı fatura kartından 'Düzenleme Talebi' gönderdiğinde burada görünür.",
+                            "Sobald Nutzer eine Bearbeitung anfordern, erscheinen diese hier."
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {editRequestInvoices.map(inv => {
+                          const req = getEditRequest(inv)!;
+                          const pending = isPendingRequest(inv);
+                          return (
+                            <div key={inv.id}
+                              className="rounded-lg p-4"
+                              style={{
+                                background:"#0d0f15",
+                                border: pending
+                                  ? "1px solid rgba(245,158,11,.3)"
+                                  : "1px solid #1c1f27",
+                              }}>
+
+                              {/* Üst satır: fatura meta + durum */}
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-syne font-bold text-sm text-slate-100 truncate">
+                                    {getSupplierName(inv) || tr("Tedarikçisiz", "Ohne Lieferant")}
+                                  </div>
+                                  <div className="text-[10px] mt-0.5 font-mono flex items-center gap-3 flex-wrap" style={{ color:"#3a3f4a" }}>
+                                    {(inv as any).tarih && <span>{(inv as any).tarih}</span>}
+                                    {inv.fatura_no && <span>#{inv.fatura_no}</span>}
+                                    {inv.genel_toplam != null && (
+                                      <span className="font-semibold text-slate-300">{fmt(inv.genel_toplam)}</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <span
+                                  className="text-[9px] font-bold px-2 py-0.5 rounded-full font-mono shrink-0"
+                                  style={pending
+                                    ? { background:"rgba(245,158,11,.14)", color:"#f59e0b", border:"1px solid rgba(245,158,11,.3)" }
+                                    : { background:"rgba(16,185,129,.12)", color:"#10b981", border:"1px solid rgba(16,185,129,.25)" }}>
+                                  {pending ? tr("BEKLİYOR","OFFEN") : tr("ÇÖZÜLDÜ","ERLEDIGT")}
+                                </span>
+                              </div>
+
+                              {/* Talep notu */}
+                              <div className="rounded-md p-3 mb-3"
+                                style={{ background:"rgba(255,255,255,.02)", border:"1px solid #1c1f27" }}>
+                                <div className="text-[9px] font-syne font-semibold mb-1" style={{ color:"#64748b" }}>
+                                  {tr("KULLANICI NOTU", "NUTZERNOTIZ")}
+                                </div>
+                                <div className="text-xs text-slate-200 whitespace-pre-wrap break-words">
+                                  {req.note?.trim() || tr("(not yok)", "(keine Notiz)")}
+                                </div>
+                              </div>
+
+                              {/* Tarih bilgileri */}
+                              <div className="flex items-center gap-4 text-[10px] font-mono mb-3" style={{ color:"#3a3f4a" }}>
+                                {req.at && (
+                                  <span>📨 {tr("Talep", "Anfrage")}: {new Date(req.at).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}</span>
+                                )}
+                                {req.resolved_at && (
+                                  <span style={{ color:"#10b981" }}>
+                                    ✓ {tr("Çözüldü", "Erledigt")}: {new Date(req.resolved_at).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Aksiyonlar */}
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setDetailTab("invoices");
+                                    setSelectedInvoice(inv);
+                                  }}
+                                  className="px-3 py-1.5 text-[10px] rounded-md border-none cursor-pointer font-syne font-semibold"
+                                  style={{
+                                    background:"rgba(6,182,212,.1)",
+                                    color:"#06b6d4",
+                                    border:"1px solid rgba(6,182,212,.25)",
+                                  }}
+                                >
+                                  ◧ {tr("Faturayı Aç", "Rechnung öffnen")}
+                                </button>
+                                {pending && (
+                                  <button
+                                    onClick={() => resolveEditRequest(inv)}
+                                    className="px-3 py-1.5 text-[10px] rounded-md border-none cursor-pointer font-syne font-semibold"
+                                    style={{
+                                      background:"rgba(16,185,129,.1)",
+                                      color:"#10b981",
+                                      border:"1px solid rgba(16,185,129,.25)",
+                                    }}
+                                  >
+                                    ✓ {tr("Çözüldü İşaretle", "Als erledigt")}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -539,9 +852,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                       {invoices.length > 0 && (
                         <div className="flex gap-3 text-[10px] font-mono">
                           {[
-                            { label: tr("Toplam","Gesamt"),    val: fmt(invoices.reduce((s,i) => s+(i.total_gross||0),0)) },
-                            { label: tr("Net","Netto"),        val: fmt(invoices.reduce((s,i) => s+(i.total_net||0),0))   },
-                            { label: tr("KDV","USt"),          val: fmt(invoices.reduce((s,i) => s+(i.total_vat||0),0))   },
+                            { label: tr("Toplam","Gesamt"),    val: fmt(invoices.reduce((s,i) => s+(i.genel_toplam||0),0)) },
+                            { label: tr("Net","Netto"),        val: fmt(invoices.reduce((s,i) => s+(i.ara_toplam||0),0))   },
+                            { label: tr("KDV","USt"),          val: fmt(invoices.reduce((s,i) => s+(i.toplam_kdv||0),0))   },
                           ].map((k,i) => (
                             <div key={i} className="flex items-center gap-1">
                               <span style={{ color:"#3a3f4a" }}>{k.label}:</span>
@@ -582,7 +895,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
 
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <span className="font-semibold text-sm text-slate-200 truncate leading-tight">
-                                  {inv.supplier_name || tr("Tedarikçisiz","Ohne Lieferant")}
+                                  {getSupplierName(inv) || tr("Tedarikçisiz","Ohne Lieferant")}
                                 </span>
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_BADGE[inv.status] || "badge-pending"}`}>
                                   {inv.status}
@@ -591,9 +904,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
 
                               <div className="flex items-center justify-between text-[10px]">
                                 <div className="flex items-center gap-2" style={{ color:"#3a3f4a" }}>
-                                  <span className="font-mono">{inv.invoice_date || "—"}</span>
-                                  {inv.invoice_number && (
-                                    <span className="truncate max-w-[80px]">#{inv.invoice_number}</span>
+                                  <span className="font-mono">{(inv as any).tarih || "—"}</span>
+                                  {inv.fatura_no && (
+                                    <span className="truncate max-w-[80px]">#{inv.fatura_no}</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -601,7 +914,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                                     <span style={{ color:"#f59e0b", fontSize:"9px" }}>⚠ {tr("Düşük eşleşme","Niedrige Übereinstimmung")}</span>
                                   )}
                                   <span className="font-syne font-bold text-slate-200">
-                                    {inv.total_gross != null ? fmt(inv.total_gross) : "—"}
+                                    {inv.genel_toplam != null ? fmt(inv.genel_toplam) : "—"}
                                   </span>
                                 </div>
                               </div>
@@ -635,11 +948,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                           </button>
                           <div>
                             <div className="font-syne font-bold text-sm text-slate-100">
-                              {selectedInvoice.supplier_name || "—"}
+                              {getSupplierName(selectedInvoice) || "—"}
                             </div>
                             <div className="text-[10px] mt-0.5 flex items-center gap-3 font-mono" style={{ color:"#3a3f4a" }}>
-                              <span>{selectedInvoice.invoice_date}</span>
-                              {selectedInvoice.invoice_number && <span>#{selectedInvoice.invoice_number}</span>}
+                              <span>{(selectedInvoice as any).tarih}</span>
+                              {selectedInvoice.fatura_no && <span>#{selectedInvoice.fatura_no}</span>}
                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[selectedInvoice.status] || "badge-pending"}`}>
                                 {selectedInvoice.status}
                               </span>
@@ -647,9 +960,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-syne font-bold text-slate-100">{fmt(selectedInvoice.total_gross)}</div>
+                          <div className="font-syne font-bold text-slate-100">{fmt(selectedInvoice.genel_toplam)}</div>
                           <div className="text-[10px] font-mono" style={{ color:"#3a3f4a" }}>
-                            {tr("Net","Netto")}: {fmt(selectedInvoice.total_net)} · {tr("KDV","USt")}: {fmt(selectedInvoice.total_vat)}
+                            {tr("Net","Netto")}: {fmt(selectedInvoice.ara_toplam)} · {tr("KDV","USt")}: {fmt(selectedInvoice.toplam_kdv)}
                           </div>
                         </div>
                       </div>
