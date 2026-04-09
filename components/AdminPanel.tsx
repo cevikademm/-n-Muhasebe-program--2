@@ -783,6 +783,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                                 >
                                   ◧ {tr("Faturayı Aç", "Rechnung öffnen")}
                                 </button>
+                                {onReanalyze && (inv as any).file_url && (
+                                  <button
+                                    disabled={reanalyzing}
+                                    onClick={async () => {
+                                      setReanalyzing(true);
+                                      try {
+                                        await onReanalyze(inv);
+                                        if (selectedCompany) await loadInvoices(selectedCompany.user_id);
+                                      } catch (err: any) {
+                                        alert(tr("Hata: ","Fehler: ") + (err?.message || err));
+                                      } finally {
+                                        setReanalyzing(false);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 text-[10px] rounded-md border-none font-syne font-semibold"
+                                    style={{
+                                      background:"rgba(168,85,247,.12)",
+                                      color:"#a855f7",
+                                      border:"1px solid rgba(168,85,247,.3)",
+                                      cursor: reanalyzing ? "wait" : "pointer",
+                                      opacity: reanalyzing ? .6 : 1,
+                                    }}
+                                  >
+                                    {reanalyzing ? "⏳ " + tr("Analiz...","Analyse...") : "🤖 " + tr("AI ile Analiz","KI-Analyse")}
+                                  </button>
+                                )}
+                                <button
+                                  title={tr("Yenile","Aktualisieren")}
+                                  onClick={() => { if (selectedCompany) loadInvoices(selectedCompany.user_id); }}
+                                  className="px-3 py-1.5 text-[10px] rounded-md border-none cursor-pointer font-syne font-semibold"
+                                  style={{
+                                    background:"rgba(255,255,255,.04)",
+                                    color:"#94a3b8",
+                                    border:"1px solid #1c1f27",
+                                  }}
+                                >
+                                  ↻ {tr("Yenile","Aktualisieren")}
+                                </button>
                                 {pending && (
                                   <button
                                     onClick={() => resolveEditRequest(inv)}
