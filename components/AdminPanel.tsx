@@ -54,24 +54,16 @@ interface AllCompany {
 // ── Admin detail tab type
 type AdminDetailTab = "invoices" | "susa" | "requests";
 
-// ── Edit request helper shape
-type EditRequest = {
-  requested?: boolean;
-  note?: string;
-  at?: string;
-  resolved_at?: string;
-};
-const getEditRequest = (inv: Invoice): EditRequest | null => {
-  const r = (inv as any).raw_ai_response?.edit_request;
-  return r && typeof r === "object" ? r : null;
-};
-const isPendingRequest = (inv: Invoice): boolean => {
-  const r = getEditRequest(inv);
-  return !!(r && r.requested === true);
-};
-const hasAnyRequest = (inv: Invoice): boolean => {
-  const r = getEditRequest(inv);
-  return !!(r && (r.requested === true || r.at || r.resolved_at));
+// ── Edit request row (invoice_edit_requests tablosundan)
+type EditRequestRow = {
+  id: string;
+  invoice_id: string;
+  user_id: string;
+  note: string | null;
+  requested_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolution: string | null;
 };
 
 // Fatura alan çıkarıcıları — raw_ai_response fallback ile (DB kolonları Türkçe)
@@ -102,6 +94,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
   const [invoices,         setInvoices]         = useState<Invoice[]>([]);
   const [invoiceItems,     setInvoiceItems]     = useState<InvoiceItem[]>([]);
   const [selectedInvoice,  setSelectedInvoice]  = useState<Invoice | null>(null);
+  const [editRequests,     setEditRequests]     = useState<EditRequestRow[]>([]);
+
+  // ── Edit request helpers (yeni tabloya göre)
+  const getReqFor = useCallback((invoiceId: string): EditRequestRow | null => {
+    // En son talebi getir (resolved_at NULL olan öncelikli)
+    const rows = editRequests.filter(r => r.invoice_id === invoiceId);
+    if (rows.length === 0) return null;
+    const open = rows.find(r => r.resolved_at == null);
+    if (open) return open;
+    return rows.sort((a,b) => (b.requested_at || "").localeCompare(a.requested_at || ""))[0];
+  }, [editRequests]);
+  const isPendingFor = useCallback((invoiceId: string): boolean => {
+    return editRequests.some(r => r.invoice_id === invoiceId && r.resolved_at == null);
+  }, [editRequests]);
+  const hasAnyFor = useCallback((invoiceId: string): boolean => {
+    return editRequests.some(r => r.invoice_id === invoiceId);
+  }, [editRequests]);
 
   const [loadingCo,        setLoadingCo]        = useState(true);
   const [loadingInv,       setLoadingInv]       = useState(false);
@@ -146,15 +155,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
         (cos || []).map(async (co: any) => {
           const { data: invs } = await supabase
             .from("invoices")
-            .select("id, genel_toplam, raw_ai_response")
+            .select("id, genel_toplam")
             .eq("user_id", co.user_id);
 
           const invoiceCount = invs?.length ?? 0;
           const totalVolume  = invs?.reduce((s: number, i: any) => s + (i.genel_toplam ?? 0), 0) ?? 0;
-          const pendingEditRequestCount = invs?.reduce((s: number, i: any) => {
-            const r = i?.raw_ai_response?.edit_request;
-            return s + (r && r.requested === true ? 1 : 0);
-          }, 0) ?? 0;
+
+          // Bekleyen talep sayısı: yeni invoice_edit_requests tablosundan
+          const { count: pendingEditRequestCount } = await supabase
+            .from("invoice_edit_requests")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", co.user_id)
+            .is("resolved_at", null);
 
           // Kullanıcı e-posta: profiles tablosu veya auth.users — profiles'dan dene
           let userEmail = "";
@@ -165,7 +177,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
             .maybeSingle();
           userEmail = prof?.email || co.email || co.user_id.substring(0, 8) + "…";
 
-          return { ...co, invoiceCount, totalVolume, userEmail, pendingEditRequestCount };
+          return { ...co, invoiceCount, totalVolume, userEmail, pendingEditRequestCount: pendingEditRequestCount || 0 };
         })
       );
 
@@ -184,6 +196,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
     setLoadingInv(true);
     setInvoices([]);
     setInvoiceItems([]);
+    setEditRequests([]);
     setSelectedInvoice(null);
     try {
       const { data: invs, error } = await supabase
@@ -194,6 +207,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
 
       if (error) throw error;
       setInvoices((invs || []) as Invoice[]);
+
+      // Edit requests (yeni tablo)
+      const { data: ers } = await supabase
+        .from("invoice_edit_requests")
+        .select("*")
+        .eq("user_id", userId)
+        .order("requested_at", { ascending: false });
+      setEditRequests((ers || []) as EditRequestRow[]);
 
       if (invs && invs.length > 0) {
         const ids = invs.map((i: any) => i.id);
@@ -303,33 +324,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
     }
   };
 
-  // ── Admin: talebi çözüldü işaretle (JSONB raw_ai_response.edit_request güncellenir)
-  const resolveEditRequest = async (invoice: Invoice) => {
-    if (!window.confirm(tr(
-      "Bu düzenleme talebini çözüldü olarak işaretle?",
-      "Diese Bearbeitungsanfrage als erledigt markieren?"
-    ))) return;
+  // ── Admin: talebi resolution ile çözüldü işaretle
+  const markRequestResolved = async (invoiceId: string, resolution: "manual" | "reanalyzed", silent = false) => {
     try {
-      const raw: any = (invoice as any).raw_ai_response || {};
-      const newRaw = {
-        ...raw,
-        edit_request: {
-          ...(raw.edit_request || {}),
-          requested: false,
-          resolved_at: new Date().toISOString(),
-        },
-      };
+      const open = editRequests.find(r => r.invoice_id === invoiceId && r.resolved_at == null);
+      if (!open) return;
+      const resolvedAt = new Date().toISOString();
       const { error } = await supabase
-        .from("invoices")
-        .update({ raw_ai_response: newRaw })
-        .eq("id", invoice.id);
+        .from("invoice_edit_requests")
+        .update({ resolved_at: resolvedAt, resolution })
+        .eq("id", open.id);
       if (error) throw error;
 
-      // Local state güncelle
-      setInvoices(prev => prev.map(i =>
-        i.id === invoice.id ? ({ ...i, raw_ai_response: newRaw } as any) : i
+      // Local state
+      setEditRequests(prev => prev.map(r =>
+        r.id === open.id ? { ...r, resolved_at: resolvedAt, resolution } : r
       ));
-      // Sol listedeki rozet sayısını azalt
+      // Sol rozet sayısını azalt
       if (selectedCompany) {
         setCompanies(prev => prev.map(c =>
           c.user_id === selectedCompany.user_id
@@ -337,23 +348,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
             : c
         ));
       }
-      flash(tr("✓ Talep çözüldü olarak işaretlendi", "✓ Anfrage als erledigt markiert"));
+      // Kullanıcı tarafı view'i için JSONB'yi de güncelle (best-effort)
+      const inv = invoices.find(i => i.id === invoiceId);
+      if (inv) {
+        const raw: any = (inv as any).raw_ai_response || {};
+        const newRaw = {
+          ...raw,
+          edit_request: {
+            ...(raw.edit_request || {}),
+            requested: false,
+            resolved_at: resolvedAt,
+            resolved_by: resolution === "reanalyzed" ? "reanalyze" : "admin",
+          },
+        };
+        try {
+          await supabase.from("invoices").update({ raw_ai_response: newRaw }).eq("id", invoiceId);
+          setInvoices(prev => prev.map(i =>
+            i.id === invoiceId ? ({ ...i, raw_ai_response: newRaw } as any) : i
+          ));
+        } catch {}
+      }
+      if (!silent) flash(tr("✓ Talep çözüldü olarak işaretlendi", "✓ Anfrage als erledigt markiert"));
     } catch (e: any) {
       flash(tr("Hata: ", "Fehler: ") + e.message, false);
     }
   };
 
-  // ── Requests tabı için hesaplanan listeler
+  const resolveEditRequest = async (invoice: Invoice) => {
+    if (!window.confirm(tr(
+      "Bu düzenleme talebini çözüldü olarak işaretle?",
+      "Diese Bearbeitungsanfrage als erledigt markieren?"
+    ))) return;
+    await markRequestResolved(invoice.id, "manual");
+  };
+
+  // ── Requests tabı için hesaplanan listeler — yeni tabloya göre
   const editRequestInvoices = useMemo(() => {
-    const all = invoices.filter(hasAnyRequest);
-    if (requestFilter === "pending")  return all.filter(isPendingRequest);
-    if (requestFilter === "resolved") return all.filter(i => !isPendingRequest(i));
-    return all;
-  }, [invoices, requestFilter]);
+    const byInvId = new Map<string, Invoice>(invoices.map(i => [i.id, i] as [string, Invoice]));
+    // Tabloda olan invoice_id'leri al; her biri için invoice'a join et
+    const seen = new Set<string>();
+    const list: Invoice[] = [];
+    for (const r of editRequests) {
+      if (seen.has(r.invoice_id)) continue;
+      const inv = byInvId.get(r.invoice_id);
+      if (!inv) continue;
+      const pending = r.resolved_at == null;
+      if (requestFilter === "pending"  && !pending) continue;
+      if (requestFilter === "resolved" &&  pending) continue;
+      seen.add(r.invoice_id);
+      list.push(inv);
+    }
+    return list;
+  }, [invoices, editRequests, requestFilter]);
 
   const pendingRequestsForSelected = useMemo(
-    () => invoices.filter(isPendingRequest).length,
-    [invoices]
+    () => editRequests.filter(r => r.resolved_at == null).length,
+    [editRequests]
   );
 
   // ─────────────────────────────────────────
@@ -709,8 +759,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                     ) : (
                       <div className="space-y-3">
                         {editRequestInvoices.map(inv => {
-                          const req = getEditRequest(inv)!;
-                          const pending = isPendingRequest(inv);
+                          const req = getReqFor(inv.id)!;
+                          const pending = isPendingFor(inv.id);
+                          const reqAt       = req?.requested_at;
+                          const reqNote     = req?.note || "";
+                          const reqResolved = req?.resolved_at;
+                          const reqResolution = req?.resolution;
                           return (
                             <div key={inv.id}
                               className="rounded-lg p-4"
@@ -751,18 +805,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                                   {tr("KULLANICI NOTU", "NUTZERNOTIZ")}
                                 </div>
                                 <div className="text-xs text-slate-200 whitespace-pre-wrap break-words">
-                                  {req.note?.trim() || tr("(not yok)", "(keine Notiz)")}
+                                  {reqNote.trim() || tr("(not yok)", "(keine Notiz)")}
                                 </div>
                               </div>
 
                               {/* Tarih bilgileri */}
                               <div className="flex items-center gap-4 text-[10px] font-mono mb-3" style={{ color:"#3a3f4a" }}>
-                                {req.at && (
-                                  <span>📨 {tr("Talep", "Anfrage")}: {new Date(req.at).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}</span>
+                                {reqAt && (
+                                  <span>📨 {tr("Talep", "Anfrage")}: {new Date(reqAt).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}</span>
                                 )}
-                                {req.resolved_at && (
+                                {reqResolved && (
                                   <span style={{ color:"#10b981" }}>
-                                    ✓ {tr("Çözüldü", "Erledigt")}: {new Date(req.resolved_at).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}
+                                    ✓ {tr("Çözüldü", "Erledigt")}: {new Date(reqResolved).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}
+                                    {reqResolution === "reanalyzed" && " · 🤖 AI"}
                                   </span>
                                 )}
                               </div>
@@ -790,6 +845,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                                       setReanalyzing(true);
                                       try {
                                         await onReanalyze(inv);
+                                        // Açık talebi 'reanalyzed' olarak çöz
+                                        if (isPendingFor(inv.id)) {
+                                          await markRequestResolved(inv.id, "reanalyzed", true);
+                                        }
                                         if (selectedCompany) await loadInvoices(selectedCompany.user_id);
                                       } catch (err: any) {
                                         alert(tr("Hata: ","Fehler: ") + (err?.message || err));

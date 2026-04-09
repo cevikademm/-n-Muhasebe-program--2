@@ -6,7 +6,15 @@ import { ACCOUNT_METADATA } from "../data/skr03Metadata";
 
 interface FormsPanelProps {
   accountPlans: AccountRow[];
+  invoices?: Invoice[];
+  fetchInvoiceItems?: (invoiceId: string) => Promise<InvoiceItem[]>;
 }
+
+// period_start öncelikli, sonra invoice_date/tarih/created_at fallback
+const getInvDate = (inv: any): string | null => {
+  const fb = inv?.raw_ai_response?.fatura_bilgileri || inv?.raw_ai_response?.header || {};
+  return fb.period_start || inv?.invoice_date || inv?.tarih || inv?.created_at || null;
+};
 
 const MONTHS_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 const MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
@@ -441,9 +449,9 @@ const DocAccountDetails: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────────
 // Main panel
 // ─────────────────────────────────────────────────────────────────────────────
-export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans }) => {
-  const invoices: any[] = [];
-  const invoiceItems: any[] = [];
+export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: invoicesProp, fetchInvoiceItems }) => {
+  const invoices: any[] = invoicesProp || [];
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const MONTHS = lang === "tr" ? MONTHS_TR : MONTHS_DE;

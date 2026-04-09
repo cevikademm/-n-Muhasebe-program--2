@@ -260,6 +260,8 @@ export default function App() {
       return (
         <FormsPanel
           accountPlans={data}
+          invoices={invoices}
+          fetchInvoiceItems={fetchInvoiceItems}
         />
       );
     }
