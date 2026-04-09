@@ -245,20 +245,23 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [manualMatchTxId, setManualMatchTxId] = useState<string | null>(null);
   const [txKindOverrides, setTxKindOverrides] = useState<Record<string, "income" | "expense" | "refund">>({});
+  // Override haritaları artık Supabase'de (bank_tx_overrides) tutulur, böylece
+  // web ve mobil arasında senkron çalışır. localStorage sadece offline fallback.
   const [matchStatusOverrides, setMatchStatusOverrides] = useState<Record<string, "matched" | "none" | "no_invoice">>(() => {
     try { return JSON.parse(localStorage.getItem("bank_match_overrides") || "{}"); } catch { return {}; }
   });
-  useEffect(() => {
-    try { localStorage.setItem("bank_match_overrides", JSON.stringify(matchStatusOverrides)); } catch {}
-  }, [matchStatusOverrides]);
-
-  // ── Hesap kodu (Konto) override haritası — her tx için manuel atama
   const [accountCodeOverrides, setAccountCodeOverrides] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem("bank_account_code_overrides") || "{}"); } catch { return {}; }
   });
+
+  // localStorage cache (offline ilk açılış için)
+  useEffect(() => {
+    try { localStorage.setItem("bank_match_overrides", JSON.stringify(matchStatusOverrides)); } catch {}
+  }, [matchStatusOverrides]);
   useEffect(() => {
     try { localStorage.setItem("bank_account_code_overrides", JSON.stringify(accountCodeOverrides)); } catch {}
   }, [accountCodeOverrides]);
+
   const setAccountCodeFor = useCallback((txId: string, code: string | null) => {
     setAccountCodeOverrides(p => {
       const next = { ...p };
@@ -266,6 +269,122 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
       return next;
     });
   }, []);
+
+  // ── Override haritalarının Supabase ile senkronizasyonu ──
+  // Initial load + realtime + her değişiklikte delta upsert/delete.
+  const overridesLoadedRef = useRef(false);
+  const lastSyncedRef = useRef<{ acc: Record<string, string>; match: Record<string, string> }>({ acc: {}, match: {} });
+  const suppressSyncRef = useRef(false);
+
+  // Initial load (userId ilk gelince)
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("bank_tx_overrides")
+          .select("tx_id, account_code, match_status")
+          .eq("user_id", userId);
+        if (error) { console.warn("[bank_tx_overrides] load", error); return; }
+        if (cancelled) return;
+        const acc: Record<string, string> = {};
+        const match: Record<string, string> = {};
+        for (const row of data || []) {
+          if (row.account_code) acc[row.tx_id] = row.account_code;
+          if (row.match_status) match[row.tx_id] = row.match_status;
+        }
+        suppressSyncRef.current = true;
+        setAccountCodeOverrides(prev => ({ ...prev, ...acc }));
+        setMatchStatusOverrides(prev => ({ ...prev, ...(match as any) }));
+        // Bir sonraki tick'te sync açılır; lastSynced snapshot olarak yazılır
+        setTimeout(() => {
+          lastSyncedRef.current = { acc: { ...acc }, match: { ...match } };
+          suppressSyncRef.current = false;
+          overridesLoadedRef.current = true;
+        }, 0);
+      } catch (e) { console.warn("[bank_tx_overrides] load exception", e); }
+    })();
+
+    // Realtime: başka cihazdan değişiklik olursa state'i güncelle
+    const channel = supabase
+      .channel(`bto-${userId}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "bank_tx_overrides", filter: `user_id=eq.${userId}` },
+        (payload: any) => {
+          suppressSyncRef.current = true;
+          const row = payload.new || payload.old;
+          if (!row?.tx_id) { suppressSyncRef.current = false; return; }
+          if (payload.eventType === "DELETE") {
+            setAccountCodeOverrides(p => { const n = { ...p }; delete n[row.tx_id]; return n; });
+            setMatchStatusOverrides(p => { const n = { ...p }; delete n[row.tx_id]; return n; });
+            delete lastSyncedRef.current.acc[row.tx_id];
+            delete lastSyncedRef.current.match[row.tx_id];
+          } else {
+            const r = payload.new;
+            setAccountCodeOverrides(p => {
+              const n = { ...p };
+              if (r.account_code) n[r.tx_id] = r.account_code; else delete n[r.tx_id];
+              return n;
+            });
+            setMatchStatusOverrides(p => {
+              const n = { ...p };
+              if (r.match_status) n[r.tx_id] = r.match_status; else delete n[r.tx_id];
+              return n;
+            });
+            if (r.account_code) lastSyncedRef.current.acc[r.tx_id] = r.account_code;
+            else delete lastSyncedRef.current.acc[r.tx_id];
+            if (r.match_status) lastSyncedRef.current.match[r.tx_id] = r.match_status;
+            else delete lastSyncedRef.current.match[r.tx_id];
+          }
+          setTimeout(() => { suppressSyncRef.current = false; }, 0);
+        }
+      )
+      .subscribe();
+
+    return () => { cancelled = true; try { supabase.removeChannel(channel); } catch {} };
+  }, [userId]);
+
+  // Delta sync: state değiştiğinde değişen anahtarları Supabase'e yaz
+  useEffect(() => {
+    if (!userId || !overridesLoadedRef.current || suppressSyncRef.current) return;
+    const prevAcc = lastSyncedRef.current.acc;
+    const prevMatch = lastSyncedRef.current.match;
+    const allKeys = new Set<string>([
+      ...Object.keys(prevAcc), ...Object.keys(prevMatch),
+      ...Object.keys(accountCodeOverrides), ...Object.keys(matchStatusOverrides),
+    ]);
+    const upserts: any[] = [];
+    const deletes: string[] = [];
+    for (const k of allKeys) {
+      const a = accountCodeOverrides[k] || null;
+      const m = matchStatusOverrides[k] || null;
+      const pa = prevAcc[k] || null;
+      const pm = prevMatch[k] || null;
+      if (a === pa && m === pm) continue;
+      if (!a && !m) deletes.push(k);
+      else upserts.push({ user_id: userId, tx_id: k, account_code: a, match_status: m, updated_at: new Date().toISOString() });
+    }
+    if (!upserts.length && !deletes.length) return;
+    (async () => {
+      try {
+        if (upserts.length) {
+          const { error } = await supabase.from("bank_tx_overrides")
+            .upsert(upserts, { onConflict: "user_id,tx_id" });
+          if (error) console.warn("[bank_tx_overrides] upsert", error);
+        }
+        if (deletes.length) {
+          const { error } = await supabase.from("bank_tx_overrides")
+            .delete().eq("user_id", userId).in("tx_id", deletes);
+          if (error) console.warn("[bank_tx_overrides] delete", error);
+        }
+        lastSyncedRef.current = {
+          acc: { ...accountCodeOverrides },
+          match: { ...(matchStatusOverrides as any) },
+        };
+      } catch (e) { console.warn("[bank_tx_overrides] sync exception", e); }
+    })();
+  }, [accountCodeOverrides, matchStatusOverrides, userId]);
 
   // ── Arşiv state
   const [savedStatements, setSavedStatements] = useState<SavedBankStatement[]>([]);
