@@ -1026,20 +1026,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                         )}
                       </div>
 
-                      {/* AI Analiz Sonucu (raw_ai_response) */}
-                      {(selectedInvoice as any).raw_ai_response && (
-                        <details className="shrink-0" style={{ background:"#0a0c11", borderBottom:"1px solid #1c1f27" }}>
-                          <summary className="px-5 py-2 text-[10px] font-syne font-semibold cursor-pointer" style={{ color:"#64748b" }}>
-                            🧠 {tr("AI Analiz Sonucu (JSON)","KI-Analyseergebnis (JSON)")}
-                          </summary>
-                          <pre className="px-5 py-3 text-[9px] font-mono overflow-auto max-h-[260px]" style={{ color:"#94a3b8", background:"#0d0f15" }}>
-{JSON.stringify((selectedInvoice as any).raw_ai_response, null, 2)}
-                          </pre>
-                        </details>
-                      )}
+                      {/* ═════ İçerik: SOL (analiz) | SAĞ (PDF görsel) ═════ */}
+                      <div className="flex-1 flex overflow-hidden min-h-0">
+
+                      {/* SOL — analiz sonuçları + kalemler */}
+                      <div className="flex-1 overflow-auto min-w-0">
+                        {(() => {
+                          const raw: any = (selectedInvoice as any).raw_ai_response || {};
+                          const fb = raw.fatura_bilgileri || raw.header || {};
+                          const saticiAdi = fb.satici_adi || raw.header?.supplier_name || "—";
+                          const saticiVkn = (selectedInvoice as any).satici_vkn || fb.satici_vkn || "—";
+                          const aliciAdi  = fb.alici_adi  || raw.header?.buyer_name    || "—";
+                          const aliciVkn  = (selectedInvoice as any).alici_vkn || fb.alici_vkn || "—";
+                          return (
+                            <div className="px-5 py-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="rounded-lg p-3" style={{ background:"#0d0f15", border:"1px solid #1c1f27" }}>
+                                <div className="text-[9px] font-syne font-bold uppercase tracking-wider mb-1" style={{ color:"#06b6d4" }}>
+                                  ⬆ {tr("Satıcı","Verkäufer")}
+                                </div>
+                                <div className="text-xs font-semibold text-slate-200 truncate">{saticiAdi}</div>
+                                <div className="text-[10px] font-mono mt-0.5" style={{ color:"#64748b" }}>{saticiVkn}</div>
+                              </div>
+                              <div className="rounded-lg p-3" style={{ background:"#0d0f15", border:"1px solid #1c1f27" }}>
+                                <div className="text-[9px] font-syne font-bold uppercase tracking-wider mb-1" style={{ color:"#a855f7" }}>
+                                  ⬇ {tr("Alıcı","Käufer")}
+                                </div>
+                                <div className="text-xs font-semibold text-slate-200 truncate">{aliciAdi}</div>
+                                <div className="text-[10px] font-mono mt-0.5" style={{ color:"#64748b" }}>{aliciVkn}</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Finansal özet kartı */}
+                        <div className="px-5 pb-3">
+                          <div className="rounded-lg p-3 flex items-center gap-5 flex-wrap"
+                            style={{ background:"rgba(6,182,212,.04)", border:"1px solid rgba(6,182,212,.15)" }}>
+                            <div>
+                              <div className="text-[9px] font-syne font-bold uppercase tracking-wider" style={{ color:"#64748b" }}>
+                                {tr("Ara Toplam","Zwischensumme")}
+                              </div>
+                              <div className="text-sm font-syne font-bold text-slate-200">{fmt(selectedInvoice.ara_toplam)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] font-syne font-bold uppercase tracking-wider" style={{ color:"#64748b" }}>
+                                KDV
+                              </div>
+                              <div className="text-sm font-syne font-bold" style={{ color:"#f59e0b" }}>{fmt(selectedInvoice.toplam_kdv)}</div>
+                            </div>
+                            <div className="ml-auto">
+                              <div className="text-[9px] font-syne font-bold uppercase tracking-wider text-right" style={{ color:"#64748b" }}>
+                                {tr("Genel Toplam","Gesamt")}
+                              </div>
+                              <div className="text-lg font-syne font-bold text-right" style={{ color:"#06b6d4" }}>{fmt(selectedInvoice.genel_toplam)}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Kalemler başlığı */}
+                        <div className="px-5 pb-2 flex items-center gap-2">
+                          <span className="text-[10px] font-syne font-bold uppercase tracking-wider" style={{ color:"#06b6d4" }}>
+                            📦 {tr("Kalemler","Positionen")}
+                          </span>
+                          <span className="text-[10px]" style={{ color:"#3a3f4a" }}>({selectedItems.length})</span>
+                        </div>
 
                       {/* Items table */}
-                      <div className="flex-1 overflow-auto">
+                      <div className="px-5 pb-5">
                         {selectedItems.length === 0 ? (
                           <div className="flex items-center justify-center py-16 text-xs" style={{ color:"#3a3f4a" }}>
                             {tr("Bu faturada kalem bulunamadı","Keine Positionen für diese Rechnung")}
@@ -1268,6 +1321,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                           </table>
                         )}
                       </div>
+                      </div>{/* /SOL */}
+
+                      {/* SAĞ — PDF görseli */}
+                      <div className="hidden lg:flex flex-col shrink-0"
+                        style={{ width:"480px", borderLeft:"1px solid #1c1f27", background:"#0a0c11" }}>
+                        <div className="px-4 py-2 text-[10px] font-syne font-bold uppercase tracking-wider flex items-center justify-between"
+                          style={{ color:"#64748b", borderBottom:"1px solid #1c1f27" }}>
+                          <span>📄 {tr("Fatura Görseli","Rechnungsbild")}</span>
+                          {(selectedInvoice as any).file_url && (
+                            <a href={(selectedInvoice as any).file_url} target="_blank" rel="noreferrer"
+                              className="text-[9px] px-2 py-0.5 rounded"
+                              style={{ background:"rgba(6,182,212,.1)", color:"#06b6d4", border:"1px solid rgba(6,182,212,.25)", textDecoration:"none" }}>
+                              {tr("Yeni sekmede aç","Öffnen")}
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex-1 overflow-hidden" style={{ background:"#0d0f15" }}>
+                          {(selectedInvoice as any).file_url ? (
+                            <iframe
+                              key={selectedInvoice.id}
+                              src={(selectedInvoice as any).file_url}
+                              title="invoice-pdf"
+                              className="w-full h-full"
+                              style={{ border:"none", background:"#fff" }}
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-[11px] px-6 text-center" style={{ color:"#3a3f4a" }}>
+                              {tr("Bu fatura için saklı PDF yok (manuel girilmiş olabilir).","Keine PDF-Datei gespeichert.")}
+                            </div>
+                          )}
+                        </div>
+                      </div>{/* /SAĞ */}
+
+                      </div>{/* /İçerik flex */}
 
                       {/* Footer: özet */}
                       <div className="shrink-0 px-5 py-3 flex items-center justify-between"
