@@ -295,8 +295,11 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
           if (row.match_status) match[row.tx_id] = row.match_status;
         }
         suppressSyncRef.current = true;
-        setAccountCodeOverrides(prev => ({ ...prev, ...acc }));
-        setMatchStatusOverrides(prev => ({ ...prev, ...(match as any) }));
+        // Sunucu authoritative: localStorage'daki olası eski/silinmiş kalıntılar
+        // tekrar Supabase'e yazılıp diğer cihazların verisini ezmesin diye
+        // prev ile merge ETMİYORUZ — server snapshot'unu olduğu gibi alıyoruz.
+        setAccountCodeOverrides(acc);
+        setMatchStatusOverrides(match as any);
         // Bir sonraki tick'te sync açılır; lastSynced snapshot olarak yazılır
         setTimeout(() => {
           lastSyncedRef.current = { acc: { ...acc }, match: { ...match } };
@@ -316,8 +319,10 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
             for (const k of keys) {
               const a = lsAcc[k] || null;
               const m = lsMatch[k] || null;
-              // Sunucuda zaten varsa ve aynı değerse atla
-              if ((a || null) === (acc[k] || null) && (m || null) === ((match as any)[k] || null)) continue;
+              // Sadece sunucuda HİÇ olmayan kayıtları taşı.
+              // Sunucu authoritative — localStorage'daki eski değer
+              // sunucudaki güncel değeri ASLA ezmemeli.
+              if (acc[k] != null || (match as any)[k] != null) continue;
               if (!a && !m) continue;
               upserts.push({
                 user_id: userId,
@@ -497,6 +502,25 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
       }
     });
   }, []);
+
+  // Realtime: bank_statements & bank_transactions değişimlerinde refetch
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`bank-rt-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bank_statements", filter: `user_id=eq.${userId}` },
+        () => { loadSaved(userId); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bank_transactions", filter: `user_id=eq.${userId}` },
+        () => { loadSaved(userId); }
+      )
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [userId]);
 
   const loadSaved = async (uid: string) => {
     setLoadingSaved(true);
