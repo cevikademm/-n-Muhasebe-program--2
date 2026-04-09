@@ -252,6 +252,21 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
     try { localStorage.setItem("bank_match_overrides", JSON.stringify(matchStatusOverrides)); } catch {}
   }, [matchStatusOverrides]);
 
+  // ── Hesap kodu (Konto) override haritası — her tx için manuel atama
+  const [accountCodeOverrides, setAccountCodeOverrides] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("bank_account_code_overrides") || "{}"); } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("bank_account_code_overrides", JSON.stringify(accountCodeOverrides)); } catch {}
+  }, [accountCodeOverrides]);
+  const setAccountCodeFor = useCallback((txId: string, code: string | null) => {
+    setAccountCodeOverrides(p => {
+      const next = { ...p };
+      if (!code) delete next[txId]; else next[txId] = code;
+      return next;
+    });
+  }, []);
+
   // ── Arşiv state
   const [savedStatements, setSavedStatements] = useState<SavedBankStatement[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
@@ -871,6 +886,8 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                   if (s === null) delete next[id]; else next[id] = s;
                   return next;
                 })}
+                accountCodeOverrides={accountCodeOverrides}
+                onChangeAccountCode={setAccountCodeFor}
               />
             </div>
           )}
@@ -958,6 +975,8 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                         stmt={s}
                         tr={tr}
                         invoices={invoices}
+                        accountCodeOverrides={accountCodeOverrides}
+                        onChangeAccountCode={setAccountCodeFor}
                         matchStatusOverrides={matchStatusOverrides}
                         onChangeMatchStatus={(id, st) => setMatchStatusOverrides(p => {
                           const next = { ...p };
@@ -1015,7 +1034,9 @@ const TxTable: React.FC<{
   onChangeKind?: (id: string, kind: "income" | "expense" | "refund") => void;
   matchStatusOverrides?: Record<string, "matched" | "none" | "no_invoice">;
   onChangeMatchStatus?: (id: string, status: "matched" | "none" | "no_invoice" | null) => void;
-}> = ({ rows, tr, expandedId, onToggle, invoices, manualMatchTxId, onToggleManualMatch, onUpdateMatch, bankRules = [], onSaveRule, kindOverrides = {}, onChangeKind, matchStatusOverrides = {}, onChangeMatchStatus }) => {
+  accountCodeOverrides?: Record<string, string>;
+  onChangeAccountCode?: (id: string, code: string | null) => void;
+}> = ({ rows, tr, expandedId, onToggle, invoices, manualMatchTxId, onToggleManualMatch, onUpdateMatch, bankRules = [], onSaveRule, kindOverrides = {}, onChangeKind, matchStatusOverrides = {}, onChangeMatchStatus, accountCodeOverrides = {}, onChangeAccountCode }) => {
   const checkedSet = useCheckedSet();
   const usedInvoiceIds = useMemo(() => {
     const s = new Set<string>();
@@ -1025,9 +1046,10 @@ const TxTable: React.FC<{
   return (
   <div style={{ border: "1px solid #1c1f27", borderRadius: "9px", overflow: "hidden" }}>
    <div style={{ overflowX: "auto" }}>
-    <div style={{ minWidth: "720px" }}>
+    <div style={{ minWidth: "800px" }}>
     {/* Başlıklar */}
     <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "#0d0f15", borderBottom: "1px solid #1c1f27" }}>
+      <ColHead w="78px">{tr("Hesap", "Konto")}</ColHead>
       <ColHead w="84px">{tr("Tarih", "Datum")}</ColHead>
       <ColHead style={{ flex: 1 }}>{tr("Açıklama / Karşı Taraf", "Beschreibung / Gegenpartei")}</ColHead>
       <ColHead w="110px">{tr("Referans", "Referenz")}</ColHead>
@@ -1069,6 +1091,13 @@ const TxTable: React.FC<{
               cursor: "pointer",
             }}
           >
+            <AccountCodeCell
+              txId={tx.id}
+              matchedInvoice={matchedInvoice}
+              override={accountCodeOverrides[tx.id]}
+              onChange={onChangeAccountCode}
+              tr={tr}
+            />
             <div style={{ width: "84px", fontSize: "10px", color: "#6b7280", fontFamily: "'DM Sans',sans-serif", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
               {fmtDate(tx.date)}
             </div>
@@ -1194,7 +1223,9 @@ const SavedStmtView: React.FC<{
   matchStatusOverrides?: Record<string, "matched" | "none" | "no_invoice">;
   onChangeMatchStatus?: (id: string, status: "matched" | "none" | "no_invoice" | null) => void;
   onMarkAllUnmatchedAsNoInvoice?: () => void;
-}> = ({ rows, stmt, tr, invoices = [], matchStatusOverrides = {}, onChangeMatchStatus, onMarkAllUnmatchedAsNoInvoice }) => {
+  accountCodeOverrides?: Record<string, string>;
+  onChangeAccountCode?: (id: string, code: string | null) => void;
+}> = ({ rows, stmt, tr, invoices = [], matchStatusOverrides = {}, onChangeMatchStatus, onMarkAllUnmatchedAsNoInvoice, accountCodeOverrides = {}, onChangeAccountCode }) => {
   const [filter, setFilter] = useState<"all" | "income" | "expense" | "matched" | "unmatched" | "no_invoice">("all");
 
   // RESERV / Vormerkung girişlerini arşiv görünümünden de gizle
@@ -1306,7 +1337,7 @@ const SavedStmtView: React.FC<{
       </div>
 
       {/* ── İşlem tablosu ── */}
-      <SavedTxTable rows={filtered} tr={tr} invoices={invoices} matchStatusOverrides={matchStatusOverrides} onChangeMatchStatus={onChangeMatchStatus} />
+      <SavedTxTable rows={filtered} tr={tr} invoices={invoices} matchStatusOverrides={matchStatusOverrides} onChangeMatchStatus={onChangeMatchStatus} accountCodeOverrides={accountCodeOverrides} onChangeAccountCode={onChangeAccountCode} />
     </div>
   );
 };
@@ -1320,7 +1351,9 @@ const SavedTxTable: React.FC<{
   invoices?: Invoice[];
   matchStatusOverrides?: Record<string, "matched" | "none" | "no_invoice">;
   onChangeMatchStatus?: (id: string, status: "matched" | "none" | "no_invoice" | null) => void;
-}> = ({ rows, tr, invoices = [], matchStatusOverrides = {}, onChangeMatchStatus }) => {
+  accountCodeOverrides?: Record<string, string>;
+  onChangeAccountCode?: (id: string, code: string | null) => void;
+}> = ({ rows, tr, invoices = [], matchStatusOverrides = {}, onChangeMatchStatus, accountCodeOverrides = {}, onChangeAccountCode }) => {
   const checkedSet = useCheckedSet();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [manualMatchId, setManualMatchId] = useState<string | null>(null);
@@ -1358,6 +1391,7 @@ const SavedTxTable: React.FC<{
     <div>
       {/* Başlıklar */}
       <div style={{ display: "flex", alignItems: "center", padding: "7px 16px", borderBottom: "1px solid #141720" }}>
+        <ColHead w="78px">{tr("Hesap", "Konto")}</ColHead>
         <ColHead w="84px">{tr("Tarih", "Datum")}</ColHead>
         <ColHead style={{ flex: 1 }}>{tr("Açıklama", "Beschreibung")}</ColHead>
         <ColHead w="105px" align="right" color="#ef4444">{tr("Gider", "Ausgabe")}</ColHead>
@@ -1391,6 +1425,13 @@ const SavedTxTable: React.FC<{
                 borderLeft: checkedSet.has(tx.id) ? "3px solid #10b981" : "3px solid transparent",
                 cursor: "pointer",
               }}>
+              <AccountCodeCell
+                txId={tx.id}
+                matchedInvoice={matchedInvoice}
+                override={accountCodeOverrides[tx.id]}
+                onChange={onChangeAccountCode}
+                tr={tr}
+              />
               <div style={{ width: "84px", fontSize: "10px", color: "#6b7280", fontFamily: "'DM Sans',sans-serif", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                 {fmtDate(tx.transaction_date)}
               </div>
@@ -1530,6 +1571,67 @@ const ColHead: React.FC<{ children?: React.ReactNode; w?: string; align?: "left"
     {children}
   </div>
 );
+
+// ─────────────────────────────────────────────
+//  HESAP KODU HÜCRESİ (Banka satırları için)
+// ─────────────────────────────────────────────
+const getInvoiceSuggestedAccountCode = (inv: Invoice | null): string => {
+  if (!inv) return "";
+  const items: any[] =
+    (inv as any).raw_ai_response?.kalemler ||
+    (inv as any).raw_ai_response?.items ||
+    [];
+  for (const it of items) {
+    const code = it?.account_code || it?.hesap_kodu;
+    if (code) return String(code);
+  }
+  return "";
+};
+
+const AccountCodeCell: React.FC<{
+  txId: string;
+  matchedInvoice: Invoice | null;
+  override?: string;
+  onChange?: (id: string, code: string | null) => void;
+  tr: (a: string, b: string) => string;
+}> = ({ txId, matchedInvoice, override, onChange, tr }) => {
+  const suggested = getInvoiceSuggestedAccountCode(matchedInvoice);
+  const effective = override ?? suggested;
+  const isAuto = !override && !!suggested;
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onChange) return;
+    const next = window.prompt(
+      tr("Hesap kodu (boş bırakırsanız otomatik):", "Konto-Code (leer = automatisch):"),
+      effective || ""
+    );
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) onChange(txId, null);
+    else onChange(txId, trimmed);
+  };
+  return (
+    <div
+      onClick={handleClick}
+      title={tr("Tıkla: hesap kodunu değiştir", "Klicken: Konto-Code ändern")}
+      style={{
+        width: "78px", flexShrink: 0, paddingRight: "8px",
+        cursor: onChange ? "pointer" : "default",
+      }}
+    >
+      <div style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        minWidth: "52px", padding: "3px 7px", borderRadius: "5px",
+        fontSize: "10px", fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
+        border: `1px solid ${effective ? (isAuto ? "rgba(99,102,241,.35)" : "rgba(16,185,129,.45)") : "#1c1f27"}`,
+        background: effective ? (isAuto ? "rgba(99,102,241,.10)" : "rgba(16,185,129,.10)") : "transparent",
+        color: effective ? (isAuto ? "#818cf8" : "#10b981") : "#4b5563",
+      }}>
+        {effective || "—"}
+      </div>
+    </div>
+  );
+};
 
 // ─────────────────────────────────────────────
 //  MANUEL EŞLEŞTİRME SEÇİCİ
