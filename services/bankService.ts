@@ -470,6 +470,18 @@ export const fetchUserIncomeTransactions = async (
   return (data || []) as SavedTransaction[];
 };
 
+export const fetchAllUserBankTransactions = async (
+  userId: string
+): Promise<SavedTransaction[]> => {
+  const { data, error } = await supabase
+    .from("bank_transactions")
+    .select("*")
+    .eq("user_id", userId)
+    .order("transaction_date", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []) as SavedTransaction[];
+};
+
 // ─────────────────────────────────────────────
 //  KAYITLI EKSTREDEKİ İŞLEMLER
 // ─────────────────────────────────────────────
