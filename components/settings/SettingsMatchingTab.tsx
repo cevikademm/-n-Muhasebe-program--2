@@ -586,6 +586,20 @@ export const SettingsMatchingTab: React.FC<Props> = ({ userId, userRole, flash }
 
   useEffect(() => { loadRules(); }, [loadRules]);
 
+  // Realtime: user_settings.rules başka cihazdan güncellenirse yansıt
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`user-settings-rules-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_settings", filter: `user_id=eq.${userId}` },
+        () => { loadRules(); }
+      )
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [userId, loadRules]);
+
   const saveRules = async (updated: EnhancedRule[]) => {
     if (!userId) throw new Error("Oturum yok");
     setRules(updated);

@@ -74,6 +74,20 @@ export const SettingsCompanyTab: React.FC<Props> = ({ userId, flash, activeTab }
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
+  // Realtime: user_settings değişimlerinde (başka cihaz vs.) anında yansıt
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`user-settings-co-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_settings", filter: `user_id=eq.${userId}` },
+        () => { loadSettings(); }
+      )
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [userId, loadSettings]);
+
   const upsertSettings = async () => {
     if (!userId) throw new Error("Oturum bulunamadı");
     const { error } = await supabase.from("user_settings")

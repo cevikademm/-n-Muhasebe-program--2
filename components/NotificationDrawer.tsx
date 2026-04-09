@@ -11,6 +11,7 @@ import {
     markAllAsRead,
     dismissNotification,
 } from "../services/notificationService";
+import { supabase } from "../services/supabaseService";
 import { useLang } from "../LanguageContext";
 
 // ─────────────────────────────────────────────
@@ -47,8 +48,16 @@ export const NotificationBell: React.FC<{
         if (!userId) return;
         const load = () => fetchUnreadCount(userId).then(setUnreadCount);
         load();
-        const interval = setInterval(load, 30000); // 30s polling
-        return () => clearInterval(interval);
+        // Realtime: notifications tablosundaki bu kullanıcıya ait değişiklikler
+        const channel = supabase
+            .channel(`notif-count-${userId}`)
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+                () => { load(); }
+            )
+            .subscribe();
+        return () => { try { supabase.removeChannel(channel); } catch {} };
     }, [userId]);
 
     // Dışarıdan refresh tetiklenebilsin
@@ -149,6 +158,20 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
     useEffect(() => {
         load();
     }, [load]);
+
+    // Realtime: drawer açıkken liste de canlı güncellensin
+    useEffect(() => {
+        if (!userId) return;
+        const channel = supabase
+            .channel(`notif-list-${userId}`)
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+                () => { load(); }
+            )
+            .subscribe();
+        return () => { try { supabase.removeChannel(channel); } catch {} };
+    }, [userId, load]);
 
     const handleMarkRead = async (id: string) => {
         await markAsRead(id);

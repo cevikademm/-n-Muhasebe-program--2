@@ -45,41 +45,50 @@ export const CampaignsPanel: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
-    // Supabase'den mevcut kampanyaları yükle
-    useEffect(() => {
-        (async () => {
-            try {
-                const { data } = await supabase
-                    .from("campaigns")
-                    .select("*")
-                    .order("plan");
-                if (data && data.length > 0) {
-                    setDiscounts(
-                        PLAN_KEYS.map((key) => {
-                            const found = data.find((d: any) => d.plan === key);
-                            return found
-                                ? {
-                                    plan: key,
-                                    discount_amount: found.discount_amount || 0,
-                                    active: found.active ?? false,
-                                    label_tr: found.label_tr || "",
-                                    label_de: found.label_de || "",
-                                }
-                                : {
-                                    plan: key,
-                                    discount_amount: 0,
-                                    active: false,
-                                    label_tr: "",
-                                    label_de: "",
-                                };
-                        })
-                    );
-                }
-            } catch {
-                // Tablo yoksa varsayılanları kullan
+    // Supabase'den mevcut kampanyaları yükle (+ realtime)
+    const loadCampaigns = React.useCallback(async () => {
+        try {
+            const { data } = await supabase
+                .from("campaigns")
+                .select("*")
+                .order("plan");
+            if (data && data.length > 0) {
+                setDiscounts(
+                    PLAN_KEYS.map((key) => {
+                        const found = data.find((d: any) => d.plan === key);
+                        return found
+                            ? {
+                                plan: key,
+                                discount_amount: found.discount_amount || 0,
+                                active: found.active ?? false,
+                                label_tr: found.label_tr || "",
+                                label_de: found.label_de || "",
+                            }
+                            : {
+                                plan: key,
+                                discount_amount: 0,
+                                active: false,
+                                label_tr: "",
+                                label_de: "",
+                            };
+                    })
+                );
             }
-        })();
+        } catch { /* sessiz */ }
     }, []);
+
+    useEffect(() => {
+        loadCampaigns();
+        const channel = supabase
+            .channel(`campaigns-rt`)
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "campaigns" },
+                () => { loadCampaigns(); }
+            )
+            .subscribe();
+        return () => { try { supabase.removeChannel(channel); } catch {} };
+    }, [loadCampaigns]);
 
     const updateDiscount = (plan: string, field: keyof Discount, value: any) => {
         setDiscounts((prev) =>

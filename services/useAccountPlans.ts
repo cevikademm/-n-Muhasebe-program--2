@@ -51,5 +51,19 @@ export function useAccountPlans(
     if (needsData) fetchData();
   }, [session, activeMenu, userRole, fetchData]);
 
+  // Realtime: account_plans değişirse otomatik refetch
+  useEffect(() => {
+    if (!session) return;
+    const channel = supabase
+      .channel(`account-plans-rt`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "account_plans" },
+        () => { fetchData(); }
+      )
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [session, fetchData]);
+
   return { data, dataLoading, fetchData };
 }

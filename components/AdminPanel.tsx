@@ -195,6 +195,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
 
   useEffect(() => { loadCompanies(); }, [loadCompanies]);
 
+  // Realtime: companies / invoice_edit_requests / invoices değişimlerinde
+  // sol listedeki rozetler ve şirket sayıları güncel kalsın.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`admin-companies-rt`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "companies" }, () => loadCompanies())
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoice_edit_requests" }, () => loadCompanies())
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => loadCompanies())
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [loadCompanies]);
+
   // ── Load invoices for selected company's user
   const loadInvoices = useCallback(async (userId: string) => {
     setLoadingInv(true);
@@ -234,6 +246,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
       setLoadingInv(false);
     }
   }, []);
+
+  // Realtime: seçili şirketin invoices / invoice_items / invoice_edit_requests
+  useEffect(() => {
+    if (!selectedCompany?.user_id) return;
+    const uid = selectedCompany.user_id;
+    const channel = supabase
+      .channel(`admin-inv-rt-${uid}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices", filter: `user_id=eq.${uid}` }, () => loadInvoices(uid))
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoice_edit_requests", filter: `user_id=eq.${uid}` }, () => loadInvoices(uid))
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoice_items" }, () => loadInvoices(uid))
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [selectedCompany?.user_id, loadInvoices]);
 
   const selectCompany = (co: AllCompany) => {
     setSelectedCompany(co);

@@ -26,5 +26,19 @@ export function useCompanies(
     }
   }, [session, activeMenu, userRole, fetchCompanies]);
 
+  // Realtime: companies tablosundaki her değişiklik anında yansısın
+  useEffect(() => {
+    if (!session || userRole !== "admin") return;
+    const channel = supabase
+      .channel(`companies-rt`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "companies" },
+        () => { fetchCompanies(); }
+      )
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
+  }, [session, userRole, fetchCompanies]);
+
   return { companies, companiesLoading, fetchCompanies };
 }

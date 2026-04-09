@@ -108,29 +108,40 @@ export default function App() {
   // ─── User Role Logic ────────────────────────────────────────────────
   // [FIX H-3] Admin rolü artık yalnızca profiles tablosundan (server-side RLS) okunuyor
   useEffect(() => {
-    if (session?.user) {
-      // Sınırsız yetkili e-posta adresleri (fatura & banka ekstresi ekleme/silme dahil tüm yetkiler)
-      const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
-      const isPrivileged = PRIVILEGED_EMAILS.includes(session.user.email?.toLowerCase() || "");
+    if (!session?.user) return;
+    // Sınırsız yetkili e-posta adresleri (fatura & banka ekstresi ekleme/silme dahil tüm yetkiler)
+    const PRIVILEGED_EMAILS = ["cevikademm@gmail.com"];
+    const isPrivileged = PRIVILEGED_EMAILS.includes(session.user.email?.toLowerCase() || "");
 
-      if (isPrivileged) {
-        setUserRole("admin");
-      } else {
-        // Tüm kullanıcılar — profiles tablosundan rol oku (admin dahil)
-        supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .single()
-          .then(({ data, error }) => {
-            if (!error && data?.role) {
-              setUserRole(data.role);
-            } else {
-              setUserRole("user");
-            }
-          });
-      }
+    if (isPrivileged) {
+      setUserRole("admin");
+      return;
     }
+
+    const uid = session.user.id;
+    const loadRole = () => {
+      supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", uid)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data?.role) setUserRole(data.role);
+          else setUserRole("user");
+        });
+    };
+    loadRole();
+
+    // Realtime: profiles.role değişirse anında uygula (admin promote/demote)
+    const channel = supabase
+      .channel(`profile-role-${uid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles", filter: `id=eq.${uid}` },
+        () => { loadRole(); }
+      )
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch {} };
   }, [session]);
 
   // Sol panelden müşteri seçilince companies sayfasına geç ve company'yi otomatik seç
