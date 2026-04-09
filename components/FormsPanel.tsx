@@ -127,15 +127,6 @@ const DocSummary: React.FC<{
           </div>
         </div>
 
-        {/* SCORE BADGE */}
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: "4px" }}>
-            {tr("AI Güven Skoru", "KI-Konfidenz")}
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 900, color: scoreColor(avg), lineHeight: 1 }}>
-            %{avg}
-          </div>
-        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
@@ -444,10 +435,6 @@ const DocAccountDetails: React.FC<{
                   )}
                 </div>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase" as const, fontWeight: 700 }}>{tr("AI Güveni", "KI-Konfidenz")}</div>
-                <div style={{ fontSize: "16px", fontWeight: 800, color: scoreColor(avgScore) }}>%{avgScore}</div>
-              </div>
             </div>
 
             <div style={{ padding: '16px' }}>
@@ -724,12 +711,27 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
     const element = previewRef.current;
     const captureW = 794;
 
-    const canvas = await html2canvas(element, {
-      scale: 2, useCORS: true, logging: false,
-      backgroundColor: "#ffffff",
-      width: captureW, height: element.scrollHeight,
-      windowWidth: captureW, windowHeight: element.scrollHeight,
-    });
+    // ── A4 portrait layout: force fixed width during capture so flex/grid
+    // sections don't wrap based on the visible (narrow) sidebar width.
+    const prevWidth = element.style.width;
+    const prevMaxWidth = element.style.maxWidth;
+    element.style.width = `${captureW}px`;
+    element.style.maxWidth = `${captureW}px`;
+    // Layout flush
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await html2canvas(element, {
+        scale: 2, useCORS: true, logging: false,
+        backgroundColor: "#ffffff",
+        width: captureW, height: element.scrollHeight,
+        windowWidth: captureW, windowHeight: element.scrollHeight,
+      });
+    } finally {
+      element.style.width = prevWidth;
+      element.style.maxWidth = prevMaxWidth;
+    }
 
     const imgData = canvas.toDataURL("image/jpeg", 0.93);
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
@@ -887,12 +889,23 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
         // 1. Capture the Analysis Document
         if (element) {
           const captureW = 794;
-          const canvas = await html2canvas(element, {
-            scale: 2, useCORS: true, logging: false,
-            backgroundColor: "#ffffff",
-            width: captureW, height: element.scrollHeight,
-            windowWidth: captureW, windowHeight: element.scrollHeight,
-          });
+          const prevW = element.style.width;
+          const prevMW = element.style.maxWidth;
+          element.style.width = `${captureW}px`;
+          element.style.maxWidth = `${captureW}px`;
+          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+          let canvas: HTMLCanvasElement;
+          try {
+            canvas = await html2canvas(element, {
+              scale: 2, useCORS: true, logging: false,
+              backgroundColor: "#ffffff",
+              width: captureW, height: element.scrollHeight,
+              windowWidth: captureW, windowHeight: element.scrollHeight,
+            });
+          } finally {
+            element.style.width = prevW;
+            element.style.maxWidth = prevMW;
+          }
           const imgData = canvas.toDataURL("image/jpeg", 0.93);
           const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
           const pageW = pdf.internal.pageSize.getWidth();
