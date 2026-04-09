@@ -7,9 +7,8 @@ import {
   Calendar, Printer, CheckCircle2, XCircle, Clock, FileOutput, Sigma,
   Menu, X as XIcon,
 } from "lucide-react";
-import { SuSaReport } from "./SuSaReport";
 import { supabase } from "../services/supabaseService";
-import { SavedTransaction, fetchUserIncomeTransactions, isRefundTransaction, isSelfTransferTransaction } from "../services/bankService";
+import { SavedTransaction, fetchUserIncomeTransactions, fetchAllUserBankTransactions, isRefundTransaction, isSelfTransferTransaction } from "../services/bankService";
 
 // ── Tx kind override store (income | expense | refund) ──
 type TxKind = "income" | "expense" | "refund";
@@ -73,7 +72,7 @@ type ReportKey =
   | "bwa"
   | "fehlende"
   | "datev"
-  | "susa";
+  | "banka";
 
 interface ReportMeta {
   key: ReportKey;
@@ -158,14 +157,14 @@ const REPORTS: ReportMeta[] = [
     badge: "DATEV",
   },
   {
-    key: "susa",
-    icon: <Sigma size={16} />,
-    color: "#f59e0b",
-    titleTr: "Summen und Salden (SuSa)",
-    titleDe: "Summen und Salden Liste",
-    subtitleTr: "DATEV SKR03 aylık hesap özeti",
-    subtitleDe: "SKR03 — Monatliche Kontenübersicht",
-    badge: "SuSa",
+    key: "banka",
+    icon: <Building2 size={16} />,
+    color: "#0ea5e9",
+    titleTr: "Banka Hesap Hareketleri",
+    titleDe: "Bankkontobewegungen",
+    subtitleTr: "Aylık banka işlemleri ve eşleşme durumu",
+    subtitleDe: "Monatliche Buchungen und Zuordnungsstatus",
+    badge: "BANKA",
   },
 ];
 
@@ -226,7 +225,16 @@ const EingangsbuchDoc: React.FC<{
   items: InvoiceItem[];
   period: string;
   tr: (a: string, b: string) => string;
-}> = ({ invoices, items, period, tr }) => {
+}> = ({ invoices: invoicesRaw, items, period, tr }) => {
+  const invoices = useMemo(() => {
+    const ts = (inv: any) => {
+      const d = inv?.tarih || inv?.invoice_date || inv?.raw_ai_response?.fatura_bilgileri?.tarih || inv?.created_at;
+      if (!d) return Number.POSITIVE_INFINITY;
+      const t = new Date(d).getTime();
+      return isNaN(t) ? Number.POSITIVE_INFINITY : t;
+    };
+    return [...invoicesRaw].sort((a, b) => ts(a) - ts(b));
+  }, [invoicesRaw]);
   const totalNet = invoices.reduce((s, i) => s + (i.ara_toplam || i.total_net || 0), 0);
   const totalVat = invoices.reduce((s, i) => s + (i.toplam_kdv || i.total_vat || 0), 0);
   const totalGross = invoices.reduce((s, i) => s + (i.genel_toplam || i.total_gross || 0), 0);
@@ -1035,6 +1043,199 @@ const DatevExportDoc: React.FC<{
   );
 };
 
+// ─── BANKA HESAP HAREKETLERİ ────────────────────────────────────────────────
+const BankaDoc: React.FC<{
+  transactions: SavedTransaction[];
+  invoices: Invoice[];
+  invoiceItems: InvoiceItem[];
+  companyInfo: CompanyInfoSnapshot | null;
+  period: string;
+  tr: (a: string, b: string) => string;
+}> = ({ transactions, invoices, invoiceItems, companyInfo, period, tr }) => {
+  const overrides = useKindOverrides();
+
+  const invMap = useMemo(() => {
+    const m = new Map<string, Invoice>();
+    invoices.forEach(i => m.set(i.id, i));
+    return m;
+  }, [invoices]);
+
+  const itemsByInv = useMemo(() => {
+    const m = new Map<string, InvoiceItem[]>();
+    invoiceItems.forEach(it => {
+      const arr = m.get(it.invoice_id) || [];
+      arr.push(it);
+      m.set(it.invoice_id, arr);
+    });
+    return m;
+  }, [invoiceItems]);
+
+  const accountForTx = (tx: SavedTransaction): { code: string; name: string } => {
+    const invId = tx.matched_invoice_id;
+    if (invId) {
+      const its = itemsByInv.get(invId) || [];
+      const withCode = its.find(it => it.account_code);
+      if (withCode) {
+        return {
+          code: String(withCode.account_code || "—"),
+          name: withCode.account_name || withCode.account_name_tr || "—",
+        };
+      }
+    }
+    const k = getEffectiveKind(tx, overrides);
+    if (k === "income") return { code: "8400", name: tr("Gelir (otomatik)", "Erlöse 19% USt") };
+    if (k === "refund") return { code: "1576", name: tr("İade / Vorsteuer", "Erstattung / Vorsteuer") };
+    return { code: "—", name: tr("Atanmamış", "Nicht zugeordnet") };
+  };
+
+  const totalAmount = transactions.reduce((s, tx) => s + (tx.amount || 0), 0);
+  const matchedCount = transactions.filter(tx => !!tx.matched_invoice_id).length;
+
+  return (
+    <div style={{ ...DOC, padding: "32px 36px" }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+        marginBottom: "16px", paddingBottom: "12px",
+        borderBottom: "2px solid #0ea5e9",
+      }}>
+        <div>
+          <div style={{ fontSize: "8px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: "4px" }}>
+            fikoai.de Smart Accounting · {new Date().toLocaleDateString("de-DE")}
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: 800, color: "#0f172a", letterSpacing: "0.02em" }}>
+            {tr("Banka Hesap Hareketleri", "Bankkontobewegungen")}
+          </div>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#0f172a", marginTop: "6px" }}>
+            {companyInfo?.company_name || "—"}
+          </div>
+          <div style={{ fontSize: "9px", color: "#64748b", marginTop: "2px" }}>
+            {companyInfo?.steuernummer && <>Steuernummer: <b>{companyInfo.steuernummer}</b> · </>}
+            {companyInfo?.ust_id && <>USt-IdNr: <b>{companyInfo.ust_id}</b> · </>}
+            {companyInfo?.finanzamt && <>Finanzamt: <b>{companyInfo.finanzamt}</b></>}
+          </div>
+        </div>
+        <div style={{
+          padding: "6px 14px", borderRadius: "8px", textAlign: "right",
+          background: "#0ea5e918", border: "1px solid #0ea5e944",
+        }}>
+          <div style={{ fontSize: "9px", color: "#64748b", marginBottom: "2px" }}>{tr("Dönem", "Zeitraum")}</div>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#0ea5e9" }}>{period}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
+        <div style={{ flex: 1, padding: "10px 14px", borderRadius: "8px", background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+          <div style={{ fontSize: "9px", color: "#0369a1", fontWeight: 700, marginBottom: "2px" }}>{tr("İşlem Sayısı", "Anzahl Buchungen")}</div>
+          <div style={{ fontSize: "18px", fontWeight: 800, color: "#075985" }}>{transactions.length}</div>
+        </div>
+        <div style={{ flex: 1, padding: "10px 14px", borderRadius: "8px", background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+          <div style={{ fontSize: "9px", color: "#0369a1", fontWeight: 700, marginBottom: "2px" }}>{tr("Toplam Tutar", "Gesamtbetrag")}</div>
+          <div style={{ fontSize: "14px", fontWeight: 800, color: "#075985", fontFamily: "monospace" }}>{fmt(totalAmount)}</div>
+        </div>
+        <div style={{ flex: 1, padding: "10px 14px", borderRadius: "8px", background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+          <div style={{ fontSize: "9px", color: "#15803d", fontWeight: 700, marginBottom: "2px" }}>{tr("Eşleşen", "Zugeordnet")}</div>
+          <div style={{ fontSize: "18px", fontWeight: 800, color: "#166534" }}>{matchedCount} / {transactions.length}</div>
+        </div>
+      </div>
+
+      {transactions.length === 0 ? (
+        <div style={{
+          textAlign: "center", padding: "40px 20px",
+          background: "#f8fafc", borderRadius: "8px", border: "1px dashed #cbd5e1",
+        }}>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#64748b" }}>
+            {tr("Bu dönemde banka işlemi bulunamadı.", "Keine Bankbuchungen im Zeitraum.")}
+          </div>
+        </div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={TH}>#</th>
+              <th style={TH}>{tr("Tarih", "Datum")}</th>
+              <th style={TH}>{tr("Hesap Kodu", "Konto")}</th>
+              <th style={TH}>{tr("Hesap Açıklaması", "Kontobezeichnung")}</th>
+              <th style={{ ...TH, textAlign: "right" }}>{tr("Tutar (€)", "Betrag (€)")}</th>
+              <th style={TH}>{tr("Durum", "Typ")}</th>
+              <th style={TH}>{tr("Eşleşme", "Zuordnung")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.map((tx, idx) => {
+              const acc = accountForTx(tx);
+              const k = getEffectiveKind(tx, overrides);
+              const matchedInv = tx.matched_invoice_id ? invMap.get(tx.matched_invoice_id) : null;
+              const matchedLabel = matchedInv
+                ? `${matchedInv.fatura_no || matchedInv.invoice_number || matchedInv.id.slice(0, 6)}`
+                : tr("Eşleşmedi", "Offen");
+              const kindCfg: Record<string, { label: [string, string]; bg: string; color: string; border: string }> = {
+                income:  { label: ["Gelir", "Einnahme"],  bg: "#dcfce7", color: "#15803d", border: "#bbf7d0" },
+                refund:  { label: ["İade",  "Erstattung"], bg: "#fef3c7", color: "#b45309", border: "#fde68a" },
+                expense: { label: ["Gider", "Ausgabe"],   bg: "#fee2e2", color: "#b91c1c", border: "#fecaca" },
+              };
+              const c = kindCfg[k] || kindCfg.expense;
+              return (
+                <tr key={tx.id} style={{ background: idx % 2 === 0 ? "#fff" : "#f8fafc" }}>
+                  <td style={{ ...TD, color: "#94a3b8", fontFamily: "monospace" }}>{idx + 1}</td>
+                  <td style={{ ...TD, fontFamily: "monospace", fontSize: "10px", whiteSpace: "nowrap" }}>
+                    {fmtDateShort(tx.transaction_date)}
+                  </td>
+                  <td style={{ ...TD, fontFamily: "monospace", fontWeight: 700 }}>{acc.code}</td>
+                  <td style={{ ...TD, fontSize: "10px", color: "#334155" }}>
+                    <div style={{ fontWeight: 600 }}>{acc.name}</div>
+                    {tx.counterpart && (
+                      <div style={{ fontSize: "9px", color: "#64748b", marginTop: "1px" }}>{tx.counterpart}</div>
+                    )}
+                  </td>
+                  <td style={{ ...TD, textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: k === "income" ? "#15803d" : k === "refund" ? "#b45309" : "#b91c1c" }}>
+                    {fmt(tx.amount || 0)}
+                  </td>
+                  <td style={TD}>
+                    <span style={{
+                      display: "inline-block", padding: "2px 8px", borderRadius: "4px",
+                      background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+                      fontSize: "9px", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".4px",
+                    }}>{tr(c.label[0], c.label[1])}</span>
+                  </td>
+                  <td style={{ ...TD, fontSize: "9px" }}>
+                    {tx.matched_invoice_id ? (
+                      <span style={{
+                        padding: "2px 6px", borderRadius: "4px",
+                        background: "#dcfce7", color: "#15803d",
+                        fontSize: "9px", fontWeight: 700, border: "1px solid #bbf7d0",
+                        fontFamily: "monospace",
+                      }}>✓ {matchedLabel}</span>
+                    ) : (
+                      <span style={{
+                        padding: "2px 6px", borderRadius: "4px",
+                        background: "#fef2f2", color: "#b91c1c",
+                        fontSize: "9px", fontWeight: 700, border: "1px solid #fecaca",
+                      }}>{matchedLabel}</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: "#0c4a6e" }}>
+              <td colSpan={4} style={{ ...TD, color: "#fff", fontWeight: 700 }}>
+                {tr("TOPLAM", "GESAMT")}
+              </td>
+              <td style={{ ...TD, textAlign: "right", color: "#bae6fd", fontFamily: "monospace", fontWeight: 800 }}>
+                {fmt(totalAmount)}
+              </td>
+              <td colSpan={2} style={{ ...TD, color: "#bae6fd", fontSize: "9px" }}>
+                {matchedCount} / {transactions.length} {tr("eşleşti", "zugeordnet")}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+};
+
 // ─── VERGİ DANIŞMANI TESLİM RAPORU ──────────────────────────────────────────
 const TeslimRaporuDoc: React.FC<{
   invoices: Invoice[];
@@ -1313,13 +1514,18 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
 
   // Banka dökümü gelir işlemleri (Ausgangsbuch için)
   const [bankIncomes, setBankIncomes] = useState<SavedTransaction[]>([]);
+  const [allBankTransactions, setAllBankTransactions] = useState<SavedTransaction[]>([]);
   useEffect(() => {
     const load = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-        const txs = await fetchUserIncomeTransactions(user.id);
-        setBankIncomes(txs);
+        const [incomes, all] = await Promise.all([
+          fetchUserIncomeTransactions(user.id),
+          fetchAllUserBankTransactions(user.id),
+        ]);
+        setBankIncomes(incomes);
+        setAllBankTransactions(all);
       } catch { /* sessiz hata */ }
     };
     load();
@@ -1418,6 +1624,22 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
     });
   }, [bankIncomes, selectedYear, selectedMonth]);
 
+  // Banka raporu için: tüm tipte işlemler, seçilen döneme göre
+  const filteredAllBankTx = useMemo(() => {
+    const list = allBankTransactions.filter(tx => {
+      if (!tx.transaction_date) return false;
+      const d = new Date(tx.transaction_date);
+      if (d.getFullYear() !== selectedYear) return false;
+      if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+      return true;
+    });
+    return list.sort((a, b) => {
+      const da = new Date(a.transaction_date).getTime();
+      const db = new Date(b.transaction_date).getTime();
+      return da - db;
+    });
+  }, [allBankTransactions, selectedYear, selectedMonth]);
+
   // Diğer raporlar için yalnızca income olanlar
   const filteredBankIncomesOnly = useMemo(
     () => filteredBankIncomes.filter(tx => getEffectiveKind(tx, kindOverrides) === "income"),
@@ -1442,9 +1664,9 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
   const reportRef = useRef<HTMLDivElement>(null);
   const handlePrint = () => {
     if (!reportRef.current) return;
-    const isSusa = activeReport === "susa";
+    const isBanka = activeReport === "banka";
     const isTeslim = activeReport === "teslim";
-    const isGenel = isTeslim || isSusa;
+    const isGenel = isTeslim || isBanka;
 
     // Raporu derin klonla — orijinal inline stiller korunur
     const clone = reportRef.current.cloneNode(true) as HTMLElement;
@@ -1457,7 +1679,7 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
     const styleEl = document.createElement("style");
     styleEl.id = "__mm_print_style__";
     styleEl.textContent =
-      `@page{size:${isSusa ? "A4 landscape" : "A4 portrait"};margin:${isGenel ? "0" : "15mm"};}` +
+      `@page{size:${isBanka ? "A4 landscape" : "A4 portrait"};margin:${isGenel ? "0" : "15mm"};}` +
       `@media print{` +
       `  body>*:not(#__mm_print_target__){display:none!important;}` +
       `  #__mm_print_target__{display:block!important;position:static!important;` +
@@ -1503,16 +1725,14 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
       case "bwa": return <BwaDoc {...props} />;
       case "fehlende": return <FehlendeDoc {...props} />;
       case "datev": return <DatevExportDoc {...props} />;
-      case "susa": return (
-        <SuSaReport
-          key={`susa-${selectedYear}-${selectedMonth}`}
+      case "banka": return (
+        <BankaDoc
+          transactions={filteredAllBankTx}
           invoices={invoices}
           invoiceItems={invoiceItems}
-          companyName={companyInfo?.company_name ?? ""}
-          clientNumber=""
-          hideControls={true}
-          initialYear={selectedYear}
-          initialMonth={selectedMonth !== null ? selectedMonth + 1 : 12}
+          companyInfo={companyInfo}
+          period={period}
+          tr={tr}
         />
       );
     }
@@ -1857,10 +2077,10 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
               margin: "0 auto",
               background: "#fff",
               borderRadius: "6px",
-              padding: (activeReport === "teslim" || activeReport === "susa") ? "0" : "40px 48px",
+              padding: (activeReport === "teslim" || activeReport === "banka") ? "0" : "40px 48px",
               boxShadow: "0 20px 60px rgba(0,0,0,.5)",
               position: "relative",
-              overflow: (activeReport === "teslim" || activeReport === "susa") ? "visible" : "hidden",
+              overflow: (activeReport === "teslim" || activeReport === "banka") ? "visible" : "hidden",
             }}
           >
             {renderReport()}
