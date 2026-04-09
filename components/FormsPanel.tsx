@@ -16,6 +16,43 @@ const getInvDate = (inv: any): string | null => {
   return fb.period_start || inv?.invoice_date || inv?.tarih || inv?.created_at || null;
 };
 
+const getInvSupplier = (inv: any): string => {
+  const fb = inv?.raw_ai_response?.fatura_bilgileri || {};
+  const h = inv?.raw_ai_response?.header || {};
+  return (
+    inv?.satici_adi ||
+    fb.satici_adi ||
+    fb.supplier_name ||
+    h.supplier_name ||
+    inv?.supplier_name ||
+    ""
+  );
+};
+
+// Tüm Fatura alanları için tek noktadan resolver (Faturalar paneliyle aynı kurallar)
+const getInvFields = (inv: any) => {
+  const fb = inv?.raw_ai_response?.fatura_bilgileri || {};
+  const h = inv?.raw_ai_response?.header || {};
+  return {
+    fatura_no: inv?.fatura_no || fb.fatura_no || h.invoice_number || "",
+    tarih: inv?.tarih || fb.tarih || h.invoice_date || inv?.invoice_date || "",
+    period_start: fb.period_start || h.period_start || "",
+    period_end: fb.period_end || h.period_end || "",
+    satici_adi: inv?.satici_adi || fb.satici_adi || h.supplier_name || "",
+    satici_vkn: inv?.satici_vkn || fb.satici_vkn || h.supplier_vat_id || "",
+    satici_adres: fb.satici_adres || h.supplier_address || "",
+    alici_adi: inv?.alici_adi || fb.alici_adi || h.buyer_name || "",
+    alici_vkn: inv?.alici_vkn || fb.alici_vkn || h.buyer_vat_id || "",
+    alici_adres: fb.alici_adres || h.buyer_address || "",
+    ara_toplam: inv?.ara_toplam ?? fb.ara_toplam ?? h.total_net ?? 0,
+    toplam_kdv: inv?.toplam_kdv ?? fb.toplam_kdv ?? h.total_vat ?? 0,
+    genel_toplam: inv?.genel_toplam ?? fb.genel_toplam ?? h.total_gross ?? 0,
+    para_birimi: inv?.para_birimi || fb.para_birimi || h.currency || "EUR",
+    odeme_yontemi: fb.odeme_yontemi || h.payment_method || "",
+    vade_tarihi: fb.vade_tarihi || h.due_date || "",
+  };
+};
+
 const MONTHS_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 const MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
@@ -62,12 +99,13 @@ const DocSummary: React.FC<{
   items: InvoiceItem[];
   tr: (a: string, b: string) => string;
 }> = ({ invoice, items, tr }) => {
+  const F = getInvFields(invoice);
   const iNet = items.reduce((s, i) => s + (i.net_amount || 0), 0);
   const iVat = items.reduce((s, i) => s + (i.vat_amount || 0), 0);
   const iGross = items.reduce((s, i) => s + (i.gross_amount || 0), 0);
-  const hNet = invoice.total_net || 0;
-  const hVat = invoice.total_vat || 0;
-  const hGross = invoice.total_gross || 0;
+  const hNet = F.ara_toplam || 0;
+  const hVat = F.toplam_kdv || 0;
+  const hGross = F.genel_toplam || 0;
 
   const withinPct = (a: number, b: number) => b === 0 ? true : Math.abs(a - b) / Math.max(Math.abs(b), 0.01) < 0.15;
   const allOk = withinPct(iGross, hGross);
@@ -100,27 +138,80 @@ const DocSummary: React.FC<{
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "20px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
         {/* SUPPLIER BOX */}
-        <div style={{ flex: "2", border: "1px solid #cbd5e1", borderRadius: "4px", padding: "16px" }}>
+        <div style={{ border: "1px solid #cbd5e1", borderRadius: "4px", padding: "14px" }}>
           <div style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: "6px" }}>
-            {tr("Tedarikçi", "Lieferant / Rechnungsaussteller")}
+            {tr("Tedarikçi (Satıcı)", "Lieferant / Rechnungsaussteller")}
           </div>
-          <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
-            {invoice.supplier_name || "—"}
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>
+            {F.satici_adi || "—"}
           </div>
+          {F.satici_vkn && (
+            <div style={{ fontSize: "10px", color: "#475569", fontFamily: "monospace" }}>
+              {tr("VKN/USt-IdNr.", "USt-IdNr.")}: {F.satici_vkn}
+            </div>
+          )}
+          {F.satici_adres && (
+            <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px", lineHeight: 1.4 }}>
+              {F.satici_adres}
+            </div>
+          )}
         </div>
 
-        {/* DETAILS BOX */}
-        <div style={{ flex: "1.5", border: "1px solid #cbd5e1", borderRadius: "4px", padding: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "10px", color: "#64748b" }}>{tr("Fatura No", "Rechnungsnr.")}</span>
-            <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace" }}>#{invoice.invoice_number || "—"}</span>
+        {/* BUYER BOX */}
+        <div style={{ border: "1px solid #cbd5e1", borderRadius: "4px", padding: "14px" }}>
+          <div style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: "6px" }}>
+            {tr("Alıcı (Müşteri)", "Käufer / Rechnungsempfänger")}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "10px", color: "#64748b" }}>{tr("Tarih", "Datum")}</span>
-            <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace" }}>{fmtDate(invoice.invoice_date)}</span>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>
+            {F.alici_adi || "—"}
           </div>
+          {F.alici_vkn && (
+            <div style={{ fontSize: "10px", color: "#475569", fontFamily: "monospace" }}>
+              {tr("VKN/USt-IdNr.", "USt-IdNr.")}: {F.alici_vkn}
+            </div>
+          )}
+          {F.alici_adres && (
+            <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px", lineHeight: 1.4 }}>
+              {F.alici_adres}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* META DETAILS BOX */}
+      <div style={{
+        border: "1px solid #cbd5e1", borderRadius: "4px", padding: "12px 14px", marginBottom: "20px",
+        display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px 18px",
+      }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{tr("Fatura No", "Rechnungsnr.")}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", color: "#0f172a" }}>#{F.fatura_no || "—"}</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{tr("Fatura Tarihi", "Rechnungsdatum")}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", color: "#0f172a" }}>{fmtDate(F.tarih)}</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{tr("Vade Tarihi", "Fälligkeitsdatum")}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", color: "#0f172a" }}>{F.vade_tarihi ? fmtDate(F.vade_tarihi) : "—"}</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{tr("Dönem", "Periode")}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", color: "#0f172a" }}>
+            {F.period_start || F.period_end
+              ? `${F.period_start ? fmtDate(F.period_start) : "…"} → ${F.period_end ? fmtDate(F.period_end) : "…"}`
+              : "—"}
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{tr("Para Birimi", "Währung")}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", color: "#0f172a" }}>{F.para_birimi || "EUR"}</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "9px", color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{tr("Ödeme Yöntemi", "Zahlungsart")}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", color: "#0f172a" }}>{F.odeme_yontemi || "—"}</span>
         </div>
       </div>
 
@@ -503,19 +594,47 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
 
   const years = useMemo(() => {
     const y = new Set<number>();
-    invoices.forEach(inv => { if (inv.invoice_date) y.add(new Date(inv.invoice_date).getFullYear()); });
+    invoices.forEach(inv => {
+      const ds = getInvDate(inv);
+      if (ds) {
+        const d = new Date(ds);
+        if (!isNaN(d.getTime())) y.add(d.getFullYear());
+      }
+    });
     if (y.size === 0) y.add(new Date().getFullYear());
     return Array.from(y).sort((a, b) => b - a);
   }, [invoices]);
 
+  // En son veri olan yıl/ay'a otomatik atla
+  const [autoInit, setAutoInit] = useState(false);
+  useEffect(() => {
+    if (autoInit || invoices.length === 0) return;
+    let latest: { y: number; m: number; t: number } | null = null;
+    invoices.forEach(inv => {
+      const ds = getInvDate(inv);
+      if (!ds) return;
+      const d = new Date(ds);
+      if (isNaN(d.getTime())) return;
+      const t = d.getTime();
+      if (!latest || t > latest.t) latest = { y: d.getFullYear(), m: d.getMonth(), t };
+    });
+    if (latest) {
+      setSelectedYear(latest.y);
+      setSelectedMonth(latest.m);
+      setAutoInit(true);
+    }
+  }, [invoices, autoInit]);
+
   const filteredInvoices = useMemo(() =>
     invoices.filter(inv => {
-      if (!inv.invoice_date) return false;
-      const d = new Date(inv.invoice_date);
+      const ds = getInvDate(inv);
+      if (!ds) return false;
+      const d = new Date(ds);
+      if (isNaN(d.getTime())) return false;
       if (d.getFullYear() !== selectedYear) return false;
       if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
       return true;
-    }).sort((a, b) => new Date(b.invoice_date || "").getTime() - new Date(a.invoice_date || "").getTime()),
+    }).sort((a, b) => new Date(getInvDate(b) || "").getTime() - new Date(getInvDate(a) || "").getTime()),
     [invoices, selectedMonth, selectedYear]);
 
   // Sayfa başında ilk faturayı otomatik seç
@@ -529,6 +648,23 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
       setSelectedInvoice(filteredInvoices[0]);
     }
   }, [filteredInvoices]);
+
+  // Seçili fatura değiştikçe kalemleri lazy yükle
+  useEffect(() => {
+    if (!selectedInvoice || !fetchInvoiceItems) return;
+    if (invoiceItems.some(i => i.invoice_id === selectedInvoice.id)) return;
+    let active = true;
+    fetchInvoiceItems(selectedInvoice.id)
+      .then(items => {
+        if (!active || !items) return;
+        setInvoiceItems(prev => {
+          const filtered = prev.filter(p => p.invoice_id !== selectedInvoice.id);
+          return [...filtered, ...items];
+        });
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [selectedInvoice?.id, fetchInvoiceItems]);
 
   const selectedItems = useMemo(() =>
     selectedInvoice ? invoiceItems.filter(i => i.invoice_id === selectedInvoice.id) : [],
@@ -838,9 +974,10 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
             </button>
             {MONTHS.map((m, i) => {
               const cnt = invoices.filter(inv => {
-                if (!inv.invoice_date) return false;
-                const d = new Date(inv.invoice_date);
-                return d.getFullYear() === selectedYear && d.getMonth() === i;
+                const ds = getInvDate(inv);
+                if (!ds) return false;
+                const d = new Date(ds);
+                return !isNaN(d.getTime()) && d.getFullYear() === selectedYear && d.getMonth() === i;
               }).length;
               return (
                 <button key={i} onClick={() => setSelectedMonth(i)}
@@ -915,6 +1052,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
             </div>
           ) : filteredInvoices.map(inv => {
             const isSel = selectedInvoice?.id === inv.id;
+            const Fl = getInvFields(inv);
             return (
               <button
                 key={inv.id}
@@ -930,14 +1068,14 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <span className="font-semibold text-sm text-slate-200 truncate leading-tight">
-                    {inv.supplier_name || tr("Bilinmiyor", "Unbekannt")}
+                    {Fl.satici_adi || tr("Bilinmiyor", "Unbekannt")}
                   </span>
-                  <span className="text-xs font-bold text-slate-200 shrink-0">{fmt(inv.total_gross)}</span>
+                  <span className="text-xs font-bold text-slate-200 shrink-0">{fmt(Fl.genel_toplam)}</span>
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-[#64748b]">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono">{fmtDate(inv.invoice_date)}</span>
-                    {inv.invoice_number && <span>#{inv.invoice_number}</span>}
+                    <span className="font-mono">{fmtDate(Fl.tarih)}</span>
+                    {Fl.fatura_no && <span>#{Fl.fatura_no}</span>}
                   </div>
                   {isSel && <ChevronRight size={11} className="text-cyan-500" />}
                 </div>
@@ -1068,7 +1206,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
                     {tr("Orijinal Fatura Belgesi", "Originalrechnung")}
                   </div>
                   <div style={{ fontSize: "9px", color: "#64748b", marginTop: "2px" }}>
-                    {selectedInvoice.supplier_name} · #{selectedInvoice.invoice_number || "—"} · {fmtDate(selectedInvoice.invoice_date)}
+                    {getInvSupplier(selectedInvoice) || "—"} · #{selectedInvoice.invoice_number || "—"} · {fmtDate(selectedInvoice.invoice_date)}
                   </div>
                 </div>
 
