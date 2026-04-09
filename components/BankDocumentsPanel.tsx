@@ -1209,6 +1209,334 @@ const TxTable: React.FC<{
   );
 };
 
+
+// ─────────────────────────────────────────────
+//  PDF EXPORT — Banka Dökümü (kreatif tasarım)
+// ─────────────────────────────────────────────
+const generateBankStatementPDF = async (
+  rows: SavedTransaction[],
+  stmt: SavedBankStatement,
+  tr: (a: string, b: string) => string,
+  _invoices: Invoice[] = [],
+  matchStatusOverrides: Record<string, "matched" | "none" | "no_invoice"> = {},
+  accountCodeOverrides: Record<string, string> = {}
+) => {
+  const { jsPDF } = await import("jspdf");
+
+  // Sirket bilgisi (SettingsCompanyTab ile ayni localStorage anahtari)
+  let company: any = {};
+  try {
+    const raw = localStorage.getItem("fibu_de_settings");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.company) company = parsed.company;
+    }
+  } catch { /* ignore */ }
+
+  // Tarihe gore sirala (eskiden yeniye)
+  const sorted = [...rows].sort((a, b) => {
+    const ta = a.date ? new Date(a.date).getTime() : 0;
+    const tb = b.date ? new Date(b.date).getTime() : 0;
+    return ta - tb;
+  });
+
+  const fmt = (n: number | null | undefined) =>
+    n != null
+      ? new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+      : "—";
+  const fmtDate = (d: string | null | undefined) => {
+    if (!d) return "—";
+    try { return new Date(d).toLocaleDateString("de-DE"); } catch { return d; }
+  };
+
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const marginX = 12;
+  const contentW = pageW - marginX * 2;
+
+  // ─── KREATIF BASLIK: koyu serit + accent bar ───
+  pdf.setFillColor(13, 17, 23);
+  pdf.rect(0, 0, pageW, 32, "F");
+  pdf.setFillColor(6, 182, 212);
+  pdf.rect(0, 32, pageW, 1.6, "F");
+  pdf.setFillColor(99, 102, 241);
+  pdf.triangle(pageW - 60, 0, pageW, 0, pageW, 32, "F");
+  pdf.setFillColor(6, 182, 212);
+  pdf.triangle(pageW - 28, 0, pageW, 0, pageW, 14, "F");
+
+  pdf.setTextColor(6, 182, 212);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.text("FikoAI", marginX, 14);
+  pdf.setTextColor(148, 163, 184);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.text("Smart Accounting", marginX + 22, 14);
+
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(13);
+  pdf.text(tr("BANKA DOKUMANI", "BANKDOKUMENT"), marginX, 24);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(148, 163, 184);
+  pdf.text(tr("Banka Hareketleri Raporu", "Bankbewegungs-Bericht"), marginX, 29);
+
+  pdf.setFontSize(8);
+  pdf.setTextColor(203, 213, 225);
+  const todayStr = new Date().toLocaleDateString("de-DE");
+  pdf.text(tr("Olusturulma:", "Erstellt:") + " " + todayStr, pageW - marginX, 14, { align: "right" });
+  pdf.text(`${sorted.length} ${tr("islem", "Buchungen")}`, pageW - marginX, 19, { align: "right" });
+
+  let y = 42;
+
+  // ─── SIRKET BILGI KARTI ───
+  pdf.setDrawColor(226, 232, 240);
+  pdf.setFillColor(248, 250, 252);
+  pdf.roundedRect(marginX, y, contentW, 22, 2, 2, "FD");
+  pdf.setTextColor(100, 116, 139);
+  pdf.setFontSize(7);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(tr("FIRMA BILGILERI", "FIRMENDATEN"), marginX + 4, y + 5);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text(company.company_name || tr("(Firma adi tanimli degil)", "(Firmenname nicht gesetzt)"), marginX + 4, y + 11);
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(71, 85, 105);
+  const infoLine: string[] = [];
+  if (company.steuernummer) infoLine.push("Steuernummer: " + company.steuernummer);
+  if (company.ust_id) infoLine.push("USt-IdNr: " + company.ust_id);
+  if (company.finanzamt) infoLine.push("Finanzamt: " + company.finanzamt);
+  if (infoLine.length > 0) pdf.text(infoLine.join("  ·  "), marginX + 4, y + 16);
+  if (company.adresse || company.address) {
+    pdf.text(String(company.adresse || company.address), marginX + 4, y + 20);
+  }
+
+  pdf.setFontSize(7);
+  pdf.setTextColor(100, 116, 139);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(tr("EKSTRE", "KONTOAUSZUG"), pageW - marginX - 4, y + 5, { align: "right" });
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text(stmt.file_name || "—", pageW - marginX - 4, y + 11, { align: "right" });
+  pdf.setFontSize(8);
+  pdf.setTextColor(71, 85, 105);
+  if (stmt.period_start || stmt.period_end) {
+    const pStr = `${stmt.period_start ? fmtDate(stmt.period_start) : "…"} → ${stmt.period_end ? fmtDate(stmt.period_end) : "…"}`;
+    pdf.text(pStr, pageW - marginX - 4, y + 16, { align: "right" });
+  }
+
+  y += 27;
+
+  // ─── OZET KPI SERIDI ───
+  const totalIncome = sorted.filter(r => r.type === "income").reduce((s, r) => s + (r.amount || 0), 0);
+  const totalExpense = sorted.filter(r => r.type === "expense").reduce((s, r) => s + (r.amount || 0), 0);
+  const matchedCnt = sorted.filter(r => {
+    const ov = matchStatusOverrides[r.id];
+    if (ov === "matched") return true;
+    if (ov === "none" || ov === "no_invoice") return false;
+    return !!r.matched_invoice_id;
+  }).length;
+  const noInvCnt = sorted.filter(r => matchStatusOverrides[r.id] === "no_invoice").length;
+
+  const kpis: { label: string; val: string; color: [number, number, number] }[] = [
+    { label: tr("GELIR", "EINNAHMEN"), val: "+" + fmt(totalIncome) + " EUR", color: [16, 185, 129] },
+    { label: tr("GIDER", "AUSGABEN"), val: "-" + fmt(totalExpense) + " EUR", color: [239, 68, 68] },
+    { label: tr("ESLESEN", "ABGEGLICHEN"), val: String(matchedCnt), color: [99, 102, 241] },
+    { label: tr("FATURASIZ", "OHNE RG."), val: String(noInvCnt), color: [59, 130, 246] },
+  ];
+  const kpiW = (contentW - 6) / 4;
+  kpis.forEach((k, i) => {
+    const x = marginX + i * (kpiW + 2);
+    pdf.setFillColor(k.color[0], k.color[1], k.color[2]);
+    pdf.rect(x, y, 1.2, 14, "F");
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setFillColor(255, 255, 255);
+    pdf.roundedRect(x + 1.2, y, kpiW - 1.2, 14, 1, 1, "FD");
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(100, 116, 139);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(k.label, x + 4, y + 5);
+    pdf.setFontSize(11);
+    pdf.setTextColor(k.color[0], k.color[1], k.color[2]);
+    pdf.text(k.val, x + 4, y + 11);
+  });
+  y += 18;
+
+  // ─── TABLO BASLIKLARI ───
+  const cols: { key: string; label: string; w: number; align: "left" | "right" | "center" }[] = [
+    { key: "date", label: tr("TARIH", "DATUM"), w: 22, align: "left" },
+    { key: "account", label: tr("HESAP", "KONTO"), w: 18, align: "center" },
+    { key: "desc", label: tr("ACIKLAMA", "BESCHREIBUNG"), w: contentW - 22 - 18 - 26 - 26 - 22, align: "left" },
+    { key: "expense", label: tr("GIDER", "AUSGABE"), w: 26, align: "right" },
+    { key: "income", label: tr("GELIR", "EINNAHME"), w: 26, align: "right" },
+    { key: "status", label: tr("DURUM", "STATUS"), w: 22, align: "center" },
+  ];
+
+  const drawHeader = (yy: number) => {
+    pdf.setFillColor(13, 17, 23);
+    pdf.rect(marginX, yy, contentW, 7, "F");
+    pdf.setFillColor(6, 182, 212);
+    pdf.rect(marginX, yy + 7, contentW, 0.6, "F");
+    pdf.setTextColor(226, 232, 240);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7);
+    let cx = marginX;
+    cols.forEach(c => {
+      const tx = c.align === "right" ? cx + c.w - 2 : c.align === "center" ? cx + c.w / 2 : cx + 2;
+      pdf.text(c.label, tx, yy + 5, { align: c.align });
+      cx += c.w;
+    });
+    return yy + 9;
+  };
+
+  y = drawHeader(y);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7.5);
+
+  const rowH = 6;
+  const bottomLimit = pageH - 14;
+
+  const truncate = (text: string, maxChars: number) => {
+    if (!text) return "—";
+    const single = text.replace(/\s+/g, " ").trim();
+    return single.length > maxChars ? single.slice(0, maxChars - 1) + "…" : single;
+  };
+
+  const isMatched = (r: SavedTransaction) => {
+    const ov = matchStatusOverrides[r.id];
+    if (ov === "matched") return true;
+    if (ov === "none" || ov === "no_invoice") return false;
+    return !!r.matched_invoice_id;
+  };
+  const statusOf = (r: SavedTransaction): { label: string; color: [number, number, number] } => {
+    const ov = matchStatusOverrides[r.id];
+    if (ov === "no_invoice") return { label: tr("FATURASIZ", "OHNE RG."), color: [59, 130, 246] };
+    if (isMatched(r)) return { label: tr("ESLESTI", "ABGEGL."), color: [99, 102, 241] };
+    return { label: tr("ACIK", "OFFEN"), color: [245, 158, 11] };
+  };
+
+  sorted.forEach((r, idx) => {
+    if (y + rowH > bottomLimit) {
+      pdf.setFontSize(7);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text("fikoai.de  ·  Smart Accounting", marginX, pageH - 6);
+      pdf.text(`${tr("Sayfa", "Seite")} ${pdf.getNumberOfPages()}`, pageW - marginX, pageH - 6, { align: "right" });
+      pdf.addPage();
+      y = drawHeader(14);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.5);
+    }
+
+    if (idx % 2 === 0) {
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(marginX, y - 4, contentW, rowH, "F");
+    }
+
+    let cx = marginX;
+    pdf.setTextColor(15, 23, 42);
+
+    pdf.text(fmtDate(r.date), cx + 2, y);
+    cx += cols[0].w;
+
+    const acc = accountCodeOverrides[r.id] || "";
+    if (acc) {
+      pdf.setTextColor(99, 102, 241);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(acc, cx + cols[1].w / 2, y, { align: "center" });
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(15, 23, 42);
+    } else {
+      pdf.setTextColor(203, 213, 225);
+      pdf.text("—", cx + cols[1].w / 2, y, { align: "center" });
+      pdf.setTextColor(15, 23, 42);
+    }
+    cx += cols[1].w;
+
+    const descMaxChars = Math.floor(cols[2].w / 1.5);
+    const descText = truncate(r.description || r.counterpart || r.reference || "—", descMaxChars);
+    pdf.text(descText, cx + 2, y);
+    cx += cols[2].w;
+
+    if (r.type === "expense") {
+      pdf.setTextColor(239, 68, 68);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(fmt(r.amount) + " EUR", cx + cols[3].w - 2, y, { align: "right" });
+      pdf.setFont("helvetica", "normal");
+    } else {
+      pdf.setTextColor(203, 213, 225);
+      pdf.text("—", cx + cols[3].w - 2, y, { align: "right" });
+    }
+    cx += cols[3].w;
+
+    if (r.type === "income") {
+      pdf.setTextColor(16, 185, 129);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(fmt(r.amount) + " EUR", cx + cols[4].w - 2, y, { align: "right" });
+      pdf.setFont("helvetica", "normal");
+    } else {
+      pdf.setTextColor(203, 213, 225);
+      pdf.text("—", cx + cols[4].w - 2, y, { align: "right" });
+    }
+    cx += cols[4].w;
+
+    const st = statusOf(r);
+    const bx = cx + 2;
+    const bw = cols[5].w - 4;
+    pdf.setFillColor(st.color[0], st.color[1], st.color[2]);
+    pdf.roundedRect(bx, y - 3.4, bw, 4.6, 0.8, 0.8, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(6);
+    pdf.text(st.label, bx + bw / 2, y, { align: "center" });
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7.5);
+
+    y += rowH;
+  });
+
+  // ─── TOPLAM SATIRI ───
+  if (y + 10 > bottomLimit) {
+    pdf.addPage();
+    y = 18;
+  }
+  y += 2;
+  pdf.setFillColor(13, 17, 23);
+  pdf.rect(marginX, y, contentW, 9, "F");
+  pdf.setFillColor(6, 182, 212);
+  pdf.rect(marginX, y + 9, contentW, 0.6, "F");
+  pdf.setTextColor(226, 232, 240);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(8);
+  pdf.text(tr("TOPLAM", "GESAMT") + " (" + sorted.length + " " + tr("islem", "Pos.") + ")", marginX + 2, y + 6);
+
+  let cxT = marginX + cols[0].w + cols[1].w + cols[2].w;
+  pdf.setTextColor(248, 113, 113);
+  pdf.text("-" + fmt(totalExpense) + " EUR", cxT + cols[3].w - 2, y + 6, { align: "right" });
+  cxT += cols[3].w;
+  pdf.setTextColor(52, 211, 153);
+  pdf.text("+" + fmt(totalIncome) + " EUR", cxT + cols[4].w - 2, y + 6, { align: "right" });
+  cxT += cols[4].w;
+  pdf.setTextColor(226, 232, 240);
+  const net = totalIncome - totalExpense;
+  pdf.setFontSize(7);
+  pdf.text((net >= 0 ? "+" : "") + fmt(net), cxT + cols[5].w / 2, y + 6, { align: "center" });
+
+  pdf.setFontSize(7);
+  pdf.setTextColor(148, 163, 184);
+  pdf.text("fikoai.de  ·  Smart Accounting", marginX, pageH - 6);
+  pdf.text(`${tr("Sayfa", "Seite")} ${pdf.getNumberOfPages()}`, pageW - marginX, pageH - 6, { align: "right" });
+
+  const fname = `banka-dokumani-${stmt.period_start || stmt.file_name || "ekstre"}.pdf`.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  pdf.save(fname);
+};
+
+
 // ─────────────────────────────────────────────
 //  ARŞİV EKSTRESİ GENİŞLETİLMİŞ GÖRÜNÜM
 //  Özet kartlar + Gelir/Gider/Eşleşen/Eşleşmeyen filtre sekmeleri
@@ -1318,22 +1646,43 @@ const SavedStmtView: React.FC<{
             </button>
           ))}
         </div>
-        {onMarkAllUnmatchedAsNoInvoice && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
-            onClick={onMarkAllUnmatchedAsNoInvoice}
-            title={tr("Tüm eşleşmeyenleri faturasız işaretle", "Alle nicht abgeglichenen als ohne Rechnung markieren")}
+            onClick={() =>
+              generateBankStatementPDF(cleanRows, stmt, tr, invoices, matchStatusOverrides, accountCodeOverrides)
+            }
+            title={tr("Bu ekstreyi tarih sırasına göre PDF olarak indir", "Diesen Auszug als PDF herunterladen")}
             style={{
               display: "flex", alignItems: "center", gap: 6,
               padding: "8px 14px", borderRadius: 8,
-              background: "rgba(59,130,246,.12)", border: "1px solid rgba(59,130,246,.45)",
-              color: "#3b82f6", fontSize: 11, fontWeight: 700,
+              background: "linear-gradient(135deg, rgba(6,182,212,.18), rgba(99,102,241,.18))",
+              border: "1px solid rgba(6,182,212,.55)",
+              color: "#22d3ee", fontSize: 11, fontWeight: 800,
               fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
+              letterSpacing: ".02em",
+              boxShadow: "0 0 14px rgba(6,182,212,.18)",
             }}
           >
-            <FileText size={12} />
-            {tr("Eşleşmeyenleri 'Faturasız' yap", "Nicht abgl. → 'Ohne Rg.'")}
+            <Download size={12} />
+            {tr("PDF İndir", "PDF herunterladen")}
           </button>
-        )}
+          {onMarkAllUnmatchedAsNoInvoice && (
+            <button
+              onClick={onMarkAllUnmatchedAsNoInvoice}
+              title={tr("Tüm eşleşmeyenleri faturasız işaretle", "Alle nicht abgeglichenen als ohne Rechnung markieren")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 8,
+                background: "rgba(59,130,246,.12)", border: "1px solid rgba(59,130,246,.45)",
+                color: "#3b82f6", fontSize: 11, fontWeight: 700,
+                fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
+              }}
+            >
+              <FileText size={12} />
+              {tr("Eşleşmeyenleri 'Faturasız' yap", "Nicht abgl. → 'Ohne Rg.'")}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── İşlem tablosu ── */}
