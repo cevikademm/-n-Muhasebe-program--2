@@ -12,6 +12,7 @@ import { SuSaReport } from "./SuSaReport";
 
 interface AdminPanelProps {
   accountPlans: AccountRow[];
+  onReanalyze?: (invoice: Invoice) => Promise<void>;
 }
 
 // ─────────────────────────────────────────
@@ -90,7 +91,8 @@ const getSupplierName = (inv: Invoice): string => {
 // ─────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────
-export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyze }) => {
+  const [reanalyzing, setReanalyzing] = useState(false);
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
 
@@ -966,6 +968,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans }) => {
                           </div>
                         </div>
                       </div>
+
+                      {/* PDF / URL / Reanalyze bar */}
+                      <div className="shrink-0 px-5 py-3 flex flex-wrap items-center gap-3"
+                        style={{ background:"#0a0c11", borderBottom:"1px solid #1c1f27" }}>
+                        {(selectedInvoice as any).file_url ? (
+                          <>
+                            <a
+                              href={(selectedInvoice as any).file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 text-[10px] rounded-md font-syne font-semibold"
+                              style={{ background:"rgba(6,182,212,.1)", color:"#06b6d4", border:"1px solid rgba(6,182,212,.25)", textDecoration:"none" }}
+                            >
+                              📄 {tr("PDF'i Aç","PDF öffnen")}
+                            </a>
+                            <input
+                              readOnly
+                              value={(selectedInvoice as any).file_url}
+                              onClick={(e) => (e.target as HTMLInputElement).select()}
+                              className="flex-1 min-w-[200px] px-2 py-1.5 text-[10px] font-mono rounded-md"
+                              style={{ background:"#0d0f15", color:"#94a3b8", border:"1px solid #1c1f27" }}
+                            />
+                            <button
+                              onClick={() => { navigator.clipboard.writeText((selectedInvoice as any).file_url); }}
+                              className="px-2 py-1.5 text-[10px] rounded-md font-syne font-semibold"
+                              style={{ background:"rgba(255,255,255,.04)", color:"#64748b", border:"1px solid #1c1f27", cursor:"pointer" }}
+                            >
+                              {tr("Kopyala","Kopieren")}
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[10px]" style={{ color:"#64748b" }}>
+                            {tr("Bu fatura için saklı PDF yok (manuel girilmiş olabilir).","Keine PDF-Datei gespeichert (manuell erstellt).")}
+                          </span>
+                        )}
+                        {onReanalyze && (selectedInvoice as any).file_url && (
+                          <button
+                            disabled={reanalyzing}
+                            onClick={async () => {
+                              if (!selectedInvoice) return;
+                              setReanalyzing(true);
+                              try {
+                                await onReanalyze(selectedInvoice);
+                                alert(tr("Fatura yeniden analiz edildi.","Rechnung wurde neu analysiert."));
+                              } catch (err: any) {
+                                alert(tr("Hata: ","Fehler: ") + (err?.message || err));
+                              } finally {
+                                setReanalyzing(false);
+                              }
+                            }}
+                            className="px-3 py-1.5 text-[10px] rounded-md font-syne font-semibold"
+                            style={{ background:"rgba(168,85,247,.12)", color:"#a855f7", border:"1px solid rgba(168,85,247,.3)", cursor: reanalyzing ? "wait" : "pointer", opacity: reanalyzing ? .6 : 1 }}
+                          >
+                            {reanalyzing ? "⏳ " + tr("Analiz ediliyor...","Wird analysiert...") : "🤖 " + tr("AI ile Yeniden Analiz Et","Mit KI neu analysieren")}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* AI Analiz Sonucu (raw_ai_response) */}
+                      {(selectedInvoice as any).raw_ai_response && (
+                        <details className="shrink-0" style={{ background:"#0a0c11", borderBottom:"1px solid #1c1f27" }}>
+                          <summary className="px-5 py-2 text-[10px] font-syne font-semibold cursor-pointer" style={{ color:"#64748b" }}>
+                            🧠 {tr("AI Analiz Sonucu (JSON)","KI-Analyseergebnis (JSON)")}
+                          </summary>
+                          <pre className="px-5 py-3 text-[9px] font-mono overflow-auto max-h-[260px]" style={{ color:"#94a3b8", background:"#0d0f15" }}>
+{JSON.stringify((selectedInvoice as any).raw_ai_response, null, 2)}
+                          </pre>
+                        </details>
+                      )}
 
                       {/* Items table */}
                       <div className="flex-1 overflow-auto">

@@ -42,6 +42,57 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
 }) => {
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
   const isAdmin = userRole === "admin";
+  const [showOnlyEditRequests, setShowOnlyEditRequests] = useState(false);
+
+  // Bir faturada düzenleme talebi var mı?
+  const hasEditRequest = (inv: Invoice): boolean => {
+    const r = (inv as any).raw_ai_response?.edit_request;
+    return !!(r && r.requested === true);
+  };
+  const getEditRequest = (inv: Invoice): { note?: string; at?: string } | null => {
+    const r = (inv as any).raw_ai_response?.edit_request;
+    return r && r.requested ? r : null;
+  };
+
+  // Kullanıcı için: düzenleme talep et
+  const handleRequestEdit = async (invoice: Invoice) => {
+    if (!onUpdateInvoice) return;
+    const note = window.prompt(
+      tr(
+        "Bu fatura için düzenleme talep et\n\nLütfen sorunu kısaca açıkla (alıcı eksik, tutar yanlış, vb.):",
+        "Bearbeitung anfordern\n\nBitte beschreibe das Problem kurz (Käufer fehlt, Betrag falsch, usw.):"
+      ),
+      ""
+    );
+    if (note === null) return;
+    const raw: any = (invoice as any).raw_ai_response || {};
+    const newRaw = {
+      ...raw,
+      edit_request: {
+        requested: true,
+        note: note.trim(),
+        at: new Date().toISOString(),
+      },
+    };
+    onUpdateInvoice(invoice.id, { raw_ai_response: newRaw } as any);
+    alert(tr("Düzenleme talebin gönderildi. Yönetici incelemeye alacak.", "Bearbeitungsanfrage gesendet. Der Administrator wird sie prüfen."));
+  };
+
+  // Admin için: talebi çöz / kapat
+  const handleResolveEditRequest = async (invoice: Invoice) => {
+    if (!onUpdateInvoice) return;
+    if (!window.confirm(tr("Bu düzenleme talebini çözüldü olarak işaretle?", "Diese Bearbeitungsanfrage als erledigt markieren?"))) return;
+    const raw: any = (invoice as any).raw_ai_response || {};
+    const newRaw = {
+      ...raw,
+      edit_request: {
+        ...(raw.edit_request || {}),
+        requested: false,
+        resolved_at: new Date().toISOString(),
+      },
+    };
+    onUpdateInvoice(invoice.id, { raw_ai_response: newRaw } as any);
+  };
 
   const handleReanalyze = async (invoice: Invoice) => {
     if (!onReanalyze) return;
@@ -52,6 +103,20 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
     setReanalyzingId(invoice.id);
     try {
       await onReanalyze(invoice);
+      // Yeniden analiz tamamlandı → varsa düzenleme talebini otomatik kapat
+      if (hasEditRequest(invoice) && onUpdateInvoice) {
+        const raw: any = (invoice as any).raw_ai_response || {};
+        const newRaw = {
+          ...raw,
+          edit_request: {
+            ...(raw.edit_request || {}),
+            requested: false,
+            resolved_at: new Date().toISOString(),
+            resolved_by: "reanalyze",
+          },
+        };
+        try { await onUpdateInvoice(invoice.id, { raw_ai_response: newRaw } as any); } catch {}
+      }
     } catch (e: any) {
       alert(tr("Tekrar analiz hatası: ", "Re-Analyse Fehler: ") + (e?.message || e));
     } finally {
@@ -270,8 +335,13 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
         (inv.alici_vkn || "").toLowerCase().includes(term)
       );
     }
+    if (showOnlyEditRequests) {
+      filtered = filtered.filter(hasEditRequest);
+    }
     return filtered;
-  }, [invoices, searchTerm, viewMode, selectedYear, selectedMonth]);
+  }, [invoices, searchTerm, viewMode, selectedYear, selectedMonth, showOnlyEditRequests]);
+
+  const editRequestCount = useMemo(() => invoices.filter(hasEditRequest).length, [invoices]);
 
   const totalAmount = useMemo(() =>
     filteredInvoices.reduce((sum, inv) => sum + (inv.genel_toplam || 0), 0),
@@ -315,6 +385,31 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
             <p style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "3px" }}>
               {filteredInvoices.length} {tr("fatura", "Rechnung")} &middot; {fmtEur(totalAmount)}
             </p>
+            {/* Admin: Düzenleme talepleri filtre çipi */}
+            {isAdmin && editRequestCount > 0 && (
+              <button
+                onClick={() => setShowOnlyEditRequests(s => !s)}
+                style={{
+                  marginTop: "8px",
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "5px 11px", borderRadius: "8px",
+                  background: showOnlyEditRequests ? "rgba(245,158,11,.18)" : "rgba(245,158,11,.08)",
+                  border: `1px solid ${showOnlyEditRequests ? "rgba(245,158,11,.55)" : "rgba(245,158,11,.3)"}`,
+                  color: "#fbbf24", fontSize: "11px", fontWeight: 700,
+                  fontFamily: "'DM Sans',sans-serif", cursor: "pointer",
+                  boxShadow: showOnlyEditRequests ? "0 0 12px rgba(245,158,11,.25)" : "none",
+                }}
+              >
+                <AlertTriangle size={12} />
+                {tr("Düzenleme Talepleri", "Bearbeitungsanfragen")}
+                <span style={{
+                  background: "#f59e0b", color: "#0f1117",
+                  borderRadius: "999px", padding: "1px 7px",
+                  fontSize: "10px", fontWeight: 800,
+                }}>{editRequestCount}</span>
+                {showOnlyEditRequests && <span style={{ fontSize: "10px", opacity: .8 }}>· {tr("filtre aktif", "Filter aktiv")}</span>}
+              </button>
+            )}
           </div>
           {onCreateManual && (
             <button
@@ -438,6 +533,11 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
             .inv-header { padding: 20px 24px 16px !important; }
             .inv-list { padding: 12px 16px !important; }
           }
+          @keyframes inv-pending-pulse {
+            0%, 100% { box-shadow: 0 0 8px rgba(245,158,11,.4); transform: scale(1); }
+            50%      { box-shadow: 0 0 16px rgba(245,158,11,.85); transform: scale(1.04); }
+          }
+          .inv-pending-badge { animation: inv-pending-pulse 1.8s ease-in-out infinite; }
         `}</style>
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "200px", gap: "12px" }}>
@@ -483,12 +583,16 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                           position: "relative",
                           cursor: "pointer",
                           borderRadius: isSelected ? "14px 14px 0 0" : "14px",
-                          padding: "1px",
-                          background: isSelected
-                            ? `linear-gradient(135deg, ${accent}, ${accent2})`
-                            : "linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02))",
+                          padding: hasEditRequest(invoice) ? "2px" : "1px",
+                          background: hasEditRequest(invoice)
+                            ? "linear-gradient(135deg, #f59e0b, #f97316)"
+                            : isSelected
+                              ? `linear-gradient(135deg, ${accent}, ${accent2})`
+                              : "linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02))",
                           transition: "all .2s",
-                          boxShadow: isSelected ? `0 8px 24px ${accent}22` : "0 2px 8px rgba(0,0,0,.25)",
+                          boxShadow: hasEditRequest(invoice)
+                            ? "0 0 16px rgba(245,158,11,.35)"
+                            : isSelected ? `0 8px 24px ${accent}22` : "0 2px 8px rgba(0,0,0,.25)",
                         }}
                         onMouseEnter={e => {
                           if (!isSelected) e.currentTarget.style.background = `linear-gradient(135deg, ${accent}55, rgba(255,255,255,.04))`;
@@ -572,6 +676,24 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                               }}>
                                 {statusLabel2}
                               </span>
+                              {hasEditRequest(invoice) && (
+                                <span
+                                  className="inv-pending-badge"
+                                  title={getEditRequest(invoice)?.note || ""}
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: "4px",
+                                    fontSize: "8.5px", fontWeight: 800, padding: "2px 8px", borderRadius: "20px",
+                                    background: "linear-gradient(135deg, #f59e0b, #f97316)",
+                                    color: "#0f1117",
+                                    border: "1px solid #fbbf24",
+                                    letterSpacing: ".4px", textTransform: "uppercase",
+                                    boxShadow: "0 0 10px rgba(245,158,11,.55)",
+                                  }}
+                                >
+                                  <AlertTriangle size={9} />
+                                  {tr("İncelemede", "In Prüfung")}
+                                </span>
+                              )}
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "11px", color: "#94a3b8", flexWrap: "wrap" }}>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
@@ -738,6 +860,127 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                       <div style={{ height: "2px", background: "linear-gradient(90deg, #06b6d4, #8b5cf6, #06b6d4)" }} />
 
                       <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
+
+                        {/* --- Bekleyen Düzenleme Talebi (admin görür) --- */}
+                        {isAdmin && getEditRequest(invoice) && (
+                          <div style={{
+                            display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px",
+                            padding: "10px 14px", borderRadius: "9px",
+                            background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.4)",
+                          }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0, flex: 1 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#fbbf24", fontWeight: 800, fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                                <AlertTriangle size={13} />
+                                {tr("Kullanıcı Düzenleme Talebi", "Bearbeitungsanfrage des Nutzers")}
+                              </div>
+                              <div style={{ fontSize: "11px", color: "#e2e8f0", fontFamily: "'DM Sans',sans-serif", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                {getEditRequest(invoice)?.note || tr("(not eklenmemiş)", "(keine Notiz)")}
+                              </div>
+                              {getEditRequest(invoice)?.at && (
+                                <div style={{ fontSize: "9px", color: "#94a3b8", fontFamily: "'DM Sans',sans-serif" }}>
+                                  {new Date(getEditRequest(invoice)!.at!).toLocaleString(lang === "tr" ? "tr-TR" : "de-DE")}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleResolveEditRequest(invoice); }}
+                              style={{
+                                padding: "6px 12px", borderRadius: "7px",
+                                border: "1px solid rgba(16,185,129,.5)", background: "rgba(16,185,129,.15)",
+                                color: "#10b981", fontSize: "10px", fontWeight: 700, cursor: "pointer",
+                                fontFamily: "'DM Sans',sans-serif", whiteSpace: "nowrap",
+                              }}
+                            >
+                              ✓ {tr("Çözüldü", "Erledigt")}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* --- AI Tekrar Analiz aksiyon barı (admin) --- */}
+                        {isAdmin && onReanalyze && invoice.file_url && (() => {
+                          const buyerVal = (fb?.alici_adi || h?.buyer_name || "").trim();
+                          const sellerVal = (invoice.satici_adi || fb?.satici_adi || h?.supplier_name || "").trim();
+                          const missing =
+                            !buyerVal || /^unknown$|^---$/i.test(buyerVal) ||
+                            !sellerVal || /^unknown$|^---$/i.test(sellerVal);
+                          return (
+                            <div style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+                              padding: "10px 14px", borderRadius: "9px",
+                              background: missing ? "rgba(245,158,11,.08)" : "rgba(6,182,212,.06)",
+                              border: `1px solid ${missing ? "rgba(245,158,11,.35)" : "rgba(6,182,212,.25)"}`,
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: missing ? "#fbbf24" : "#94a3b8", fontFamily: "'DM Sans',sans-serif" }}>
+                                {missing
+                                  ? <><AlertTriangle size={13} /> {tr("Eksik veri tespit edildi (alıcı/satıcı). AI ile tekrar analiz öneriliyor.", "Fehlende Daten erkannt (Käufer/Verkäufer). KI-Neuanalyse empfohlen.")}</>
+                                  : <><RefreshCw size={12} /> {tr("Bu faturayı Claude Haiku 4.5 ile baştan analiz et.", "Diese Rechnung mit Claude Haiku 4.5 neu analysieren.")}</>
+                                }
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleReanalyze(invoice); }}
+                                disabled={reanalyzingId === invoice.id}
+                                style={{
+                                  display: "flex", alignItems: "center", gap: "6px",
+                                  padding: "7px 14px", borderRadius: "8px",
+                                  border: `1px solid ${missing ? "rgba(245,158,11,.5)" : "rgba(6,182,212,.45)"}`,
+                                  background: missing ? "rgba(245,158,11,.15)" : "rgba(6,182,212,.15)",
+                                  color: missing ? "#fbbf24" : "#22d3ee",
+                                  fontSize: "11px", fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
+                                  cursor: reanalyzingId === invoice.id ? "wait" : "pointer",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {reanalyzingId === invoice.id
+                                  ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> {tr("Analiz ediliyor...", "Analysiert...")}</>
+                                  : <><RefreshCw size={12} /> {tr("AI ile Tekrar Analiz", "Mit KI neu analysieren")}</>}
+                              </button>
+                            </div>
+                          );
+                        })()}
+
+                        {/* --- Kullanıcı: Düzenleme Talep Et (admin değilse) --- */}
+                        {!isAdmin && onUpdateInvoice && (() => {
+                          const existing = getEditRequest(invoice);
+                          return (
+                            <div style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+                              padding: "10px 14px", borderRadius: "9px",
+                              background: existing ? "rgba(245,158,11,.08)" : "rgba(99,102,241,.06)",
+                              border: `1px solid ${existing ? "rgba(245,158,11,.35)" : "rgba(99,102,241,.25)"}`,
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: existing ? "#fbbf24" : "#94a3b8", fontFamily: "'DM Sans',sans-serif", minWidth: 0, flex: 1 }}>
+                                {existing ? (
+                                  <>
+                                    <AlertTriangle size={13} />
+                                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                      <strong>{tr("Talep gönderildi:", "Anfrage gesendet:")}</strong> {existing.note || tr("(notsuz)", "(ohne Notiz)")}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Edit3 size={12} />
+                                    {tr("Bu faturada hata mı var? Yöneticiden düzenleme talep et.", "Fehler in dieser Rechnung? Bearbeitung vom Administrator anfordern.")}
+                                  </>
+                                )}
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleRequestEdit(invoice); }}
+                                style={{
+                                  display: "flex", alignItems: "center", gap: "6px",
+                                  padding: "7px 14px", borderRadius: "8px",
+                                  border: `1px solid ${existing ? "rgba(245,158,11,.5)" : "rgba(99,102,241,.5)"}`,
+                                  background: existing ? "rgba(245,158,11,.15)" : "rgba(99,102,241,.15)",
+                                  color: existing ? "#fbbf24" : "#818cf8",
+                                  fontSize: "11px", fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
+                                  cursor: "pointer", whiteSpace: "nowrap",
+                                }}
+                              >
+                                <Edit3 size={12} />
+                                {existing ? tr("Talebi Güncelle", "Anfrage aktualisieren") : tr("Düzenleme Talep Et", "Bearbeitung anfordern")}
+                              </button>
+                            </div>
+                          );
+                        })()}
 
                         {/* --- Satici / Alici Row --- */}
                         <div className="inv-parties" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>

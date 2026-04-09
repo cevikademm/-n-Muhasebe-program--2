@@ -72,7 +72,7 @@ export default function App() {
   const {
     invoices, loading: invoicesLoading, uploading: invoiceUploading,
     uploadAndAnalyze, createManualInvoice, deleteInvoice, fetchInvoiceItems,
-    updateInvoice, updateInvoiceItems,
+    updateInvoice, updateInvoiceItems, reanalyzeInvoice,
   } = useInvoices(session);
 
   // ─── Auth & Session ───────────────────────────────────────────────
@@ -238,7 +238,7 @@ export default function App() {
     }
 
     if (activeMenu === "adminView" && userRole === "admin") {
-      return <AdminPanel accountPlans={data} />;
+      return <AdminPanel accountPlans={data} onReanalyze={reanalyzeInvoice} />;
     }
 
     if (activeMenu === "reports") {
@@ -296,6 +296,8 @@ export default function App() {
           onAccountClick={(item: any) => setSelectedDetailItem(item)}
           onUpdateInvoice={updateInvoice}
           onUpdateInvoiceItems={updateInvoiceItems}
+          userRole={userRole}
+          onReanalyze={reanalyzeInvoice}
         />
       );
     }
