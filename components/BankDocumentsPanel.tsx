@@ -303,6 +303,50 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
           suppressSyncRef.current = false;
           overridesLoadedRef.current = true;
         }, 0);
+
+        // ── Tek seferlik localStorage → Supabase migrasyonu ──
+        // Eski cihazlarda localStorage'ta kalmış override'ları sunucuya yükler.
+        try {
+          const migrateFlagKey = `bank_tx_overrides_migrated_${userId}`;
+          if (!localStorage.getItem(migrateFlagKey)) {
+            const lsAcc = JSON.parse(localStorage.getItem("bank_account_code_overrides") || "{}") as Record<string, string>;
+            const lsMatch = JSON.parse(localStorage.getItem("bank_match_overrides") || "{}") as Record<string, string>;
+            const keys = new Set<string>([...Object.keys(lsAcc), ...Object.keys(lsMatch)]);
+            const upserts: any[] = [];
+            for (const k of keys) {
+              const a = lsAcc[k] || null;
+              const m = lsMatch[k] || null;
+              // Sunucuda zaten varsa ve aynı değerse atla
+              if ((a || null) === (acc[k] || null) && (m || null) === ((match as any)[k] || null)) continue;
+              if (!a && !m) continue;
+              upserts.push({
+                user_id: userId,
+                tx_id: k,
+                account_code: a,
+                match_status: m,
+                updated_at: new Date().toISOString(),
+              });
+            }
+            if (upserts.length) {
+              const { error: upErr } = await supabase
+                .from("bank_tx_overrides")
+                .upsert(upserts, { onConflict: "user_id,tx_id" });
+              if (upErr) {
+                console.warn("[bank_tx_overrides] migrate upsert", upErr);
+              } else {
+                console.info(`[bank_tx_overrides] migrated ${upserts.length} override(s) from localStorage`);
+                // lastSynced snapshot'unu da güncel tut
+                for (const r of upserts) {
+                  if (r.account_code) lastSyncedRef.current.acc[r.tx_id] = r.account_code;
+                  if (r.match_status) lastSyncedRef.current.match[r.tx_id] = r.match_status;
+                }
+              }
+            }
+            localStorage.setItem(migrateFlagKey, new Date().toISOString());
+          }
+        } catch (mErr) {
+          console.warn("[bank_tx_overrides] migrate exception", mErr);
+        }
       } catch (e) { console.warn("[bank_tx_overrides] load exception", e); }
     })();
 
