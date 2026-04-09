@@ -523,6 +523,10 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
 
   // ── Sil
   const handleDelete = async (id: string) => {
+    if (!window.confirm(tr(
+      "Bu banka ekstresini ve tüm işlemlerini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.",
+      "Diesen Kontoauszug und alle zugehörigen Buchungen wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden."
+    ))) return;
     try {
       await deleteBankStatement(id);
       setSavedStatements(prev => prev.filter(s => s.id !== id));
@@ -888,7 +892,7 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                   { w: "110px", label: tr("Gelir", "Einnahmen"), align: "right" as const },
                   { w: "110px", label: tr("Gider", "Ausgaben"), align: "right" as const },
                   { w: "80px", label: tr("Kayıt Tarihi", "Datum") },
-                  { w: "30px", label: "" },
+                  { w: "120px", label: "" },
                 ].map((col, i) => (
                   <div key={i} style={{ width: col.w, textAlign: col.align || "left", fontSize: "9px", fontWeight: 700, color: "#374151", fontFamily: "'DM Sans',sans-serif", textTransform: "uppercase", letterSpacing: ".08em", flexShrink: 0 }}>
                     {col.label}
@@ -909,10 +913,10 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                     <div style={{ width: "110px", textAlign: "right", fontSize: "11px", color: "#10b981", fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0 }}>+{fmtDE(s.total_income)} €</div>
                     <div style={{ width: "110px", textAlign: "right", fontSize: "11px", color: "#ef4444", fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0 }}>-{fmtDE(s.total_expense)} €</div>
                     <div style={{ width: "80px", fontSize: "10px", color: "#374151", fontFamily: "'DM Sans',sans-serif", flexShrink: 0 }}>{fmtDate(s.created_at)}</div>
-                    <div style={{ width: "30px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+                    <div style={{ width: "120px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
                       {loadingTxs === s.id
-                        ? <Loader2 size={11} style={{ color: "#374151", animation: "spin 1s linear infinite" }} />
-                        : <ChevronDown size={11} style={{ color: "#374151", transform: expandedStmt === s.id ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                        ? <Loader2 size={16} style={{ color: "#374151", animation: "spin 1s linear infinite" }} />
+                        : <ChevronDown size={16} style={{ color: "#374151", transform: expandedStmt === s.id ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                       }
                       {s.file_url && (
                         <a
@@ -922,23 +926,27 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                           rel="noopener noreferrer"
                           onClick={e => e.stopPropagation()}
                           title={tr("PDF indir", "PDF herunterladen")}
-                          style={{ color: "#10b981", padding: "2px", lineHeight: 0, display: "inline-flex" }}
+                          style={{ color: "#10b981", padding: "6px", lineHeight: 0, display: "inline-flex", borderRadius: "6px", background: "rgba(16,185,129,.08)" }}
                         >
-                          <Download size={11} />
+                          <Download size={18} />
                         </a>
                       )}
                       <button
                         onClick={e => { e.stopPropagation(); handleRematch(s.id); }}
                         disabled={rematchingId === s.id}
                         title={tr("Mevcut faturalarla yeniden eşleştir", "Mit aktuellen Rechnungen neu abgleichen")}
-                        style={{ background: "none", border: "none", color: "#06b6d4", cursor: "pointer", padding: "2px", lineHeight: 0 }}
+                        style={{ background: "rgba(6,182,212,.08)", border: "none", color: "#06b6d4", cursor: "pointer", padding: "6px", lineHeight: 0, borderRadius: "6px", display: "inline-flex" }}
                       >
                         {rematchingId === s.id
-                          ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                          : <RefreshCw size={11} />}
+                          ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
+                          : <RefreshCw size={18} />}
                       </button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(s.id); }} style={{ background: "none", border: "none", color: "#2a3040", cursor: "pointer", padding: "2px", lineHeight: 0 }}>
-                        <Trash2 size={10} />
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDelete(s.id); }}
+                        title={tr("Sil", "Löschen")}
+                        style={{ background: "rgba(239,68,68,.08)", border: "none", color: "#ef4444", cursor: "pointer", padding: "6px", lineHeight: 0, borderRadius: "6px", display: "inline-flex" }}
+                      >
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   </div>
