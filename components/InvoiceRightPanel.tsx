@@ -111,7 +111,7 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
   };
 
   // Render detail card for a specific item (from center panel click or from items list)
-  const renderDetailCard = (item: any) => {
+  const renderDetailCard = (item: any, inList: boolean = false) => {
     if (!item) return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
         <Info size={36} style={{ color: "rgba(255,255,255,.08)" }} />
@@ -192,12 +192,10 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
     const grossAmount = item.gross_amount || item.satir_toplami || 0;
     const netAmount = item.net_amount || item.net_tutar || 0;
 
-    return (
-      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-        <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
-
+    const innerContent = (
+      <>
           {/* Back button if from center panel */}
-          {onClearDetailItem && detailItem && (
+          {!inList && onClearDetailItem && detailItem && (
             <button onClick={onClearDetailItem} style={{
               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px",
               borderRadius: "6px", border: "1px solid rgba(255,255,255,.08)",
@@ -510,7 +508,123 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
               )}
             </div>
           </div>
+      </>
+    );
 
+    if (inList) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {innerContent}
+        </div>
+      );
+    }
+    return (
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {innerContent}
+        </div>
+      </div>
+    );
+  };
+
+  const renderExpenseAnalysis = () => {
+    const items: any[] = rawResponse?.items || rawResponse?.kalemler || [];
+    if (!items.length) {
+      return (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
+          <Info size={36} style={{ color: "rgba(255,255,255,.08)" }} />
+          <span style={{ fontSize: "12px", color: "#64748b", textAlign: "center", lineHeight: 1.6 }}>
+            {tr("Bu faturada kalem bulunamadi", "Keine Positionen in dieser Rechnung")}
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* ─── Üst: Kalem listesi (özet) ─── */}
+          <div style={{
+            borderRadius: "12px",
+            background: "rgba(6,182,212,.04)",
+            border: "1px solid rgba(6,182,212,.15)",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              padding: "10px 14px",
+              borderBottom: "1px solid rgba(6,182,212,.12)",
+              display: "flex", alignItems: "center", gap: 8,
+              background: "rgba(6,182,212,.06)",
+            }}>
+              <ShoppingCart size={13} style={{ color: "#06b6d4" }} />
+              <span style={{ fontSize: "10px", fontWeight: 700, color: "#06b6d4", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                {tr("Kalemler", "Positionen")} ({items.length})
+              </span>
+            </div>
+            <div>
+              {items.map((it: any, i: number) => {
+                const code = it.account_code || it.hesap_kodu || "---";
+                const name = it.description || it.urun_adi || "---";
+                const gross = it.gross_amount || it.satir_toplami || 0;
+                return (
+                  <a
+                    key={i}
+                    href={`#expense-item-${i}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const el = document.getElementById(`expense-item-${i}`);
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      padding: "9px 14px",
+                      borderBottom: i < items.length - 1 ? "1px solid rgba(255,255,255,.04)" : "none",
+                      textDecoration: "none", cursor: "pointer",
+                    }}
+                  >
+                    <span style={{
+                      minWidth: 36, textAlign: "center",
+                      fontFamily: "'Space Grotesk', monospace", fontSize: "11px", fontWeight: 700,
+                      color: "#a78bfa", padding: "2px 6px", borderRadius: 4,
+                      background: "rgba(139,92,246,.1)", border: "1px solid rgba(139,92,246,.2)",
+                    }}>{code}</span>
+                    <span style={{ flex: 1, fontSize: "11px", color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {name}
+                    </span>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#06b6d4", fontFamily: "'Space Grotesk', sans-serif" }}>
+                      {new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2 }).format(gross)} €
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ─── Alt: Her kalem için açıklama kartları ─── */}
+          {items.map((it: any, i: number) => (
+            <div key={i} id={`expense-item-${i}`} style={{
+              borderRadius: "14px",
+              border: "1px solid rgba(255,255,255,.06)",
+              background: "rgba(255,255,255,.015)",
+              padding: "14px",
+            }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                marginBottom: 12, paddingBottom: 10,
+                borderBottom: "1px solid rgba(255,255,255,.05)",
+              }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: 6,
+                  background: "rgba(6,182,212,.12)", border: "1px solid rgba(6,182,212,.25)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "10px", fontWeight: 800, color: "#06b6d4",
+                }}>{i + 1}</span>
+                <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                  {tr("Kalem", "Position")} {i + 1} / {items.length}
+                </span>
+              </div>
+              {renderDetailCard(it, true)}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -550,7 +664,7 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
         <div style={{ display: "flex", gap: "2px" }}>
           {([
             { key: "preview" as const, label: tr("Fatura Onizleme", "Vorschau"), icon: <ImageIcon size={12} /> },
-            { key: "detail" as const, label: tr("Detay Karti", "Detailkarte"), icon: <BookOpen size={12} /> },
+            { key: "detail" as const, label: tr("Fatura Gider Analizi", "Rechnungsausgabenanalyse"), icon: <BookOpen size={12} /> },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -1040,7 +1154,7 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
         </>
       ) : (
         /* ── DETAIL TAB ── */
-        renderDetailCard(detailItem)
+        renderExpenseAnalysis()
       )}
 
       {/* Footer - Delete */}

@@ -666,9 +666,44 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
     return () => { active = false; };
   }, [selectedInvoice?.id, fetchInvoiceItems]);
 
-  const selectedItems = useMemo(() =>
-    selectedInvoice ? invoiceItems.filter(i => i.invoice_id === selectedInvoice.id) : [],
-    [selectedInvoice, invoiceItems]);
+  const selectedItems = useMemo(() => {
+    if (!selectedInvoice) return [] as InvoiceItem[];
+    const fromTable = invoiceItems.filter(i => i.invoice_id === selectedInvoice.id);
+    if (fromTable.length > 0) return fromTable;
+    // Fallback: invoice_items tablosu boşsa raw_ai_response.kalemler / items'tan türet
+    const raw: any = (selectedInvoice as any).raw_ai_response || {};
+    const rawItems: any[] = Array.isArray(raw.kalemler) ? raw.kalemler
+      : Array.isArray(raw.items) ? raw.items
+      : [];
+    if (rawItems.length === 0) return [];
+    return rawItems.map((it: any, idx: number) => {
+      const net = Number(it.net_amount ?? it.net ?? it.net_tutar ?? 0) || 0;
+      const gross = Number(it.gross_amount ?? it.gross ?? it.brut_tutar ?? it.satir_toplami ?? 0) || 0;
+      const vatRate = it.vat_rate ?? it.kdv_orani ?? null;
+      const qty = it.quantity ?? it.miktar ?? null;
+      const unit = it.unit_price ?? it.birim_fiyat ?? (qty ? net / Number(qty || 1) : null);
+      return {
+        id: `${selectedInvoice.id}-raw-${idx}`,
+        invoice_id: selectedInvoice.id,
+        urun_adi: it.urun_adi || it.description || "",
+        description: it.description || it.urun_adi || "",
+        miktar: Number(qty || 0),
+        quantity: qty,
+        kdv_orani: Number(vatRate || 0),
+        vat_rate: vatRate,
+        unit_price: unit,
+        net_amount: net,
+        gross_amount: gross,
+        satir_toplami: gross,
+        account_code: it.account_code || it.hesap_kodu || null,
+        account_name: it.account_name || it.hesap_adi || null,
+        account_name_tr: it.account_name_tr || it.hesap_adi || null,
+        match_justification: it.match_justification || it.justification || "",
+        match_score: it.match_score ?? it.confidence ?? null,
+        created_at: new Date().toISOString(),
+      } as unknown as InvoiceItem;
+    });
+  }, [selectedInvoice, invoiceItems]);
 
   const planJustMap = useMemo(() => {
     const m = new Map<string, string>();
