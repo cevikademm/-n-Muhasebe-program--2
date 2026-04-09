@@ -304,17 +304,28 @@ interface CompanyInfoSnapshot {
 
 const AusgangsbuchDoc: React.FC<{
   bankIncomes: SavedTransaction[];
+  invoiceItems: InvoiceItem[];
   period: string;
   companyInfo: CompanyInfoSnapshot | null;
   tr: (a: string, b: string) => string;
-}> = ({ bankIncomes: rawBankIncomes, period, companyInfo, tr }) => {
+}> = ({ bankIncomes: rawBankIncomes, invoiceItems, period, companyInfo, tr }) => {
   const overrides = useKindOverrides();
-  // Tabloda tüm raw işlemleri göster (kullanıcı buradan tipini değiştirebilsin)
-  const bankIncomes = rawBankIncomes;
-  // KPI ve toplam: yalnızca effective income olanlar
+  // Yalnızca eşleşen faturasında 8xxx (gelir) hesap kodu bulunan banka işlemlerini göster
+  const has8xxx = (invoiceId: string | null | undefined) => {
+    if (!invoiceId) return false;
+    return invoiceItems.some(it =>
+      it.invoice_id === invoiceId &&
+      String(it.account_code || "").trim().startsWith("8")
+    );
+  };
+  const bankIncomes = useMemo(
+    () => rawBankIncomes.filter(tx => has8xxx(tx.matched_invoice_id)),
+    [rawBankIncomes, invoiceItems]
+  );
+  // KPI ve toplam: yalnızca effective income olanlar (8xxx filtreli set üzerinden)
   const incomeOnly = useMemo(
-    () => rawBankIncomes.filter(tx => getEffectiveKind(tx, overrides) === "income"),
-    [rawBankIncomes, overrides]
+    () => bankIncomes.filter(tx => getEffectiveKind(tx, overrides) === "income"),
+    [bankIncomes, overrides]
   );
   const totalBankIncome = incomeOnly.reduce((s, tx) => s + (tx.amount || 0), 0);
   const matchedCount = incomeOnly.filter(tx => !!tx.matched_invoice_id).length;
@@ -1487,7 +1498,7 @@ export const MaliMusavirPanel: React.FC<Props> = ({ invoices, fetchItems }) => {
         tr={tr}
       />;
       case "eingangsbuch": return <EingangsbuchDoc {...props} />;
-      case "ausgangsbuch": return <AusgangsbuchDoc bankIncomes={filteredBankIncomes} period={period} companyInfo={companyInfo} tr={tr} />;
+      case "ausgangsbuch": return <AusgangsbuchDoc bankIncomes={filteredBankIncomes} invoiceItems={filteredItems} period={period} companyInfo={companyInfo} tr={tr} />;
       case "opos": return <OposDoc invoices={filteredInvoices} period={period} tr={tr} />;
       case "bwa": return <BwaDoc {...props} />;
       case "fehlende": return <FehlendeDoc {...props} />;

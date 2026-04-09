@@ -322,58 +322,6 @@ export const InvoiceRightPanel: React.FC<InvoiceRightPanelProps> = ({
             </div>
           </div>
 
-          {/* Confidence Score */}
-          {score !== null && (
-            <div style={{
-              padding: "12px 16px", borderRadius: "10px",
-              background: score >= 80 ? "rgba(16,185,129,.06)" : score >= 50 ? "rgba(245,158,11,.06)" : "rgba(239,68,68,.06)",
-              border: `1px solid ${score >= 80 ? "rgba(16,185,129,.2)" : score >= 50 ? "rgba(245,158,11,.2)" : "rgba(239,68,68,.2)"}`,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <BarChart3 size={16} style={{ color: score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444", flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "10px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 4 }}>
-                    {tr("Guven Skoru", "Konfidenz")}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ flex: 1, height: 8, borderRadius: 4, background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
-                      <div style={{
-                        width: `${Math.min(100, score)}%`, height: "100%", borderRadius: 4,
-                        background: score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444",
-                        transition: "width .3s",
-                      }} />
-                    </div>
-                    <span style={{
-                      fontSize: "16px", fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif",
-                      color: score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444",
-                    }}>
-                      %{score}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              {score >= 90 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-                  <CheckCircle2 size={12} style={{ color: "#10b981" }} />
-                  <span style={{ fontSize: "10px", color: "#10b981" }}>
-                    {tr("Yuksek guvenle atandi", "Mit hoher Konfidenz zugewiesen")}
-                  </span>
-                </div>
-              )}
-              {score < 60 && (
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 8 }}>
-                  <AlertTriangle size={12} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ fontSize: "10px", color: "#fbbf24", lineHeight: 1.4 }}>
-                    {tr(
-                      "Dusuk guven skoru — manuel dogrulama oneriliyor.",
-                      "Niedriger Konfidenzwert — manuelle Uberprufung empfohlen."
-                    )}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Analysis Justification */}
           {justification && (
             <div style={{
