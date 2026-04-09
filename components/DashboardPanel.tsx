@@ -5,14 +5,28 @@ import {
   Upload, FileText, BookOpen, PieChart,
   Settings, Image as ImageIcon, ArrowRight,
   TrendingUp, TrendingDown, Minus, Sparkles,
-  Brain, Shield, Zap, CircleDot,
+  Brain, Shield, Zap, CircleDot, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { MagicCard } from "./ui/magic-card";
 
 interface DashboardPanelProps {
   onNavigate: (menu: MenuKey) => void;
   onUploadInvoice?: (file: File) => void | Promise<void>;
+  invoices?: any[];
 }
+
+// period_start öncelikli, sonra tarih/invoice_date/created_at fallback
+const getInvDate = (inv: any): string | null => {
+  const fb = inv?.raw_ai_response?.fatura_bilgileri || inv?.raw_ai_response?.header || {};
+  return fb.period_start || inv?.tarih || inv?.invoice_date || inv?.created_at || null;
+};
+const monthKeyOf = (inv: any): string | null => {
+  const d = getInvDate(inv);
+  if (!d) return null;
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return null;
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+};
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " €";
@@ -44,14 +58,53 @@ function useCountUp(target: number, duration = 900) {
   return val;
 }
 
-export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUploadInvoice }) => {
+export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUploadInvoice, invoices: invoicesProp }) => {
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const invoices: any[] = [];
+  const allInvoices: any[] = invoicesProp || [];
   const invoiceItems: any[] = [];
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const MONTHS = lang === "tr" ? MONTHS_TR : MONTHS_DE;
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ─── Ay seçici: veri olan ayları topla, en son aya varsayılan ───
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    allInvoices.forEach(inv => {
+      const k = monthKeyOf(inv);
+      if (k) set.add(k);
+    });
+    return Array.from(set).sort(); // artan
+  }, [allInvoices]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  useEffect(() => {
+    if (availableMonths.length === 0) {
+      setSelectedMonth(null);
+      return;
+    }
+    // seçili ay listede yoksa en sona (en yeni) sabitle
+    if (!selectedMonth || !availableMonths.includes(selectedMonth)) {
+      setSelectedMonth(availableMonths[availableMonths.length - 1]);
+    }
+  }, [availableMonths]);
+
+  const invoices = useMemo(() => {
+    if (!selectedMonth) return [];
+    return allInvoices.filter(inv => monthKeyOf(inv) === selectedMonth);
+  }, [allInvoices, selectedMonth]);
+
+  const selectedIdx = selectedMonth ? availableMonths.indexOf(selectedMonth) : -1;
+  const canPrev = selectedIdx > 0;
+  const canNext = selectedIdx >= 0 && selectedIdx < availableMonths.length - 1;
+  const goPrev = () => { if (canPrev) setSelectedMonth(availableMonths[selectedIdx - 1]); };
+  const goNext = () => { if (canNext) setSelectedMonth(availableMonths[selectedIdx + 1]); };
+
+  const selectedMonthLabel = useMemo(() => {
+    if (!selectedMonth) return tr("Veri yok", "Keine Daten");
+    const [y, m] = selectedMonth.split("-").map(Number);
+    return `${MONTHS[m - 1]} ${y}`;
+  }, [selectedMonth, MONTHS, lang]);
 
   const stats = useMemo(() => {
     const total = invoices.length;
@@ -65,14 +118,19 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUp
   }, [invoices]);
 
   const monthlyData = useMemo(() => {
-    const now = new Date();
+    // Seçili ayı sağ uca alıp 6 aylık pencere oluştur
+    const anchor = selectedMonth
+      ? (() => { const [y, m] = selectedMonth.split("-").map(Number); return new Date(y, m - 1, 1); })()
+      : new Date();
     const result = Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - (5 - i), 1);
       return { label: MONTHS[d.getMonth()], month: d.getMonth(), year: d.getFullYear(), value: 0, count: 0 };
     });
-    invoices.forEach(inv => {
-      if (!inv.invoice_date) return;
-      const d = new Date(inv.invoice_date);
+    allInvoices.forEach(inv => {
+      const ds = getInvDate(inv);
+      if (!ds) return;
+      const d = new Date(ds);
+      if (isNaN(d.getTime())) return;
       result.forEach(r => {
         if (d.getFullYear() === r.year && d.getMonth() === r.month) {
           r.value += inv.total_gross || 0;
@@ -81,7 +139,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUp
       });
     });
     return result;
-  }, [invoices, MONTHS]);
+  }, [allInvoices, MONTHS, selectedMonth]);
 
   const maxMonthly = Math.max(...monthlyData.map(m => m.value), 1);
   const lastMonth = monthlyData[monthlyData.length - 1];
@@ -382,6 +440,76 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUp
             {tr("Başla", "Los")} <ArrowRight size={16} />
           </div>
         </button>
+
+        {/* ── Ay Seçici ── */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: "12px", flexWrap: "wrap",
+          padding: "12px 16px",
+          borderRadius: "14px",
+          border: "1px solid #e2e8f0",
+          background: "linear-gradient(135deg, rgba(6,182,212,.05), rgba(139,92,246,.04))",
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+            <span style={{
+              fontSize: "10px", fontWeight: 700, letterSpacing: ".08em",
+              textTransform: "uppercase", color: "#06b6d4",
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+            }}>
+              {tr("Görüntülenen Dönem", "Angezeigter Zeitraum")}
+            </span>
+            <span style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: "18px", fontWeight: 800, color: "#0f172a",
+            }}>
+              {selectedMonthLabel}
+              {invoices.length > 0 && (
+                <span style={{
+                  marginLeft: "10px", fontSize: "11px", fontWeight: 600,
+                  color: "#64748b", letterSpacing: ".02em",
+                }}>
+                  {invoices.length} {tr("kayıt", "Einträge")}
+                </span>
+              )}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={goPrev}
+              disabled={!canPrev}
+              title={tr("Önceki ay", "Vorheriger Monat")}
+              style={{
+                width: "36px", height: "36px", borderRadius: "10px",
+                border: "1px solid #e2e8f0",
+                background: canPrev ? "#ffffff" : "#f1f5f9",
+                color: canPrev ? "#0f172a" : "#94a3b8",
+                cursor: canPrev ? "pointer" : "not-allowed",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                transition: "all .15s",
+              }}
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={!canNext}
+              title={tr("Sonraki ay", "Nächster Monat")}
+              style={{
+                width: "36px", height: "36px", borderRadius: "10px",
+                border: "1px solid #e2e8f0",
+                background: canNext ? "#ffffff" : "#f1f5f9",
+                color: canNext ? "#0f172a" : "#94a3b8",
+                cursor: canNext ? "pointer" : "not-allowed",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                transition: "all .15s",
+              }}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        </div>
 
         {/* ── KPI Cards ── */}
         <div className="dp-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>

@@ -513,7 +513,7 @@ export function useInvoices(session: any) {
   //  super-worker (Claude Haiku 4.5) ile baştan analiz eder ve
   //  invoices tablosundaki satırı yerinde günceller.
   // ─────────────────────────────────────────────
-  const reanalyzeInvoice = useCallback(async (invoice: Invoice): Promise<void> => {
+  const reanalyzeInvoice = useCallback(async (invoice: Invoice): Promise<{ changedFields: string[] }> => {
     if (!invoice?.id) throw new Error("Geçersiz fatura");
     if (!invoice.file_url) throw new Error("Bu faturanın saklı dosyası yok, tekrar analiz yapılamaz.");
 
@@ -602,8 +602,29 @@ export function useInvoices(session: any) {
     const { error: dbErr } = await supabase.from("invoices").update(updatePayload).eq("id", invoice.id);
     if (dbErr) throw new Error("DB güncelleme hatası: " + dbErr.message);
 
+    // Değişen alanları hesapla (görsel highlight için)
+    const num = (v: any) => Number(v || 0);
+    const norm = (v: any) => String(v ?? "").trim().toLowerCase();
+    const before: any = invoice;
+    const after: any = { ...invoice, ...updatePayload };
+    const changedFields: string[] = [];
+    if (norm(before.fatura_no) !== norm(after.fatura_no)) changedFields.push("fatura_no");
+    if (norm(before.tarih) !== norm(after.tarih)) changedFields.push("tarih");
+    if (norm(before.satici_adi) !== norm(after.satici_adi)) changedFields.push("satici_adi");
+    if (norm(before.satici_vkn) !== norm(after.satici_vkn)) changedFields.push("satici_vkn");
+    if (norm(before.alici_adi) !== norm(after.alici_adi)) changedFields.push("alici_adi");
+    if (norm(before.alici_vkn) !== norm(after.alici_vkn)) changedFields.push("alici_vkn");
+    if (Math.abs(num(before.ara_toplam) - num(after.ara_toplam)) > 0.005) changedFields.push("ara_toplam");
+    if (Math.abs(num(before.toplam_kdv) - num(after.toplam_kdv)) > 0.005) changedFields.push("toplam_kdv");
+    if (Math.abs(num(before.genel_toplam) - num(after.genel_toplam)) > 0.005) changedFields.push("genel_toplam");
+    const beforeItemCount = (before?.raw_ai_response?.kalemler || before?.raw_ai_response?.items || []).length;
+    const afterItemCount = (after?.raw_ai_response?.kalemler || after?.raw_ai_response?.items || []).length;
+    if (beforeItemCount !== afterItemCount) changedFields.push("kalemler");
+
     // Local state senkron
     setInvoices(prev => prev.map(inv => inv.id === invoice.id ? { ...inv, ...updatePayload } : inv));
+
+    return { changedFields };
   }, []);
 
   return {

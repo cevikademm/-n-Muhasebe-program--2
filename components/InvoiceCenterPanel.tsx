@@ -24,7 +24,7 @@ interface InvoiceCenterPanelProps {
   onUpdateInvoiceItems?: (invoiceId: string, items: any[]) => void;
   userId?: string;
   userRole?: string;
-  onReanalyze?: (invoice: Invoice) => Promise<void>;
+  onReanalyze?: (invoice: Invoice) => Promise<{ changedFields: string[] } | void>;
 }
 
 const fmtEur = (n: number) =>
@@ -41,6 +41,21 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
   onDelete, onCreateManual, onUpdateInvoice, onUpdateInvoiceItems, userId, userRole, onReanalyze,
 }) => {
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+  // Yeniden analiz sonrası değişen alanları kısa süreyle vurgulamak için state
+  const [changedByInvoice, setChangedByInvoice] = useState<Record<string, Set<string>>>({});
+  const isFieldChanged = (invId: string, field: string) => !!changedByInvoice[invId]?.has(field);
+  const highlightStyle = (invId: string, ...fields: string[]): React.CSSProperties => {
+    const hit = fields.some(f => isFieldChanged(invId, f));
+    return hit
+      ? {
+          background: "rgba(250,204,21,.18)",
+          border: "1px solid rgba(250,204,21,.65)",
+          boxShadow: "0 0 0 2px rgba(250,204,21,.25)",
+          borderRadius: 6,
+          transition: "all .35s",
+        }
+      : {};
+  };
   const isAdmin = userRole === "admin";
   const [showOnlyEditRequests, setShowOnlyEditRequests] = useState(false);
 
@@ -102,7 +117,21 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
     ))) return;
     setReanalyzingId(invoice.id);
     try {
-      await onReanalyze(invoice);
+      const result = await onReanalyze(invoice);
+      const changed: string[] = (result && (result as any).changedFields) || [];
+      if (changed.length > 0) {
+        setChangedByInvoice(prev => ({ ...prev, [invoice.id]: new Set(changed) }));
+        // 25 saniye sonra vurguyu temizle
+        setTimeout(() => {
+          setChangedByInvoice(prev => {
+            const next = { ...prev };
+            delete next[invoice.id];
+            return next;
+          });
+        }, 25000);
+      }
+      // Tekrar fetch et: kalemler ve yeni verilerin tam senkron olması için
+      try { await fetchItems?.(invoice.id); } catch {}
       // Yeniden analiz tamamlandı → varsa düzenleme talebini otomatik kapat
       if (hasEditRequest(invoice) && onUpdateInvoice) {
         const raw: any = (invoice as any).raw_ai_response || {};
@@ -861,6 +890,22 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
 
                       <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
 
+                        {/* --- Yeniden Analiz Sonucu Bildirimi --- */}
+                        {changedByInvoice[invoice.id] && changedByInvoice[invoice.id].size > 0 && (
+                          <div style={{
+                            padding: "8px 12px", borderRadius: 8,
+                            background: "rgba(250,204,21,.12)", border: "1px solid rgba(250,204,21,.5)",
+                            color: "#fde047", fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
+                            display: "flex", alignItems: "center", gap: 8,
+                          }}>
+                            <RefreshCw size={13} />
+                            {tr(
+                              `AI yeniden analiz tamamlandı. Değişen ${changedByInvoice[invoice.id].size} alan sarı ile vurgulandı.`,
+                              `KI-Neuanalyse abgeschlossen. ${changedByInvoice[invoice.id].size} geänderte Felder gelb hervorgehoben.`
+                            )}
+                          </div>
+                        )}
+
                         {/* --- Bekleyen Düzenleme Talebi (admin görür) --- */}
                         {isAdmin && getEditRequest(invoice) && (
                           <div style={{
@@ -989,6 +1034,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                             padding: "10px 12px", borderRadius: "8px",
                             background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.06)",
                             position: "relative",
+                            ...highlightStyle(invoice.id, "satici_adi", "satici_vkn"),
                           }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                               <Building2 size={12} style={{ color: "#06b6d4" }} />
@@ -1043,6 +1089,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                           <div style={{
                             padding: "10px 12px", borderRadius: "8px",
                             background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.06)",
+                            ...highlightStyle(invoice.id, "alici_adi", "alici_vkn"),
                           }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                               <Building2 size={12} style={{ color: "#8b5cf6" }} />
@@ -1060,7 +1107,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                         </div>
 
                         {/* --- Kalemler (Items) --- */}
-                        <div>
+                        <div style={{ ...highlightStyle(invoice.id, "kalemler"), padding: isFieldChanged(invoice.id, "kalemler") ? 8 : 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
                             <Package size={12} style={{ color: "#06b6d4" }} />
                             <span style={{ fontSize: "10px", fontWeight: 700, color: "#06b6d4", textTransform: "uppercase", letterSpacing: ".06em" }}>
@@ -1165,6 +1212,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
                           display: "flex", alignItems: "center", gap: "16px",
                           padding: "10px 14px", borderRadius: "8px",
                           background: "rgba(6,182,212,.04)", border: "1px solid rgba(6,182,212,.12)",
+                          ...highlightStyle(invoice.id, "ara_toplam", "toplam_kdv", "genel_toplam"),
                         }}>
                           <TrendingUp size={14} style={{ color: "#06b6d4", flexShrink: 0 }} />
                           <div style={{ display: "flex", gap: "20px", flex: 1, flexWrap: "wrap" }}>

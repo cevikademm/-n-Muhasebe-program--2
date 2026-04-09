@@ -75,6 +75,14 @@ export default function App() {
     updateInvoice, updateInvoiceItems, reanalyzeInvoice,
   } = useInvoices(session);
 
+  // selectedInvoice'i invoices listesi güncellendiğinde otomatik tazele
+  // (örn. AI ile tekrar analiz sonrası yeni alanların sağ panele yansıması için)
+  useEffect(() => {
+    if (!selectedInvoice) return;
+    const fresh = invoices.find((i: Invoice) => i.id === selectedInvoice.id);
+    if (fresh && fresh !== selectedInvoice) setSelectedInvoice(fresh);
+  }, [invoices]);
+
   // ─── Auth & Session ───────────────────────────────────────────────
   useEffect(() => {
     supabase.auth
@@ -213,6 +221,7 @@ export default function App() {
     if (activeMenu === "dashboard") {
       return (
         <DashboardPanel
+          invoices={invoices}
           onNavigate={(menu) => handleMenuChange(menu as any)}
           onUploadInvoice={async (file) => {
             handleMenuChange("invoices" as any);
