@@ -858,6 +858,28 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
       const html2canvas = (html2canvasMod as any).default || html2canvasMod;
       const merged = await PDFDocument.create();
 
+      // ── Önce: tüm faturaların kalemlerini paralel olarak çek (lazy yükleme açığı) ──
+      if (fetchInvoiceItems) {
+        const missing = filteredInvoices.filter(
+          inv => !invoiceItems.some(i => i.invoice_id === inv.id)
+        );
+        if (missing.length > 0) {
+          const fetched = await Promise.all(
+            missing.map(inv => fetchInvoiceItems(inv.id).catch(() => [] as InvoiceItem[]))
+          );
+          const flat = fetched.flat();
+          if (flat.length > 0) {
+            setInvoiceItems(prev => {
+              const ids = new Set(missing.map(m => m.id));
+              const kept = prev.filter(p => !ids.has(p.invoice_id));
+              return [...kept, ...flat];
+            });
+            // React'in gizli render konteynerlerini güncellemesi için 2 frame bekle
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+          }
+        }
+      }
+
       for (const inv of filteredInvoices) {
         const elementId = `capture-all-${inv.id}`;
         const element = document.getElementById(elementId);
@@ -958,7 +980,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
     } finally {
       setIsGenerating(false);
     }
-  }, [filteredInvoices, selectedYear, selectedMonth, tr]);
+  }, [filteredInvoices, selectedYear, selectedMonth, tr, fetchInvoiceItems, invoiceItems]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -1301,8 +1323,19 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
         </div>
       </div>
 
-      {/* ── HIDDEN CONTAINER FOR 'PRINT ALL' ── */}
-      <div style={{ position: "absolute", top: "-9999px", left: "-9999px", visibility: "hidden" }}>
+      {/* ── HIDDEN CONTAINER FOR 'PRINT ALL' ──
+          NOT: visibility:hidden veya display:none kullanma — html2canvas
+          bu durumlarda boş canvas üretiyor. Sadece ekran dışına konumla. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "-10000px",
+          width: "794px",
+          pointerEvents: "none",
+        }}
+      >
         {filteredInvoices.map(inv => {
           const invItems = invoiceItems.filter(i => i.invoice_id === inv.id);
           return (
