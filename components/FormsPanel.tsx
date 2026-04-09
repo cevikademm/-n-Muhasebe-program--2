@@ -68,6 +68,17 @@ const fmtDate = (d: string | null): string => {
 
 const scoreColor = (s: number) => s >= 90 ? "#16a34a" : s >= 70 ? "#ca8a04" : "#dc2626";
 
+// KDV / Umsatzsteuer satırlarını toplamlardan hariç tutmak için tespit yardımcısı.
+// SKR03'te 1571–1577 (Vorsteuer) ve 1771–1777 (Umsatzsteuer) hesapları KDV'dir.
+const isVatRow = (i: any): boolean => {
+  const code = String(i?.account_code || i?.hesap_kodu || "").trim();
+  if (/^15(7\d|76|77)$/.test(code)) return true;
+  if (/^17(7\d|76|77)$/.test(code)) return true;
+  const desc = String(i?.description || i?.aciklama || "").toLowerCase();
+  if (!desc) return false;
+  return /umsatzsteuer|vorsteuer|\bust\b|\bmwst\b|\bkdv\b/.test(desc);
+};
+
 const DOC_FONT: React.CSSProperties = {
   fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
   color: "#0f172a",
@@ -100,9 +111,10 @@ const DocSummary: React.FC<{
   tr: (a: string, b: string) => string;
 }> = ({ invoice, items, tr }) => {
   const F = getInvFields(invoice);
-  const iNet = items.reduce((s, i) => s + (i.net_amount || 0), 0);
-  const iVat = items.reduce((s, i) => s + (i.vat_amount || 0), 0);
-  const iGross = items.reduce((s, i) => s + (i.gross_amount || 0), 0);
+  const nonVatItems = items.filter(i => !isVatRow(i));
+  const iNet = nonVatItems.reduce((s, i) => s + (i.net_amount || 0), 0);
+  const iVat = nonVatItems.reduce((s, i) => s + (i.vat_amount || 0), 0);
+  const iGross = nonVatItems.reduce((s, i) => s + (i.gross_amount || 0), 0);
   const hNet = F.ara_toplam || 0;
   const hVat = F.toplam_kdv || 0;
   const hGross = F.genel_toplam || 0;
@@ -299,11 +311,11 @@ const DocItemsTable: React.FC<{
               {tr("Ara Toplam", "Zwischensumme")}
             </td>
             <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: 800, fontFamily: "monospace", borderRight: "1px solid #cbd5e1" }}>
-              {fmt(items.reduce((s, i) => s + (i.net_amount || 0), 0))}
+              {fmt(items.filter(i => !isVatRow(i)).reduce((s, i) => s + (i.net_amount || 0), 0))}
             </td>
             <td style={{ padding: "8px 10px", borderRight: "1px solid #cbd5e1" }}></td>
             <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "13px", fontWeight: 800, fontFamily: "monospace" }}>
-              {fmt(items.reduce((s, i) => s + (i.gross_amount || 0), 0))}
+              {fmt(items.filter(i => !isVatRow(i)).reduce((s, i) => s + (i.gross_amount || 0), 0))}
             </td>
           </tr>
         </tfoot>
@@ -317,6 +329,7 @@ const DocCharts: React.FC<{ items: InvoiceItem[]; tr: (a: string, b: string) => 
   const groups = new Map<string, number>();
   let totalNet = 0;
   items.forEach(i => {
+    if (isVatRow(i)) return;
     const code = i.account_code || "Bilinmiyor";
     const amt = i.net_amount || 0;
     groups.set(code, (groups.get(code) || 0) + amt);

@@ -251,12 +251,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
               </div>
 
               <button
-                onClick={() => { setModalError(""); setScreenState("register-modal"); }}
+                disabled
+                aria-disabled="true"
+                title={tr("Yeni hesaplar yalnızca yönetici tarafından oluşturulur.", "Neue Konten werden nur vom Administrator erstellt.")}
                 className="w-full mt-4 py-3 text-sm font-semibold rounded-lg"
-                style={{ background: "rgba(6,182,212,0.1)", color: "#06b6d4", border: "1px solid rgba(6,182,212,0.3)", cursor: "pointer" }}
+                style={{ background: "rgba(255,255,255,0.03)", color: "#3a3f4a", border: "1px solid rgba(255,255,255,0.06)", cursor: "not-allowed" }}
               >
-                {tr("Hesap Oluştur", "Konto erstellen")}
+                {tr("Hesap Oluştur (devre dışı)", "Konto erstellen (deaktiviert)")}
               </button>
+              <p className="mt-2 text-[10px] text-center" style={{ color: "#3a3f4a" }}>
+                {tr("Yeni hesaplar yönetici tarafından oluşturulur.", "Neue Konten werden vom Administrator angelegt.")}
+              </p>
 
             </div>
           </div>

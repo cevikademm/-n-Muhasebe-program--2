@@ -9,6 +9,7 @@ import { useLang } from "../LanguageContext";
 import { supabase } from "../services/supabaseService";
 import { Company, AccountRow, Invoice, InvoiceItem } from "../types";
 import { SuSaReport } from "./SuSaReport";
+import { AdminCreateUserModal } from "./admin/AdminCreateUserModal";
 
 interface AdminPanelProps {
   accountPlans: AccountRow[];
@@ -132,6 +133,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
 
   // ★ NEW: Tab state for detail area (invoices vs susa)
   const [detailTab,        setDetailTab]        = useState<AdminDetailTab>("invoices");
+
+  // Yeni kullanıcı oluşturma modalı
+  const [showCreateUser,   setShowCreateUser]   = useState(false);
 
   const flash = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -446,12 +450,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
             style={{ background:"rgba(6,182,212,.08)", color:"#06b6d4", border:"1px solid rgba(6,182,212,.15)" }}>
             {loadingCo ? "..." : `${companies.length} ${tr("şirket","Firmen")}`}
           </div>
+          <button
+            onClick={() => setShowCreateUser(true)}
+            className="px-3 py-1.5 text-xs rounded-md flex items-center gap-1.5 font-semibold"
+            style={{
+              background: "linear-gradient(135deg, #06b6d4, #0891b2)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 2px 10px rgba(6,182,212,0.25)",
+            }}
+            title={tr("Yeni kullanıcı oluştur","Neuen Benutzer anlegen")}
+          >
+            + {tr("Yeni Kullanıcı","Neuer Benutzer")}
+          </button>
           <button onClick={loadCompanies}
             className="c-btn-ghost px-3 py-1.5 text-xs rounded-md flex items-center gap-1.5">
             ↺ {tr("Yenile","Aktualisieren")}
           </button>
         </div>
       </div>
+
+      {showCreateUser && (
+        <AdminCreateUserModal
+          onClose={() => setShowCreateUser(false)}
+          onCreated={() => { loadCompanies(); flash(tr("✓ Kullanıcı oluşturuldu","✓ Benutzer erstellt")); }}
+        />
+      )}
 
       {/* ── Body: 3 kolon */}
       <div className="flex-1 flex overflow-hidden relative">
