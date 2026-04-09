@@ -315,7 +315,7 @@ const DocItemsTable: React.FC<{
             </td>
             <td style={{ padding: "8px 10px", borderRight: "1px solid #cbd5e1" }}></td>
             <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "13px", fontWeight: 800, fontFamily: "monospace" }}>
-              {fmt(items.filter(i => !isVatRow(i)).reduce((s, i) => s + (i.gross_amount || 0), 0))}
+              {fmt(items.filter(i => !isVatRow(i)).reduce((s, i) => s + (i.net_amount || 0), 0))}
             </td>
           </tr>
         </tfoot>
