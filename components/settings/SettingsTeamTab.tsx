@@ -83,19 +83,30 @@ export const SettingsTeamTab: React.FC<Props> = ({ userId, flash }) => {
     if (!userId) return;
     setAdding(true);
     try {
-      const { data, error } = await supabase.functions.invoke("invite-team-member", {
+      const res = await supabase.functions.invoke("invite-team-member", {
         body: { email: clean, redirectTo: window.location.origin },
       });
-      if (error) {
-        // Edge function deploy edilmemişse fallback: sadece tabloya satır ekle
+      console.log("[invite-team-member] response:", res);
+      const { data, error } = res;
+      // supabase-js v2 can set error even on 2xx if it fails to parse;
+      // treat data.success as the primary signal when data exists.
+      if (data && typeof data === "object" && "success" in data) {
+        if (!data.success) {
+          flash(data.error || "Davet gönderilemedi.", false);
+          return;
+        }
+        // success path
+      } else if (error) {
+        console.error("[invite-team-member] edge fn error:", error);
+        // Edge function erişilemedi — fallback: sadece tabloya satır ekle
         let fallbackMsg = "";
         try {
-          const res = await supabase.from("team_members").insert({
+          const ins = await supabase.from("team_members").insert({
             owner_user_id: userId, invited_email: clean, role: "staff", status: "pending",
           });
-          if (res.error) {
-            if (res.error.code === "23505") { flash("Bu e-posta zaten davet edilmiş.", false); return; }
-            throw res.error;
+          if (ins.error) {
+            if (ins.error.code === "23505") { flash("Bu e-posta zaten davet edilmiş.", false); return; }
+            throw ins.error;
           }
           fallbackMsg = "Edge function erişilemedi; davet kaydı manuel oluşturuldu. Mail gitmedi — 'Kopyala' ile davet metnini gönderebilirsiniz.";
         } catch (e: any) {
@@ -105,10 +116,6 @@ export const SettingsTeamTab: React.FC<Props> = ({ userId, flash }) => {
         setEmail("");
         flash(fallbackMsg, false);
         fetchRows();
-        return;
-      }
-      if (data && data.success === false) {
-        flash(data.error || "Davet gönderilemedi.", false);
         return;
       }
       setEmail("");
