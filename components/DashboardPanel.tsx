@@ -168,6 +168,35 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUp
       .slice(0, 5),
     [invoices]);
 
+  // ─── Yön tespiti: gelen / giden ───
+  const getDir = (inv: any): "in" | "out" => {
+    const t = String(
+      inv?.raw_ai_response?.header?.invoice_type ||
+      inv?.raw_ai_response?.fatura_bilgileri?.fatura_yonu ||
+      inv?.invoice_type || ""
+    ).toLowerCase();
+    if (t.includes("giden") || t.includes("ausgang") || t.includes("sales") || t.includes("outgoing")) return "out";
+    return "in";
+  };
+
+  const vatByDir = useMemo(() => {
+    const empty = () => ({ vat: 0, net: 0, gross: 0, count: 0, invoices: [] as any[] });
+    const acc = { in: empty(), out: empty() };
+    invoices.forEach(inv => {
+      const d = getDir(inv);
+      acc[d].vat   += inv.total_vat   || inv.toplam_kdv   || 0;
+      acc[d].net   += inv.total_net   || inv.ara_toplam   || 0;
+      acc[d].gross += inv.total_gross || inv.genel_toplam || 0;
+      acc[d].count += 1;
+      acc[d].invoices.push(inv);
+    });
+    acc.in.invoices.sort((a, b) => new Date(getInvDate(b) || 0).getTime() - new Date(getInvDate(a) || 0).getTime());
+    acc.out.invoices.sort((a, b) => new Date(getInvDate(b) || 0).getTime() - new Date(getInvDate(a) || 0).getTime());
+    return acc;
+  }, [invoices]);
+
+  const [openDir, setOpenDir] = useState<null | "in" | "out">(null);
+
   const vatSummary = useMemo(() => {
     const vat19 = invoiceItems.filter(i => i.vat_rate === 19).reduce((s, i) => s + (i.vat_amount || 0), 0);
     const vat7 = invoiceItems.filter(i => i.vat_rate === 7).reduce((s, i) => s + (i.vat_amount || 0), 0);
@@ -355,7 +384,7 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUp
           }}
         />
         <button
-          onClick={() => uploadInputRef.current?.click()}
+          onClick={() => onNavigate && onNavigate("invoices")}
           className="dp-upload-shortcut"
           style={{
             position: "relative", overflow: "hidden",
@@ -607,6 +636,192 @@ export const DashboardPanel: React.FC<DashboardPanelProps> = ({ onNavigate, onUp
               </div>
             </MagicCard>
           ))}
+        </div>
+
+        {/* ── Gelen / Giden Fatura KDV Takibi ── */}
+        <div className="dp-vat-split" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+          {(["in","out"] as const).map((d) => {
+            const row = vatByDir[d];
+            const open = openDir === d;
+            const cfg = d === "in"
+              ? {
+                  label: tr("Gelen Fatura KDV", "Eingangs-USt"),
+                  sub:   tr("İndirilebilir KDV · Gelen faturalar", "Vorsteuer · Eingangsrechnungen"),
+                  accent: "#06b6d4",
+                  glow:   "rgba(6,182,212,.15)",
+                  icon:   <TrendingDown size={16} />,
+                }
+              : {
+                  label: tr("Giden Fatura KDV", "Ausgangs-USt"),
+                  sub:   tr("Hesaplanan KDV · Giden faturalar", "Umsatzsteuer · Ausgangsrechnungen"),
+                  accent: "#10b981",
+                  glow:   "rgba(16,185,129,.15)",
+                  icon:   <TrendingUp size={16} />,
+                };
+            return (
+              <MagicCard
+                key={d}
+                gradientColor={cfg.glow}
+                style={{
+                  position: "relative",
+                  borderRadius: "16px",
+                  border: `1px solid ${cfg.accent}22`,
+                  background: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
+                  overflow: "hidden",
+                  transition: "box-shadow .2s",
+                }}
+              >
+                <button
+                  onClick={() => setOpenDir(open ? null : d)}
+                  style={{
+                    width: "100%", padding: "16px 18px",
+                    display: "flex", alignItems: "center", gap: "14px",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{
+                    width: "38px", height: "38px", borderRadius: "10px",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    background: `${cfg.accent}15`, border: `1px solid ${cfg.accent}30`,
+                    color: cfg.accent, flexShrink: 0,
+                  }}>
+                    {cfg.icon}
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{
+                      fontFamily: "'Plus Jakarta Sans', sans-serif",
+                      fontSize: "11px", fontWeight: 700, color: "#475569",
+                      textTransform: "uppercase", letterSpacing: ".06em",
+                      marginBottom: "3px",
+                    }}>
+                      {cfg.label}
+                    </div>
+                    <div style={{
+                      fontFamily: "'Space Grotesk', sans-serif",
+                      fontWeight: 800, fontSize: "20px", color: cfg.accent,
+                      letterSpacing: "-.3px", lineHeight: 1,
+                    }}>
+                      {fmt(row.vat)}
+                    </div>
+                    <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "4px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                      {cfg.sub} · {row.count} {tr("fatura", "Rechnung")}
+                    </div>
+                  </div>
+                  <ChevronRight
+                    size={18}
+                    style={{
+                      color: "#94a3b8", flexShrink: 0,
+                      transform: open ? "rotate(90deg)" : "rotate(0)",
+                      transition: "transform .2s",
+                    }}
+                  />
+                </button>
+
+                {open && (
+                  <div style={{ borderTop: `1px solid ${cfg.accent}18`, background: "#fafbfc" }}>
+                    {/* Başlık satırı */}
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.6fr 1fr 90px 90px 90px",
+                      gap: "8px",
+                      padding: "9px 18px",
+                      fontSize: "10px", fontWeight: 700,
+                      color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em",
+                      fontFamily: "'Plus Jakarta Sans', sans-serif",
+                      borderBottom: "1px solid #eef2f7",
+                    }}>
+                      <div>{tr("Fatura", "Rechnung")}</div>
+                      <div>{tr("Firma", "Firma")}</div>
+                      <div style={{ textAlign: "right" }}>{tr("Net", "Netto")}</div>
+                      <div style={{ textAlign: "right" }}>{tr("KDV", "USt")}</div>
+                      <div style={{ textAlign: "right" }}>{tr("Brüt", "Brutto")}</div>
+                    </div>
+
+                    {/* Satırlar */}
+                    <div style={{ maxHeight: "260px", overflowY: "auto" }}>
+                      {row.invoices.length === 0 ? (
+                        <div style={{ padding: "18px", fontSize: "12px", color: "#94a3b8", textAlign: "center", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                          {tr("Bu dönemde kayıt yok", "Keine Einträge in diesem Zeitraum")}
+                        </div>
+                      ) : row.invoices.map((inv) => {
+                        const ds = getInvDate(inv);
+                        const dObj = ds ? new Date(ds) : null;
+                        const dateLbl = dObj && !isNaN(dObj.getTime())
+                          ? dObj.toLocaleDateString(lang === "tr" ? "tr-TR" : "de-DE")
+                          : "—";
+                        const no = inv.fatura_no || inv.invoice_number || tr("No Yok", "Ohne Nr.");
+                        const name = inv.supplier_name
+                          || inv.raw_ai_response?.header?.supplier_name
+                          || inv.raw_ai_response?.fatura_bilgileri?.satici_unvani
+                          || "—";
+                        const net   = inv.total_net   ?? inv.ara_toplam   ?? 0;
+                        const vat   = inv.total_vat   ?? inv.toplam_kdv   ?? 0;
+                        const gross = inv.total_gross ?? inv.genel_toplam ?? 0;
+                        return (
+                          <div
+                            key={inv.id}
+                            onClick={() => onNavigate("invoices")}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1.6fr 1fr 90px 90px 90px",
+                              gap: "8px",
+                              padding: "9px 18px",
+                              fontSize: "11.5px",
+                              color: "#334155",
+                              fontFamily: "'Plus Jakarta Sans', sans-serif",
+                              borderBottom: "1px solid #f1f5f9",
+                              cursor: "pointer",
+                              transition: "background .12s",
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = `${cfg.accent}08`; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                          >
+                            <div style={{ minWidth: 0, overflow: "hidden" }}>
+                              <div style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {no}
+                              </div>
+                              <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "1px" }}>{dateLbl}</div>
+                            </div>
+                            <div style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", alignSelf: "center" }}>
+                              {name}
+                            </div>
+                            <div style={{ textAlign: "right", fontFamily: "'Space Mono', monospace", alignSelf: "center" }}>{fmtShort(net)}</div>
+                            <div style={{ textAlign: "right", fontFamily: "'Space Mono', monospace", fontWeight: 700, color: cfg.accent, alignSelf: "center" }}>{fmtShort(vat)}</div>
+                            <div style={{ textAlign: "right", fontFamily: "'Space Mono', monospace", alignSelf: "center" }}>{fmtShort(gross)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Toplam satırı */}
+                    {row.invoices.length > 0 && (
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "1.6fr 1fr 90px 90px 90px",
+                        gap: "8px",
+                        padding: "10px 18px",
+                        fontSize: "11.5px",
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        background: `${cfg.accent}0a`,
+                        borderTop: `1px solid ${cfg.accent}22`,
+                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                      }}>
+                        <div style={{ color: cfg.accent, textTransform: "uppercase", letterSpacing: ".06em", fontSize: "10px" }}>
+                          {tr("Toplam", "Gesamt")}
+                        </div>
+                        <div />
+                        <div style={{ textAlign: "right", fontFamily: "'Space Mono', monospace" }}>{fmtShort(row.net)}</div>
+                        <div style={{ textAlign: "right", fontFamily: "'Space Mono', monospace", color: cfg.accent }}>{fmtShort(row.vat)}</div>
+                        <div style={{ textAlign: "right", fontFamily: "'Space Mono', monospace" }}>{fmtShort(row.gross)}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </MagicCard>
+            );
+          })}
         </div>
 
         {/* ── Middle Row: Chart + VAT ── */}

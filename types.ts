@@ -19,7 +19,6 @@ export interface Translations {
   reports: string;
   forms: string;
   bankDocuments: string;
-  maliMusavir: string;
   settings: string;
   search: string;
   id: string;
@@ -136,6 +135,8 @@ export interface Invoice {
   raw_ai_response: any;
   uyarilar: string[];
   created_at: string;
+  period_year?: number | null;
+  period_month?: number | null;
   [key: string]: any; // eski bilesenlerle geriye uyumluluk
 }
 
@@ -182,7 +183,7 @@ export interface UserSettings {
   updated_at: string;
 }
 
-export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'settings' | 'adminView' | 'maliMusavir' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
+export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'settings' | 'adminView' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
 
 export interface UserProfile {
   id: string;

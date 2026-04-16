@@ -365,6 +365,8 @@ export interface SavedBankStatement {
   file_name: string;
   file_url: string | null;
   created_at: string;
+  period_year?: number | null;
+  period_month?: number | null;
 }
 
 export const saveBankStatement = async (
@@ -372,7 +374,8 @@ export const saveBankStatement = async (
   matches: { tx: BankTransaction; match: { invoiceId: string; score: number; reasons: string[] } | null }[],
   fileName: string,
   userId: string,
-  file?: File
+  file?: File,
+  period?: { year: number; month: number }
 ): Promise<string> => {
   // 0. Dosyayı Storage'a yükle (varsa)
   let storedFileUrl: string | null = null;
@@ -394,12 +397,20 @@ export const saveBankStatement = async (
     }
   }
 
+  // Kullanıcı dönem seçtiyse `period` metnini üst üste yaz (ör. "Nisan 2026")
+  const monthsDe = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+  const displayPeriod = period && period.year && period.month
+    ? `${monthsDe[period.month - 1]} ${period.year}`
+    : statement.period;
+
   // 1. Ana kayıt
   const { data: stmtRow, error: stmtErr } = await supabase
     .from("bank_statements")
     .insert({
       user_id: userId,
-      period: statement.period,
+      period: displayPeriod,
+      period_year: period?.year ?? null,
+      period_month: period?.month ?? null,
       account_number: statement.accountNumber,
       bank_name: statement.bankName,
       opening_balance: statement.openingBalance,
@@ -809,4 +820,61 @@ export const debugMatchCandidates = (
     candidates.push({ invId: inv.id, supplier: inv.supplier_name, score, reasons });
   }
   return candidates.sort((a, b) => b.score - a.score).slice(0, 3);
+};
+
+// ─────────────────────────────────────────────
+//  FATURA → BANKA DÖKÜMANI BAĞLANTISI
+//  Bir faturaya eşleştirilmiş banka dökümanının
+//  file_url'ini döndürür (yoksa null).
+// ─────────────────────────────────────────────
+export const getBankDocumentUrlForInvoice = async (
+  invoiceId: string
+): Promise<string | null> => {
+  // 1. Bu faturaya eşleşen bank_transactions kaydını bul
+  const { data: txRows, error: txErr } = await supabase
+    .from("bank_transactions")
+    .select("statement_id")
+    .eq("matched_invoice_id", invoiceId)
+    .limit(1);
+  if (txErr || !txRows || txRows.length === 0) return null;
+
+  const statementId = txRows[0].statement_id;
+
+  // 2. İlgili bank_statements'ın file_url'ini al
+  const { data: stmt, error: stmtErr } = await supabase
+    .from("bank_statements")
+    .select("file_url")
+    .eq("id", statementId)
+    .single();
+  if (stmtErr || !stmt?.file_url) return null;
+
+  return stmt.file_url;
+};
+
+/**
+ * Birden fazla fatura ID'si için eşleşen benzersiz banka dökümanı URL'lerini döndürür.
+ */
+export const getBankDocumentUrlsForInvoices = async (
+  invoiceIds: string[]
+): Promise<string[]> => {
+  if (invoiceIds.length === 0) return [];
+
+  // bank_transactions tablosunda bu faturaları eşleşen satırları bul
+  const { data: txRows, error: txErr } = await supabase
+    .from("bank_transactions")
+    .select("statement_id")
+    .in("matched_invoice_id", invoiceIds);
+  if (txErr || !txRows || txRows.length === 0) return [];
+
+  // Benzersiz statement_id'leri al
+  const stmtIds = [...new Set(txRows.map(r => r.statement_id))];
+
+  // İlgili bank_statements'ların file_url'lerini al
+  const { data: stmts, error: stmtErr } = await supabase
+    .from("bank_statements")
+    .select("file_url")
+    .in("id", stmtIds);
+  if (stmtErr || !stmts) return [];
+
+  return stmts.map(s => s.file_url).filter((u): u is string => !!u);
 };

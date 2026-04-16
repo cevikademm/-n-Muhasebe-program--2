@@ -304,11 +304,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
     }), [invoices, statusFilter, yearFilter, invSearch]);
 
   // ── Items for selected invoice
-  const selectedItems = useMemo(() =>
-    selectedInvoice
-      ? invoiceItems.filter(item => item.invoice_id === selectedInvoice.id)
-      : [],
-    [selectedInvoice, invoiceItems]);
+  // Öncelik: invoice_items tablosundaki DB satırları.
+  // Yoksa raw_ai_response içindeki AI analiz kalemleri (salt okunur) fallback olarak kullanılır.
+  const selectedItems = useMemo(() => {
+    if (!selectedInvoice) return [] as InvoiceItem[];
+    const dbRows = invoiceItems.filter(item => item.invoice_id === selectedInvoice.id);
+    if (dbRows.length > 0) return dbRows;
+
+    const raw: any = (selectedInvoice as any).raw_ai_response || {};
+    const rawItems: any[] = Array.isArray(raw.items) ? raw.items
+                          : Array.isArray(raw.kalemler) ? raw.kalemler
+                          : [];
+    if (rawItems.length === 0) return [] as InvoiceItem[];
+
+    return rawItems.map((it, idx) => {
+      const net   = Number(it.net_amount   ?? it.net_tutar   ?? it.net   ?? 0);
+      const vat   = Number(it.vat_amount   ?? it.kdv_tutar   ?? 0);
+      const gross = Number(it.gross_amount ?? it.brut_tutar  ?? it.satir_toplami ?? it.gross ?? (net + vat));
+      const qty   = Number(it.quantity     ?? it.miktar      ?? 1);
+      const vatR  = it.vat_rate ?? it.kdv_orani ?? null;
+      const unit  = it.unit_price ?? (qty ? +(net / qty).toFixed(2) : null);
+      return {
+        id: `raw-${selectedInvoice.id}-${idx}`,
+        invoice_id: selectedInvoice.id,
+        description: it.description || it.urun_adi || it.aciklama || "—",
+        quantity: qty,
+        unit_price: unit,
+        net_amount: +net.toFixed(2),
+        vat_amount: +vat.toFixed(2),
+        gross_amount: +gross.toFixed(2),
+        vat_rate: vatR,
+        account_code: it.account_code || it.hesap_kodu || null,
+        account_name: it.account_name_tr || it.account_name || it.hesap_adi || null,
+        match_score: Number(it.match_score ?? 0),
+        match_justification: it.match_justification || it.gerekce || "",
+        match_source: it.match_source || "ai",
+        __readOnly: true,
+      } as unknown as InvoiceItem;
+    });
+  }, [selectedInvoice, invoiceItems]);
 
   // ── Account code picker
   const filteredAccounts = useMemo(() => {
@@ -1339,28 +1373,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
                                       </td>
 
                                       <td className="px-4 py-3">
-                                        <button
-                                          onClick={() => {
-                                            if (isEditing) {
-                                              setEditingItem(null);
-                                              setEditCode("");
-                                              setEditCodeSearch("");
-                                              setShowCodePicker(false);
-                                            } else {
-                                              setEditingItem(item.id);
-                                              setEditCode(item.account_code || "");
-                                              setEditCodeSearch("");
-                                              setShowCodePicker(false);
-                                            }
-                                          }}
-                                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md cursor-pointer border-none transition-all"
-                                          style={isEditing
-                                            ? { background:"rgba(6,182,212,.15)", color:"#06b6d4", border:"1px solid rgba(6,182,212,.25)" }
-                                            : { background:"rgba(255,255,255,.04)", color:"#64748b", border:"1px solid #1c1f27" }}
-                                          onMouseEnter={e => { if (!isEditing) (e.currentTarget as HTMLButtonElement).style.color = "#06b6d4"; }}
-                                          onMouseLeave={e => { if (!isEditing) (e.currentTarget as HTMLButtonElement).style.color = "#64748b"; }}>
-                                          {isEditing ? tr("İptal","Abbruch") : "✎ " + tr("Düzenle","Bearbeiten")}
-                                        </button>
+                                        {(item as any).__readOnly ? (
+                                          <span className="text-[10px] font-mono" style={{ color:"#3a3f4a" }} title={tr("AI analizinden (salt okunur)","KI-Analyse (schreibgeschützt)")}>
+                                            {tr("AI analizi","KI-Analyse")}
+                                          </span>
+                                        ) : (
+                                          <button
+                                            onClick={() => {
+                                              if (isEditing) {
+                                                setEditingItem(null);
+                                                setEditCode("");
+                                                setEditCodeSearch("");
+                                                setShowCodePicker(false);
+                                              } else {
+                                                setEditingItem(item.id);
+                                                setEditCode(item.account_code || "");
+                                                setEditCodeSearch("");
+                                                setShowCodePicker(false);
+                                              }
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md cursor-pointer border-none transition-all"
+                                            style={isEditing
+                                              ? { background:"rgba(6,182,212,.15)", color:"#06b6d4", border:"1px solid rgba(6,182,212,.25)" }
+                                              : { background:"rgba(255,255,255,.04)", color:"#64748b", border:"1px solid #1c1f27" }}
+                                            onMouseEnter={e => { if (!isEditing) (e.currentTarget as HTMLButtonElement).style.color = "#06b6d4"; }}
+                                            onMouseLeave={e => { if (!isEditing) (e.currentTarget as HTMLButtonElement).style.color = "#64748b"; }}>
+                                            {isEditing ? tr("İptal","Abbruch") : "✎ " + tr("Düzenle","Bearbeiten")}
+                                          </button>
+                                        )}
                                       </td>
                                     </tr>
 

@@ -5,7 +5,8 @@ import { ExportTab } from "./ExportTab";
 import { SettingsCompanyTab } from "./settings/SettingsCompanyTab";
 import { SettingsMatchingTab } from "./settings/SettingsMatchingTab";
 import { SettingsSecurityTab } from "./settings/SettingsSecurityTab";
-import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2, Lock } from "lucide-react";
+import { SettingsTeamTab } from "./settings/SettingsTeamTab";
+import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2, Lock, Users } from "lucide-react";
 // freePlanLimits kaldırıldı — abonelik sistemi devre dışı
 
 interface SettingsPanelProps {
@@ -14,7 +15,7 @@ interface SettingsPanelProps {
   userId: string | undefined;
 }
 
-type Tab = "company" | "accounting" | "matching" | "export" | "security";
+type Tab = "company" | "accounting" | "matching" | "export" | "security" | "team";
 
 const ProLockedOverlay: React.FC<{
   title: string;
@@ -85,6 +86,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { key: "matching",   icon: <ArrowLeftRight size={16} />, label: tr("Kurallar", "Regeln") },
     { key: "export",     icon: <ExternalLink size={16} />,  label: tr("Export", "Export") },
     { key: "security",   icon: <Shield size={16} />,        label: tr("Güvenlik", "Sicherheit") },
+    { key: "team",       icon: <Users size={16} />,         label: tr("Alt Kullanıcılar", "Teammitglieder") },
   ];
 
   return (
@@ -188,6 +190,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               userRole={userRole}
               flash={flash}
             />
+          )}
+
+          {tab === "team" && (
+            <SettingsTeamTab userId={userId} flash={flash} />
           )}
 
         </div>

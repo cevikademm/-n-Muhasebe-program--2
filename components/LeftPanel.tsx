@@ -5,7 +5,7 @@ import {
   LogOut, LayoutDashboard, BarChart3,
   ClipboardList, Building2, Settings2, Crown,
   BookOpen, Building, ShieldCheck,
-  ChevronRight, Globe, Briefcase, Users, Tag, FileText,
+  ChevronRight, Globe, Users, FileText,
 } from "lucide-react";
 import { NotificationBell, NotificationDrawer } from "./NotificationDrawer";
 import { supabase } from "../services/supabaseService";
@@ -86,6 +86,7 @@ interface LeftPanelProps {
   userRole: string;
   onLogout: () => void;
   onSelectCustomer?: (userId: string) => void;
+  staffMode?: boolean;
 }
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -94,17 +95,14 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   forms: <ClipboardList size={15} />,
   bankDocuments: <Building2 size={15} />,
   invoices: <FileText size={15} />,
-  maliMusavir: <Briefcase size={15} />,
   settings: <Settings2 size={15} />,
-  campaigns: <Tag size={15} />,
   accountPlans: <BookOpen size={15} />,
-  hesapPlanlari2: <BookOpen size={15} />,
   companies: <Building size={15} />,
   adminView: <ShieldCheck size={15} />,
 };
 
 export const LeftPanel: React.FC<LeftPanelProps> = ({
-  activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer,
+  activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer, staffMode,
 }) => {
   const { t, lang, setLang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -173,19 +171,16 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     { key: "reports", label: t.reports, color: "#10b981" },
     { key: "forms", label: t.forms, color: "#f59e0b" },
     { key: "bankDocuments", label: t.bankDocuments, color: "#f43f5e" },
-    { key: "maliMusavir", label: t.maliMusavir, color: "#a78bfa" },
     { key: "settings", label: t.settings, color: "#64748b" },
   ];
 
   const adminItems: { key: MenuKey; label: string; color: string }[] = [
     { key: "accountPlans", label: t.accountPlans, color: "#06b6d4" },
-    { key: "hesapPlanlari2", label: tr("Hesap Planları 2", "Kontenrahmen 2"), color: "#8b5cf6" },
-    { key: "campaigns", label: tr("Kampanyalar", "Kampagnen"), color: "#a855f7" },
     { key: "adminView", label: tr("Yönetim", "Admin-Panel"), color: "#f59e0b" },
   ];
 
-  const visibleUser = userItems;
-  const visibleAdmin = userRole === "admin" ? adminItems : [];
+  const visibleUser = staffMode ? userItems.filter(i => i.key === "invoices") : userItems;
+  const visibleAdmin = (staffMode ? [] : (userRole === "admin" ? adminItems : []));
   const allVisible = [...visibleUser, ...visibleAdmin];
   const initials = userEmail ? userEmail[0].toUpperCase() : "U";
 

@@ -1379,8 +1379,57 @@ export const SettingsMatchingTab: React.FC<Props> = ({ userId, userRole, flash }
           )}
 
           <div className="c-card overflow-hidden">
-            <div className="px-5 py-4" style={{ borderBottom: "1px solid #1c1f27" }}>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid #1c1f27" }}>
               <div className="c-section-title mb-0">{tr("Tüm Aktif Kurallar", "Alle aktiven Regeln")}</div>
+              {rules.length > 0 && (
+                <button
+                  onClick={() => {
+                    import("xlsx").then(XLSX => {
+                      const header = [
+                        tr("Tip", "Typ"),
+                        tr("Tedarikçi", "Lieferant"),
+                        tr("Anahtar Kelimeler", "Schlüsselwörter"),
+                        tr("Hesap Kodu", "Konto"),
+                        tr("Hesap Adı", "Kontoname"),
+                        tr("Güven %", "Konfidenz %"),
+                        tr("Tetiklenme", "Ausgelöst"),
+                        tr("Öğrenme Sayısı", "Lernanzahl"),
+                        tr("Son Kullanım", "Letzter Einsatz"),
+                        tr("Aktif", "Aktiv"),
+                        tr("Not", "Notiz"),
+                        tr("Oluşturulma", "Erstellt"),
+                      ];
+                      const rows = rules.map(r => [
+                        r.type === "manual" ? tr("Manuel", "Manuell") : tr("Öğrenilen", "Gelernt"),
+                        r.supplier_keyword ?? "",
+                        (r.description_keywords ?? []).join(", "),
+                        r.account_code,
+                        r.account_name,
+                        r.confidence,
+                        r.hit_count,
+                        r.learn_count,
+                        r.last_used ? r.last_used.substring(0, 10) : "",
+                        r.active ? tr("Evet", "Ja") : tr("Hayır", "Nein"),
+                        r.note ?? "",
+                        r.created_at ? r.created_at.substring(0, 10) : "",
+                      ]);
+                      const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+                      ws["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 30 }, { wch: 12 }, { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 20 }, { wch: 14 }];
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, tr("Kurallar", "Regeln"));
+                      XLSX.writeFile(wb, `Kurallar_Export_${new Date().toISOString().substring(0, 10)}.xlsx`);
+                    });
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "5px",
+                    background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.2)",
+                    color: "#6366f1", borderRadius: "6px", padding: "4px 10px",
+                    fontSize: "10px", fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  ⬇ Excel
+                </button>
+              )}
             </div>
             {rules.filter(r => r.active).length === 0 ? (
               <div className="py-8 text-center text-xs" style={{ color: "#3a3f4a" }}>

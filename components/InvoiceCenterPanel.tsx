@@ -4,9 +4,11 @@ import { Invoice, InvoiceItem } from "../types";
 import {
   Upload, Search, Loader2, FileText, Calendar, Clock,
   AlertCircle, ChevronDown, ChevronUp, Building2,
-  AlertTriangle, Package, TrendingUp, Crown, Trash2, PlusCircle, Copy, Edit3, RefreshCw,
+  AlertTriangle, Package, TrendingUp, Crown, Trash2, PlusCircle, Copy, Edit3, RefreshCw, Download,
 } from "lucide-react";
 import { ManualInvoiceModal, ManualInvoiceInitial } from "./ManualInvoiceModal";
+import { PeriodPickerModal, SelectedPeriod } from "./PeriodPickerModal";
+import { getBankDocumentUrlsForInvoices } from "../services/bankService";
 // freePlanLimits importları kaldırıldı — abonelik sistemi devre dışı
 
 interface InvoiceCenterPanelProps {
@@ -15,7 +17,7 @@ interface InvoiceCenterPanelProps {
   uploading: boolean;
   selectedInvoice: Invoice | null;
   onSelectInvoice: (invoice: Invoice | null) => void;
-  onUpload: (files: File[]) => void;
+  onUpload: (files: File[], period: SelectedPeriod) => void;
   fetchItems: (invoiceId: string) => Promise<InvoiceItem[]>;
   onAccountClick?: (item: any) => void;
   onDelete?: (invoice: Invoice) => void | Promise<void>;
@@ -58,6 +60,80 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
   };
   const isAdmin = userRole === "admin";
   const [showOnlyEditRequests, setShowOnlyEditRequests] = useState(false);
+  const [merging, setMerging] = useState(false);
+
+  // Görüntülenen aydaki tüm fatura + banka dökümanlarını tek PDF olarak birleştir
+  const handleMergeAllPdf = async () => {
+    const withFile = filteredInvoices.filter(inv => !!inv.file_url);
+    if (withFile.length === 0) {
+      alert(tr("Bu dönemde PDF dosyası olan fatura bulunamadı.", "Keine Rechnungen mit PDF-Datei in diesem Zeitraum gefunden."));
+      return;
+    }
+    setMerging(true);
+    try {
+      // 1. Tüm fatura PDF'lerini fetch et
+      const invoiceUrls = withFile.map(inv => inv.file_url!);
+      const invoiceFetches = invoiceUrls.map(url => fetch(url).then(r => r.ok ? r.arrayBuffer() : null));
+
+      // 2. Eşleşen banka dökümanı URL'lerini bul
+      const invoiceIds = withFile.map(inv => inv.id);
+      const bankUrls = await getBankDocumentUrlsForInvoices(invoiceIds);
+      const bankFetches = bankUrls.map(url => fetch(url).then(r => r.ok ? r.arrayBuffer() : null));
+
+      const [invoiceBuffers, bankBuffers] = await Promise.all([
+        Promise.all(invoiceFetches),
+        Promise.all(bankFetches),
+      ]);
+
+      // 3. pdf-lib ile hepsini birleştir
+      const { PDFDocument } = await import("pdf-lib");
+      const merged = await PDFDocument.create();
+
+      // Önce tüm faturalar
+      for (const buf of invoiceBuffers) {
+        if (!buf) continue;
+        try {
+          const pdf = await PDFDocument.load(buf);
+          const pages = await merged.copyPages(pdf, pdf.getPageIndices());
+          pages.forEach(p => merged.addPage(p));
+        } catch { /* bozuk PDF atla */ }
+      }
+
+      // Sonra tüm banka dökümanları
+      for (const buf of bankBuffers) {
+        if (!buf) continue;
+        try {
+          const pdf = await PDFDocument.load(buf);
+          const pages = await merged.copyPages(pdf, pdf.getPageIndices());
+          pages.forEach(p => merged.addPage(p));
+        } catch { /* bozuk PDF atla */ }
+      }
+
+      if (merged.getPageCount() === 0) {
+        alert(tr("Birleştirilecek geçerli PDF bulunamadı.", "Keine gültigen PDFs zum Zusammenführen gefunden."));
+        return;
+      }
+
+      const mergedBytes = await merged.save();
+
+      // 4. İndir
+      const monthLabel = months[selectedMonth];
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Faturalar_${monthLabel}_${selectedYear}_birlesik.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error("[mergeAllPdf]", err);
+      alert(tr(`PDF birleştirme hatası: ${err.message}`, `PDF-Zusammenführungsfehler: ${err.message}`));
+    } finally {
+      setMerging(false);
+    }
+  };
 
   // Bir faturada düzenleme talebi var mı?
   const hasEditRequest = (inv: Invoice): boolean => {
@@ -316,7 +392,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
   const fileRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewMode, setViewMode] = useState<"recent" | "calendar">("recent");
+  const [viewMode, setViewMode] = useState<"recent" | "calendar">("calendar");
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
 
@@ -336,8 +412,12 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
     fetchItems(selectedInvoice.id).then(setItems).finally(() => setItemsLoading(false));
   }, [selectedInvoice?.id, fetchItems]);
 
-  // Faturanin efektif donemi: once raw period_start, sonra tarih
+  // Faturanin efektif donemi: once kullanici tarafindan secilen period_year/month,
+  // sonra raw period_start, en son tarih
   const getInvoicePeriod = (inv: Invoice): { year: number; month: number } | null => {
+    if (inv.period_year && inv.period_month) {
+      return { year: inv.period_year, month: inv.period_month - 1 };
+    }
     const fb = inv.raw_ai_response?.fatura_bilgileri || inv.raw_ai_response?.header || {};
     const ps = fb.period_start || inv.tarih;
     if (!ps) return null;
@@ -388,12 +468,27 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
     return counts;
   }, [invoices, selectedYear]);
 
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const pendingPeriodRef = useRef<SelectedPeriod | null>(null);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      onUpload(Array.from(files));
+      const period = pendingPeriodRef.current ?? { year: selectedYear, month: selectedMonth + 1 };
+      onUpload(Array.from(files), period);
       e.target.value = "";
+      pendingPeriodRef.current = null;
     }
+  };
+
+  const openUploadFlow = () => {
+    setPeriodPickerOpen(true);
+  };
+
+  const handlePeriodConfirmed = (period: SelectedPeriod) => {
+    pendingPeriodRef.current = period;
+    // Modal açık kalır; dosya seçici üstünde belirir. Yükleme bitince modal kendi kapanır.
+    setTimeout(() => fileRef.current?.click(), 50);
   };
 
   // Abonelik sistemi kaldırıldı — yükleme her zaman açık
@@ -440,6 +535,27 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
               </button>
             )}
           </div>
+          <button
+            onClick={handleMergeAllPdf}
+            disabled={merging}
+            title={tr("Tüm faturaları ve banka dökümanlarını tek PDF olarak birleştir", "Alle Rechnungen und Bankdokumente als ein PDF zusammenführen")}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "9px 14px", borderRadius: "10px",
+              background: merging ? "rgba(16,185,129,.08)" : "rgba(16,185,129,.1)",
+              border: "1px solid rgba(16,185,129,.3)",
+              cursor: merging ? "wait" : "pointer",
+              color: "#10b981", fontSize: "12px", fontWeight: 600,
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              transition: "all .2s",
+              flexShrink: 0, whiteSpace: "nowrap" as const,
+            }}
+          >
+            {merging
+              ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> {tr("Birleştiriliyor...", "Zusammenführen...")}</>
+              : <><Download size={14} /> {tr("PDF Birleştir", "PDF zusammenführen")}</>
+            }
+          </button>
           {onCreateManual && (
             <button
               onClick={openManualFresh}
@@ -461,7 +577,7 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
             </button>
           )}
           <button
-            onClick={() => fileRef.current?.click()}
+            onClick={openUploadFlow}
             disabled={uploading || uploadBlocked}
             title=""
             style={{
@@ -515,33 +631,55 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
         </div>
 
         {viewMode === "calendar" && (
-          <div style={{ display: "flex", gap: "6px", marginTop: "12px", flexWrap: "wrap" }}>
+          <div style={{
+            display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap", alignItems: "center",
+            padding: "12px 14px", borderRadius: "12px",
+            background: "linear-gradient(135deg, rgba(6,182,212,.10), rgba(14,165,233,.06))",
+            border: "1px solid rgba(6,182,212,.28)",
+            boxShadow: "0 4px 18px rgba(6,182,212,.10), inset 0 1px 0 rgba(255,255,255,.04)",
+          }}>
             <div style={{ position: "relative" }}>
               <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}
-                style={{ padding: "5px 24px 5px 10px", borderRadius: "7px", fontSize: "11px", fontWeight: 600, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", color: "#e2e8f0", cursor: "pointer", appearance: "none" as const }}>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
+                style={{
+                  padding: "8px 30px 8px 14px", borderRadius: "9px",
+                  fontSize: "14px", fontWeight: 800, letterSpacing: ".3px",
+                  background: "linear-gradient(135deg, #06b6d4, #0891b2)",
+                  border: "1px solid rgba(6,182,212,.6)",
+                  color: "#fff", cursor: "pointer", appearance: "none" as const,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  boxShadow: "0 4px 14px rgba(6,182,212,.35)",
+                }}>
+                {years.map(y => <option key={y} value={y} style={{ color: "#0f172a" }}>{y}</option>)}
               </select>
-              <ChevronDown size={10} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)", pointerEvents: "none" as const }} />
+              <ChevronDown size={12} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "#fff", pointerEvents: "none" as const }} />
             </div>
             {months.map((m, i) => (
               <button key={i} onClick={() => setSelectedMonth(i)} style={{
-                padding: "4px 10px", borderRadius: "6px", fontSize: "10px", fontWeight: 600, border: "none", cursor: "pointer",
-                background: selectedMonth === i ? "rgba(6,182,212,.2)" : "rgba(255,255,255,.03)",
-                color: selectedMonth === i ? "#06b6d4" : "var(--text-dim)", transition: "all .15s",
+                padding: "8px 14px", borderRadius: "9px",
+                fontSize: "12px", fontWeight: 700, letterSpacing: ".3px",
+                border: selectedMonth === i ? "1px solid rgba(6,182,212,.85)" : "1px solid rgba(255,255,255,.08)",
+                cursor: "pointer",
+                background: selectedMonth === i
+                  ? "linear-gradient(135deg, rgba(6,182,212,.35), rgba(8,145,178,.25))"
+                  : "rgba(255,255,255,.04)",
+                color: selectedMonth === i ? "#e0f7fa" : "#cbd5e1",
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                boxShadow: selectedMonth === i ? "0 4px 14px rgba(6,182,212,.25)" : "none",
+                transition: "all .15s",
                 position: "relative",
               }}>
                 {m}
                 {monthCounts[i] > 0 && (
                   <span style={{
-                    position: "absolute", top: "-6px", right: "-4px",
-                    minWidth: "16px", height: "16px", borderRadius: "8px",
+                    position: "absolute", top: "-7px", right: "-6px",
+                    minWidth: "18px", height: "18px", borderRadius: "9px",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "9px", fontWeight: 700, lineHeight: 1,
-                    padding: "0 4px",
-                    background: selectedMonth === i ? "#06b6d4" : "rgba(6,182,212,.8)",
+                    fontSize: "10px", fontWeight: 800, lineHeight: 1,
+                    padding: "0 5px",
+                    background: selectedMonth === i ? "#06b6d4" : "rgba(6,182,212,.9)",
                     color: "#fff",
                     fontFamily: "'Space Grotesk', sans-serif",
-                    boxShadow: "0 1px 4px rgba(0,0,0,.3)",
+                    boxShadow: "0 2px 6px rgba(0,0,0,.4)",
                   }}>
                     {monthCounts[i]}
                   </span>
@@ -1295,6 +1433,20 @@ export const InvoiceCenterPanel: React.FC<InvoiceCenterPanelProps> = ({
           initialData={manualInitial}
         />
       )}
+
+      <PeriodPickerModal
+        open={periodPickerOpen}
+        title={tr("Fatura Dönemi", "Rechnungszeitraum")}
+        subtitle={tr(
+          "Faturalar seçilen döneme kaydedilecek. Yükleme tamamlanınca bu pencere otomatik kapanır.",
+          "Die Rechnungen werden dem gewählten Zeitraum zugeordnet."
+        )}
+        defaultYear={selectedYear}
+        defaultMonth={selectedMonth + 1}
+        uploading={uploading}
+        onConfirm={handlePeriodConfirmed}
+        onClose={() => setPeriodPickerOpen(false)}
+      />
 
       {/* Dönem Seçim Modalı */}
       {periodPickerInvoice && (() => {

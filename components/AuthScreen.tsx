@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { supabase } from "../services/supabaseService";
+import { autoLinkInvites } from "../services/authContext";
 import { useLang } from "../LanguageContext";
 import { TubesBackground } from "./TubesBackground";
 import {
@@ -62,6 +63,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (!error && data.session) {
+        try { await autoLinkInvites(data.session); } catch {}
         onAuth(data.session);
         return;
       }
@@ -132,6 +134,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
       });
       if (loginError) throw loginError;
       if (loginData.session) {
+        try { await autoLinkInvites(loginData.session); } catch {}
         onAuth(loginData.session);
         return;
       }

@@ -47,7 +47,6 @@ export type AgentKey =
   | "AjanRapor"
   | "AjanForm"
   | "AjanBanka"
-  | "AjanMaliMusavir"
   | "AjanAyarlar"
   | "AjanAbonelik"
   | "AjanHesapPlanlari"
@@ -215,35 +214,6 @@ KURALLAR:
 );
 
 /**
- * AjanMaliMusavir — Mali Müşavir sekmesi
- * Görev: Vergi danışmanlığı, KDV, Körperschaftsteuer, Gewerbesteuer,
- *        Einkommensteuer ve Alman ticaret hukuku konularında rehberlik.
- */
-const AjanMaliMusavir = defineAgent(
-  "AjanMaliMusavir",
-  "Ajan Mali Müşavir",
-  "Agent Steuerberater",
-  "maliMusavir",
-  "Alman vergi ve muhasebe hukuku danışmanlık ajanı",
-  "smart",
-  `Sen Fibu.de akıllı muhasebe uygulamasının Mali Müşavir Ajanısın.
-Sen Almanya'nın en deneyimli Steuerberater / Wirtschaftsprüfer profilini taşıyorsun.
-
-GÖREV:
-- KDV (Umsatzsteuer) beyannamesi, Voranmeldung ve yıllık beyanname konularında rehberlik et.
-- Körperschaftsteuer, Gewerbesteuer, Einkommensteuer hesaplamalarında yol göster.
-- GmbH ve Einzelunternehmen için vergi optimizasyon önerileri sun.
-- HGB muhasebe ilkelerini (Grundsätze ordnungsmäßiger Buchführung — GoB) açıkla.
-- Son vergi değişikliklerini ve önemli Finanzamt son tarihlerini hatırlat.
-- Kullanıcının spesifik muhasebe sorunlarını Alman mevzuatı çerçevesinde çöz.
-
-KURALLAR:
-- Her yanıt yasal dayanak (§ UStG, § EStG, § HGB vb.) içersin.
-- "Bu genel bilgi amaçlıdır; bireysel danışmanlık için Steuerberater'a başvurun" notunu uygun yerlere ekle.
-- Kullanıcı Türkçe sorduysa Türkçe, Almanca sorduysa Almanca yanıtla.`
-);
-
-/**
  * AjanAyarlar — Ayarlar sekmesi
  * Görev: Uygulama yapılandırması, kullanıcı tercihleri, şirket profili
  *        ve entegrasyon ayarları konularında yardım.
@@ -394,7 +364,6 @@ export const AGENTS: Record<AgentKey, Agent> = {
   AjanRapor,
   AjanForm,
   AjanBanka,
-  AjanMaliMusavir,
   AjanAyarlar,
   AjanAbonelik,
   AjanHesapPlanlari,
@@ -449,7 +418,6 @@ export const askFatura = (q: string, ctx?: string) => askAgent("AjanFatura", q, 
 export const askRapor = (q: string, ctx?: string) => askAgent("AjanRapor", q, ctx);
 export const askForm = (q: string, ctx?: string) => askAgent("AjanForm", q, ctx);
 export const askBanka = (q: string, ctx?: string) => askAgent("AjanBanka", q, ctx);
-export const askMaliMusavir = (q: string, ctx?: string) => askAgent("AjanMaliMusavir", q, ctx);
 export const askAyarlar = (q: string, ctx?: string) => askAgent("AjanAyarlar", q, ctx);
 export const askAbonelik = (q: string, ctx?: string) => askAgent("AjanAbonelik", q, ctx);
 export const askHesapPlanlari = (q: string, ctx?: string) => askAgent("AjanHesapPlanlari", q, ctx);

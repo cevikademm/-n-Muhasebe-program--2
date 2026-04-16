@@ -3,7 +3,7 @@ import { supabase } from "./services/supabaseService";
 import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
 import { translations } from "./constants";
 import {
-  LayoutDashboard, FileText, BarChart3, Building2, Settings2, Briefcase,
+  LayoutDashboard, FileText, BarChart3, Building2, Settings2,
 } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { LandingPage } from "./components/LandingPage";
@@ -18,9 +18,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { ReportsPanel } from "./components/ReportsPanel";
 import { FormsPanel } from "./components/FormsPanel";
 import { BankDocumentsPanel } from "./components/BankDocumentsPanel";
-import { MaliMusavirPanel } from "./components/MaliMusavirPanel";
 import { AdminPanel } from "./components/AdminPanel";
-import { CampaignsPanel } from "./components/CampaignsPanel";
 import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
 import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
 import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
@@ -34,6 +32,8 @@ import { ToastProvider } from "./contexts/ToastContext";
 import { useAccountPlans } from "./services/useAccountPlans";
 import { useCompanies } from "./services/useCompanies";
 import { useInvoices } from "./services/useInvoices";
+import { resolveTeamContext, autoLinkInvites, TeamContext } from "./services/authContext";
+import { runIsolationGuard } from "./services/isolationGuard";
 
 export default function App() {
   const [lang, setLang] = useState<Language>("tr");
@@ -45,6 +45,8 @@ export default function App() {
   // UI States
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
   const [userRole, setUserRole] = useState("user");
+  const [teamCtx, setTeamCtx] = useState<TeamContext | null>(null);
+  const [guardError, setGuardError] = useState<string | null>(null);
 
   // Selection States
   const [selectedRow, setSelectedRow] = useState<AccountRow | null>(null);
@@ -73,7 +75,7 @@ export default function App() {
     invoices, loading: invoicesLoading, uploading: invoiceUploading,
     uploadAndAnalyze, createManualInvoice, deleteInvoice, fetchInvoiceItems,
     updateInvoice, updateInvoiceItems, reanalyzeInvoice,
-  } = useInvoices(session);
+  } = useInvoices(session, teamCtx?.effectiveOwnerId);
 
   // selectedInvoice'i invoices listesi güncellendiğinde otomatik tazele
   // (örn. AI ile tekrar analiz sonrası yeni alanların sağ panele yansıması için)
@@ -104,6 +106,27 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // ─── Team Context (owner vs staff) + auto-link + isolation guard ──
+  useEffect(() => {
+    if (!session?.user?.id) { setTeamCtx(null); setGuardError(null); return; }
+    let cancelled = false;
+    (async () => {
+      try { await autoLinkInvites(session); } catch {}
+      const ctx = await resolveTeamContext(session);
+      if (cancelled) return;
+      setTeamCtx(ctx);
+      if (ctx.role === "staff") {
+        const res = await runIsolationGuard(ctx);
+        if (!cancelled && !res.ok) {
+          setGuardError(res.reason || "Güvenlik kontrolü başarısız.");
+          await supabase.auth.signOut();
+          setSession(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
 
   // ─── User Role Logic ────────────────────────────────────────────────
   // [FIX H-3] Admin rolü artık yalnızca profiles tablosundan (server-side RLS) okunuyor
@@ -165,7 +188,6 @@ export default function App() {
     if (userRole === "user") {
       if (
         activeMenu === "accountPlans" ||
-        activeMenu === "hesapPlanlari2" ||
         activeMenu === "companies" ||
         activeMenu === "adminView"
       ) {
@@ -173,6 +195,13 @@ export default function App() {
       }
     }
   }, [userRole, activeMenu]);
+
+  // Staff: sadece Fatura Merkezi
+  useEffect(() => {
+    if (teamCtx?.role === "staff" && activeMenu !== "invoices") {
+      setActiveMenu("invoices");
+    }
+  }, [teamCtx?.role, activeMenu]);
 
   // ─── Logout ───────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -217,16 +246,7 @@ export default function App() {
     }
 
     if (activeMenu === "accountPlans" && userRole === "admin") {
-      return (
-        <CenterPanel
-          data={data}
-          loading={dataLoading}
-          selectedRow={selectedRow}
-          onSelectRow={setSelectedRow}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-        />
-      );
+      return <HesapPlanlari2Panel />;
     }
 
     if (activeMenu === "dashboard") {
@@ -300,10 +320,10 @@ export default function App() {
               alert(`Silme hatası: ${err?.message || err}`);
             }
           }}
-          onUpload={async (files) => {
+          onUpload={async (files, period) => {
             for (const file of files) {
               try {
-                await uploadAndAnalyze(file);
+                await uploadAndAnalyze(file, period);
               } catch (err: any) {
                 console.error(`[App] Invoice upload error for ${file.name}:`, err);
                 alert(`Hata (${file.name}): ${err.message || 'Bilinmeyen hata'}`);
@@ -322,23 +342,6 @@ export default function App() {
           onReanalyze={reanalyzeInvoice}
         />
       );
-    }
-
-    if (activeMenu === "maliMusavir") {
-      return (
-        <MaliMusavirPanel 
-          invoices={invoices} 
-          fetchItems={fetchInvoiceItems} 
-        />
-      );
-    }
-
-    if (activeMenu === "campaigns" && userRole === "admin") {
-      return <CampaignsPanel />;
-    }
-
-    if (activeMenu === "hesapPlanlari2" && userRole === "admin") {
-      return <HesapPlanlari2Panel />;
     }
 
     if (activeMenu === "about") return <AboutUsPanel />;
@@ -441,6 +444,7 @@ export default function App() {
               userRole={userRole}
               onLogout={handleLogout}
               onSelectCustomer={userRole === "admin" ? handleSelectCustomer : undefined}
+              staffMode={teamCtx?.role === "staff"}
             />
 
             <div
@@ -471,14 +475,15 @@ export default function App() {
                   padding: "0",
                   height: "56px",
                 }}>
-                {([
+                {(teamCtx?.role === "staff" ? [
+                  { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
+                ] : [
                   { key: "dashboard" as MenuKey, icon: <LayoutDashboard size={18} />, label: t.dashboard },
                   { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
                   { key: "reports" as MenuKey, icon: <BarChart3 size={18} />, label: t.reports },
                   { key: "bankDocuments" as MenuKey, icon: <Building2 size={18} />, label: t.bankDocuments },
-                  { key: "maliMusavir" as MenuKey, icon: <Briefcase size={18} />, label: t.maliMusavir },
                   { key: "settings" as MenuKey, icon: <Settings2 size={18} />, label: t.settings },
-                ] as const).map(item => {
+                ]).map(item => {
                   const isActive = activeMenu === item.key;
                   return (
                     <button

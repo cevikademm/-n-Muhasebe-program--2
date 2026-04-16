@@ -419,3 +419,99 @@ export function exportBankCSV(
   const csv = bom + sections.map(r => csvRow(r)).join("\r\n");
   download(csv, `Bankbewegungen_Export_${new Date().getFullYear()}.csv`);
 }
+
+// ── Excel (XLSX) Export — Banka Hareketleri ──────────────────────────────────
+export function exportBankExcel(
+  statements: SavedBankStatement[],
+  transactionMap: Record<string, SavedTransaction[]>,
+  lang: string,
+  accountCodes?: Record<string, string>,
+): void {
+  const tr = (a: string, b: string) => lang === "tr" ? a : b;
+
+  // lazy import
+  import("xlsx").then(XLSX => {
+    const wb = XLSX.utils.book_new();
+
+    // ── Sheet 1: Ekstre Özeti ──
+    const stmtHeader = [
+      tr("Banka", "Bank"),
+      tr("Hesap No / IBAN", "Kontonummer / IBAN"),
+      tr("Dönem", "Zeitraum"),
+      tr("Açılış Bakiyesi (€)", "Anfangssaldo (€)"),
+      tr("Kapanış Bakiyesi (€)", "Endsaldo (€)"),
+      tr("Toplam Gelir (€)", "Gesamteinnahmen (€)"),
+      tr("Toplam Gider (€)", "Gesamtausgaben (€)"),
+      tr("İşlem Sayısı", "Anzahl Buchungen"),
+      tr("Eşleşen", "Zugeordnet"),
+      tr("Eşleşmeyen", "Nicht zugeordnet"),
+      tr("Dosya", "Datei"),
+    ];
+    const stmtRows = statements.map(s => {
+      const txs = transactionMap[s.id] ?? [];
+      const matched = txs.filter(t => !!t.matched_invoice_id).length;
+      return [
+        s.bank_name ?? "",
+        s.account_number ?? "",
+        s.period ?? "",
+        s.opening_balance ?? 0,
+        s.closing_balance ?? 0,
+        s.total_income ?? 0,
+        s.total_expense ?? 0,
+        txs.length,
+        matched,
+        txs.length - matched,
+        s.file_name ?? "",
+      ];
+    });
+    const ws1 = XLSX.utils.aoa_to_sheet([stmtHeader, ...stmtRows]);
+    ws1["!cols"] = stmtHeader.map(() => ({ wch: 20 }));
+    XLSX.utils.book_append_sheet(wb, ws1, tr("Ekstre Özeti", "Übersicht"));
+
+    // ── Sheet 2: Tüm İşlemler ──
+    const txHeader = [
+      tr("Hesap Kodu", "Konto"),
+      tr("Banka", "Bank"),
+      tr("Dönem", "Zeitraum"),
+      tr("İşlem Tarihi", "Buchungsdatum"),
+      tr("Karşı Taraf", "Auftraggeber/Empfänger"),
+      tr("Açıklama / Referans", "Verwendungszweck"),
+      tr("Referans No", "Referenznummer"),
+      tr("Tutar (€)", "Betrag (€)"),
+      tr("Tür", "Typ"),
+      tr("Eşleşme Durumu", "Zuordnungsstatus"),
+      tr("Eşleşen Fatura", "Zugeordnete Rechnung"),
+      tr("Eşleşme Puanı", "Matching-Score"),
+    ];
+    const codes = accountCodes ?? {};
+    const txRows: (string | number)[][] = [];
+    for (const s of statements) {
+      const txs = transactionMap[s.id] ?? [];
+      for (const tx of txs) {
+        txRows.push([
+          codes[tx.id] ?? "",
+          s.bank_name ?? "",
+          s.period ?? "",
+          tx.transaction_date ?? "",
+          tx.counterpart ?? "",
+          tx.description ?? "",
+          tx.reference ?? "",
+          Math.abs(tx.amount ?? 0),
+          tx.type === "income"
+            ? tr("Gelir", "Einnahme")
+            : tr("Gider", "Ausgabe"),
+          tx.matched_invoice_id
+            ? tr("Eşleşti", "Zugeordnet")
+            : tr("Eşleşmedi", "Nicht zugeordnet"),
+          tx.matched_invoice_id ?? "",
+          tx.match_score ?? "",
+        ]);
+      }
+    }
+    const ws2 = XLSX.utils.aoa_to_sheet([txHeader, ...txRows]);
+    ws2["!cols"] = txHeader.map((_, i) => ({ wch: i === 5 ? 40 : i === 4 ? 28 : 18 }));
+    XLSX.utils.book_append_sheet(wb, ws2, tr("İşlemler", "Buchungen"));
+
+    XLSX.writeFile(wb, `Bankbewegungen_Export_${new Date().getFullYear()}.xlsx`);
+  });
+}

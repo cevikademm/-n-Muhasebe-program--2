@@ -4,7 +4,8 @@ import { Invoice, InvoiceItem, InvoiceAnalysisResult } from "../types";
 import { getLearningRules } from "./learningEngine";
 // freePlanLimits importları kaldırıldı — abonelik sistemi devre dışı
 
-export function useInvoices(session: any) {
+export function useInvoices(session: any, effectiveOwnerIdArg?: string | null) {
+  const effectiveOwnerId = effectiveOwnerIdArg || session?.user?.id;
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -15,7 +16,8 @@ export function useInvoices(session: any) {
   }, [invoices]);
 
   const fetchInvoices = useCallback(async () => {
-    if (!session?.user?.id) {
+    const scopeId = effectiveOwnerId;
+    if (!scopeId) {
       setInvoices([]);
       setLoading(false);
       return;
@@ -25,7 +27,7 @@ export function useInvoices(session: any) {
       const { data, error } = await supabase
         .from("invoices")
         .select("*")
-        .eq("user_id", session.user.id)
+        .eq("user_id", scopeId)
         .order("created_at", { ascending: false });
       if (error) {
         console.error("[useInvoices] fetch error:", error);
@@ -39,7 +41,7 @@ export function useInvoices(session: any) {
     } finally {
       setLoading(false);
     }
-  }, [session?.user?.id]);
+  }, [effectiveOwnerId]);
 
   useEffect(() => {
     fetchInvoices();
@@ -50,7 +52,7 @@ export function useInvoices(session: any) {
   // taze tutmak için visibilitychange/focus, ve diğer cihazlardan yapılan
   // değişiklikleri anında yansıtmak için Postgres changes aboneliği kullanılır.
   useEffect(() => {
-    const userId = session?.user?.id;
+    const userId = effectiveOwnerId;
     if (!userId) return;
 
     // 1) Realtime kanal — bu kullanıcıya ait invoices satırlarındaki değişiklikler
@@ -79,7 +81,7 @@ export function useInvoices(session: any) {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
     };
-  }, [session?.user?.id, fetchInvoices]);
+  }, [effectiveOwnerId, fetchInvoices]);
 
   const fetchInvoiceItems = useCallback(async (invoiceId: string): Promise<InvoiceItem[]> => {
     const { data, error } = await supabase
@@ -95,7 +97,7 @@ export function useInvoices(session: any) {
     return data || [];
   }, []);
 
-  const uploadAndAnalyze = useCallback(async (file: File): Promise<InvoiceAnalysisResult | null> => {
+  const uploadAndAnalyze = useCallback(async (file: File, period?: { year: number; month: number }): Promise<InvoiceAnalysisResult | null> => {
     // Oturum kontrolu - expire olmussa refresh
     let { data: { session: currentSession } } = await supabase.auth.getSession();
     if (currentSession?.expires_at && currentSession.expires_at * 1000 < Date.now() + 30000) {
@@ -227,6 +229,15 @@ export function useInvoices(session: any) {
         console.warn("[useInvoices] Storage exception:", storageErr?.message);
       }
 
+      // Kullanıcı dönem seçtiyse faturayı o döneme zorla (tarih ayın 1'i olarak ayarlanır)
+      let overriddenTarih: string | null = null;
+      if (period && period.year && period.month) {
+        const mm = String(period.month).padStart(2, "0");
+        overriddenTarih = `${period.year}-${mm}-01`;
+        mappedResult.fatura_bilgileri.invoice_date = overriddenTarih;
+        if (mappedResult.header) mappedResult.header.invoice_date = overriddenTarih;
+      }
+
       // ── DB'ye kaydet ──
       let dbInvoiceId: string | null = null;
       try {
@@ -234,9 +245,12 @@ export function useInvoices(session: any) {
           .from("invoices")
           .insert({
             file_url: storedFileUrl,
-            user_id: currentSession.user.id,
+            user_id: effectiveOwnerId || currentSession.user.id,
+            created_by: currentSession.user.id,
             fatura_no: mappedResult.fatura_bilgileri.invoice_number || null,
-            tarih: (mappedResult.fatura_bilgileri.invoice_date && /^\d{4}-\d{2}-\d{2}/.test(mappedResult.fatura_bilgileri.invoice_date)) ? mappedResult.fatura_bilgileri.invoice_date.substring(0,10) : null,
+            tarih: overriddenTarih ?? ((mappedResult.fatura_bilgileri.invoice_date && /^\d{4}-\d{2}-\d{2}/.test(mappedResult.fatura_bilgileri.invoice_date)) ? mappedResult.fatura_bilgileri.invoice_date.substring(0,10) : null),
+            period_year: period?.year ?? null,
+            period_month: period?.month ?? null,
             satici_vkn: mappedResult.fatura_bilgileri.supplier_vat_id || null,
             satici_adi: mappedResult.fatura_bilgileri.supplier_name || null,
             alici_vkn: mappedResult.fatura_bilgileri.buyer_vat_id || null,
@@ -265,9 +279,11 @@ export function useInvoices(session: any) {
 
       const mockInvoice: Invoice = {
         id: mockInvoiceId,
-        user_id: currentSession.user.id,
+        user_id: effectiveOwnerId || currentSession.user.id,
         fatura_no: mappedResult.fatura_bilgileri.invoice_number || null,
-        tarih: mappedResult.fatura_bilgileri.invoice_date || null,
+        tarih: overriddenTarih || mappedResult.fatura_bilgileri.invoice_date || null,
+        period_year: period?.year ?? null,
+        period_month: period?.month ?? null,
         satici_vkn: mappedResult.fatura_bilgileri.supplier_vat_id || null,
         satici_adi: mappedResult.fatura_bilgileri.supplier_name || null,
         satici_adres: mappedResult.fatura_bilgileri.supplier_address || null,
@@ -324,7 +340,8 @@ export function useInvoices(session: any) {
     if (!currentSession?.user?.id) {
       throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
     }
-    const userId = currentSession.user.id;
+    const userId = effectiveOwnerId || currentSession.user.id;
+    const createdBy = currentSession.user.id;
 
     const ara_toplam = payload.items.reduce((s, it) => s + (Number(it.net) || 0), 0);
     const genel_toplam = payload.items.reduce((s, it) => s + (Number(it.gross) || 0), 0);
@@ -382,6 +399,7 @@ export function useInvoices(session: any) {
         .insert({
           file_url: null,
           user_id: userId,
+          created_by: createdBy,
           fatura_no: payload.fatura_no || null,
           tarih: /^\d{4}-\d{2}-\d{2}/.test(payload.tarih) ? payload.tarih.substring(0, 10) : null,
           satici_vkn: payload.satici_vkn || null,

@@ -3,6 +3,26 @@ import { useLang } from "../LanguageContext";
 import { AccountRow, Invoice, InvoiceItem } from "../types";
 import { Download, FileText, Loader2, ChevronRight, Printer } from "lucide-react";
 import { ACCOUNT_METADATA } from "../data/skr03Metadata";
+import { supabase } from "../services/supabaseService";
+import {
+  fetchBankStatements,
+  fetchUserIncomeTransactions,
+  fetchAllUserBankTransactions,
+  isRefundTransaction,
+  SavedTransaction,
+  SavedBankStatement,
+} from "../services/bankService";
+import {
+  CompanyInfoSnapshot,
+  TeslimRaporuDoc,
+  EingangsbuchDoc,
+  AusgangsbuchDoc,
+  OposDoc,
+  BwaDoc,
+  FehlendeDoc,
+  DatevExportDoc,
+  BankaDoc,
+} from "./MaliMusavirDocs";
 
 interface FormsPanelProps {
   accountPlans: AccountRow[];
@@ -545,6 +565,41 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // ── Bank & Mali Müşavir data for Toplu PDF ──
+  const [bankStatements, setBankStatements] = useState<SavedBankStatement[]>([]);
+  const [bankIncomes, setBankIncomes] = useState<SavedTransaction[]>([]);
+  const [allBankTransactions, setAllBankTransactions] = useState<SavedTransaction[]>([]);
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfoSnapshot | null>(null);
+  const maliReportsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("fibu_de_settings");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.company) setCompanyInfo(parsed.company as CompanyInfoSnapshot);
+      }
+    } catch { /* */ }
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const [stmts, incomes, allTx] = await Promise.all([
+          fetchBankStatements(user.id),
+          fetchUserIncomeTransactions(user.id),
+          fetchAllUserBankTransactions(user.id),
+        ]);
+        setBankStatements(stmts);
+        setBankIncomes(incomes);
+        setAllBankTransactions(allTx);
+      } catch { /* */ }
+    };
+    load();
+  }, []);
+
   // Blob URL for original PDF — same-origin so the browser can print it
   const [origBlobUrl, setOrigBlobUrl] = useState<string | null>(null);
   const [origBlobLoading, setOrigBlobLoading] = useState(false);
@@ -629,6 +684,43 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
       return true;
     }).sort((a, b) => new Date(getInvDate(b) || "").getTime() - new Date(getInvDate(a) || "").getTime()),
     [invoices, selectedMonth, selectedYear]);
+
+  // ── Mali Müşavir raporları için filtrelenmiş banka verisi ──
+  const maliPeriod = selectedMonth !== null
+    ? `${MONTHS[selectedMonth]} ${selectedYear}`
+    : `${tr("Tüm Yıl", "Gesamtjahr")} ${selectedYear}`;
+
+  const filteredBankIncomes = useMemo(() =>
+    bankIncomes.filter(tx => {
+      if (!tx.transaction_date) return false;
+      const d = new Date(tx.transaction_date);
+      if (d.getFullYear() !== selectedYear) return false;
+      if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+      return true;
+    }), [bankIncomes, selectedYear, selectedMonth]);
+
+  const filteredBankIncomesOnly = useMemo(
+    () => filteredBankIncomes.filter(tx => !isRefundTransaction(tx)),
+    [filteredBankIncomes]
+  );
+
+  const filteredAllBankTx = useMemo(() => {
+    const list = allBankTransactions.filter(tx => {
+      if (!tx.transaction_date) return false;
+      const d = new Date(tx.transaction_date);
+      if (d.getFullYear() !== selectedYear) return false;
+      if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+      return true;
+    });
+    return list.sort((a, b) =>
+      new Date(a.transaction_date!).getTime() - new Date(b.transaction_date!).getTime()
+    );
+  }, [allBankTransactions, selectedYear, selectedMonth]);
+
+  const filteredItemsForMali = useMemo(() => {
+    const ids = new Set(filteredInvoices.map(i => i.id));
+    return invoiceItems.filter(it => ids.has(it.invoice_id));
+  }, [filteredInvoices, invoiceItems]);
 
   // Sayfa başında ilk faturayı otomatik seç
   useEffect(() => {
@@ -859,9 +951,53 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
     }
   }, [selectedInvoice, generateMergedPDF, tr]);
 
-  // ── Print ALL (Toplu Yazdır) — Capture all invoices in period into one PDF ──
+  // ── Helper: HTML elemanını html2canvas ile yakalayıp pdf-lib sayfalarına dönüştür ──
+  const captureElementToPages = useCallback(async (
+    element: HTMLElement,
+    jsPDFClass: any,
+    html2canvasFn: any,
+    PDFDocClass: any,
+    orientation: "portrait" | "landscape" = "portrait",
+  ) => {
+    const captureW = 794;
+    const prevW = element.style.width;
+    const prevMW = element.style.maxWidth;
+    element.style.width = `${captureW}px`;
+    element.style.maxWidth = `${captureW}px`;
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await html2canvasFn(element, {
+        scale: 2, useCORS: true, logging: false,
+        backgroundColor: "#ffffff",
+        width: captureW, height: element.scrollHeight,
+        windowWidth: captureW, windowHeight: element.scrollHeight,
+      });
+    } finally {
+      element.style.width = prevW;
+      element.style.maxWidth = prevMW;
+    }
+    const imgData = canvas.toDataURL("image/jpeg", 0.93);
+    const pdf = new jsPDFClass({ orientation, unit: "mm", format: "a4", compress: true });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgH = (canvas.height * pageW) / canvas.width;
+    let heightLeft = imgH, yPos = 0;
+    pdf.addImage(imgData, "JPEG", 0, yPos, pageW, imgH, undefined, "FAST");
+    heightLeft -= pageH;
+    while (heightLeft > 0) {
+      yPos -= pageH;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, yPos, pageW, imgH, undefined, "FAST");
+      heightLeft -= pageH;
+    }
+    const bytes = pdf.output("arraybuffer");
+    const pdfDoc = await PDFDocClass.load(bytes);
+    return pdfDoc;
+  }, []);
+
+  // ── Print ALL (Toplu Yazdır) — Mali Müşavir raporları + Faturalar + Banka dökümanı ──
   const handlePrintAll = useCallback(async () => {
-    if (filteredInvoices.length === 0) return;
     setIsGenerating(true);
     setGenError(null);
     try {
@@ -873,7 +1009,27 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
       const html2canvas = (html2canvasMod as any).default || html2canvasMod;
       const merged = await PDFDocument.create();
 
-      // ── Önce: tüm faturaların kalemlerini paralel olarak çek (lazy yükleme açığı) ──
+      // ═══════════════════════════════════════════════════════════════════════
+      // 1. MALI MÜŞAVIR RAPORLARI (PDF'in en başında)
+      // ═══════════════════════════════════════════════════════════════════════
+      const reportKeys = ["teslim", "eingangsbuch", "ausgangsbuch", "opos", "bwa", "fehlende", "datev", "banka"];
+      for (const key of reportKeys) {
+        const el = document.getElementById(`mali-report-${key}`);
+        if (el) {
+          try {
+            const reportPdf = await captureElementToPages(el, jsPDF, html2canvas, PDFDocument);
+            const pages = await merged.copyPages(reportPdf, reportPdf.getPageIndices());
+            pages.forEach(p => merged.addPage(p));
+          } catch (e) {
+            console.warn(`Mali Müşavir raporu yakalanamadı (${key}):`, e);
+          }
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // 2. FATURA ANALİZLERİ + ORİJİNAL BELGELER (mevcut mantık)
+      // ═══════════════════════════════════════════════════════════════════════
+      // Önce: tüm faturaların kalemlerini paralel olarak çek
       if (fetchInvoiceItems) {
         const missing = filteredInvoices.filter(
           inv => !invoiceItems.some(i => i.invoice_id === inv.id)
@@ -889,7 +1045,6 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
               const kept = prev.filter(p => !ids.has(p.invoice_id));
               return [...kept, ...flat];
             });
-            // React'in gizli render konteynerlerini güncellemesi için 2 frame bekle
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
           }
         }
@@ -899,49 +1054,18 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
         const elementId = `capture-all-${inv.id}`;
         const element = document.getElementById(elementId);
 
-        // 1. Capture the Analysis Document
+        // Analiz belgesini yakala
         if (element) {
-          const captureW = 794;
-          const prevW = element.style.width;
-          const prevMW = element.style.maxWidth;
-          element.style.width = `${captureW}px`;
-          element.style.maxWidth = `${captureW}px`;
-          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-          let canvas: HTMLCanvasElement;
           try {
-            canvas = await html2canvas(element, {
-              scale: 2, useCORS: true, logging: false,
-              backgroundColor: "#ffffff",
-              width: captureW, height: element.scrollHeight,
-              windowWidth: captureW, windowHeight: element.scrollHeight,
-            });
-          } finally {
-            element.style.width = prevW;
-            element.style.maxWidth = prevMW;
+            const analysisPdf = await captureElementToPages(element, jsPDF, html2canvas, PDFDocument);
+            const aPages = await merged.copyPages(analysisPdf, analysisPdf.getPageIndices());
+            aPages.forEach(p => merged.addPage(p));
+          } catch (e) {
+            console.warn("Analiz yakalanamadı (Fatura ID: " + inv.id + "):", e);
           }
-          const imgData = canvas.toDataURL("image/jpeg", 0.93);
-          const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-          const pageW = pdf.internal.pageSize.getWidth();
-          const pageH = pdf.internal.pageSize.getHeight();
-          const imgH = (canvas.height * pageW) / canvas.width;
-
-          let heightLeft = imgH, yPos = 0;
-          pdf.addImage(imgData, "JPEG", 0, yPos, pageW, imgH, undefined, "FAST");
-          heightLeft -= pageH;
-          while (heightLeft > 0) {
-            yPos -= pageH;
-            pdf.addPage();
-            pdf.addImage(imgData, "JPEG", 0, yPos, pageW, imgH, undefined, "FAST");
-            heightLeft -= pageH;
-          }
-
-          const analysisBytes = pdf.output("arraybuffer");
-          const analysisPdf = await PDFDocument.load(analysisBytes);
-          const aPages = await merged.copyPages(analysisPdf, analysisPdf.getPageIndices());
-          aPages.forEach(p => merged.addPage(p));
         }
 
-        // 2. Merge the Original Document
+        // Orijinal belgeyi ekle
         if (inv.file_url) {
           try {
             const isPdf = inv.file_type === "application/pdf" || inv.file_url.split("?")[0].toLowerCase().endsWith(".pdf");
@@ -968,7 +1092,6 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
               const pageH = pdf.internal.pageSize.getHeight();
               const aspectRatio = imgEl.naturalHeight / imgEl.naturalWidth;
               const origImgH = pageW * aspectRatio;
-
               let remH = origImgH, origY = 0;
               pdf.addImage(origJpeg, "JPEG", 0, origY, pageW, origImgH, undefined, "FAST");
               remH -= pageH;
@@ -989,6 +1112,46 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
         }
       }
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // 3. BANKA DÖKÜMAN PDF'İ (PDF'in en sonunda)
+      // ═══════════════════════════════════════════════════════════════════════
+      try {
+        const monthNames_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+        const matchingStmts = bankStatements.filter(stmt => {
+          if (!stmt.period) return false;
+          const p = stmt.period.toLowerCase();
+          if (selectedMonth !== null) {
+            const mTr = MONTHS_TR[selectedMonth].toLowerCase();
+            const mDe = monthNames_DE[selectedMonth].toLowerCase();
+            const yStr = String(selectedYear);
+            return (p.includes(mTr) || p.includes(mDe)) && p.includes(yStr);
+          }
+          return p.includes(String(selectedYear));
+        });
+
+        for (const stmt of matchingStmts) {
+          if (stmt.file_url) {
+            try {
+              const bankBytes = await fetch(stmt.file_url, { mode: "cors" }).then(r => r.arrayBuffer());
+              const bankPdf = await PDFDocument.load(bankBytes);
+              const bPages = await merged.copyPages(bankPdf, bankPdf.getPageIndices());
+              bPages.forEach(p => merged.addPage(p));
+            } catch (e) {
+              console.warn("Banka PDF eklenemedi:", e);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Banka dökümanları alınamadı:", e);
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // İndir
+      // ═══════════════════════════════════════════════════════════════════════
+      if (merged.getPageCount() === 0) {
+        setGenError(tr("PDF oluşturulamadı — sayfa bulunamadı.", "Keine Seiten zum Erstellen."));
+        return;
+      }
       const savedBytes = await merged.save();
       const blob = new Blob([savedBytes.buffer as ArrayBuffer], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
@@ -1006,7 +1169,7 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
     } finally {
       setIsGenerating(false);
     }
-  }, [filteredInvoices, selectedYear, selectedMonth, tr, fetchInvoiceItems, invoiceItems]);
+  }, [filteredInvoices, selectedYear, selectedMonth, tr, fetchInvoiceItems, invoiceItems, bankStatements, captureElementToPages]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -1347,6 +1510,43 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ accountPlans, invoices: 
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── HIDDEN: MALI MÜŞAVIR RAPORLARI (Toplu PDF'e dahil) ── */}
+      <div
+        ref={maliReportsRef}
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "-10000px",
+          width: "794px",
+          pointerEvents: "none",
+        }}
+      >
+        {[
+          { key: "teslim", el: <TeslimRaporuDoc invoices={filteredInvoices} items={filteredItemsForMali} bankIncomes={filteredBankIncomesOnly} companyInfo={companyInfo} period={maliPeriod} tr={tr} /> },
+          { key: "eingangsbuch", el: <EingangsbuchDoc invoices={filteredInvoices} items={filteredItemsForMali} period={maliPeriod} tr={tr} /> },
+          { key: "ausgangsbuch", el: <AusgangsbuchDoc bankIncomes={filteredBankIncomes} invoiceItems={filteredItemsForMali} period={maliPeriod} companyInfo={companyInfo} tr={tr} /> },
+          { key: "opos", el: <OposDoc invoices={filteredInvoices} period={maliPeriod} tr={tr} /> },
+          { key: "bwa", el: <BwaDoc invoices={filteredInvoices} items={filteredItemsForMali} period={maliPeriod} tr={tr} /> },
+          { key: "fehlende", el: <FehlendeDoc invoices={filteredInvoices} items={filteredItemsForMali} period={maliPeriod} tr={tr} /> },
+          { key: "datev", el: <DatevExportDoc invoices={filteredInvoices} items={filteredItemsForMali} period={maliPeriod} tr={tr} /> },
+          { key: "banka", el: <BankaDoc transactions={filteredAllBankTx} invoices={invoices} invoiceItems={invoiceItems} companyInfo={companyInfo} period={maliPeriod} tr={tr} /> },
+        ].map(({ key, el }) => (
+          <div
+            key={key}
+            id={`mali-report-${key}`}
+            style={{
+              width: "794px",
+              margin: "0 auto",
+              background: "#fff",
+              padding: key === "teslim" ? "0" : "40px 48px",
+            }}
+          >
+            {el}
+          </div>
+        ))}
       </div>
 
       {/* ── HIDDEN CONTAINER FOR 'PRINT ALL' ──

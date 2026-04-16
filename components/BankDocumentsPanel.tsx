@@ -7,7 +7,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, Search, ChevronDown,
   Banknote, Save, Trash2, RefreshCw, ChevronRight, Download, FileText,
 } from "lucide-react";
-import { exportBankCSV } from "../services/exportService";
+import { exportBankCSV, exportBankExcel } from "../services/exportService";
 import {
   analyzeBankStatement,
   matchTransactionToInvoices,
@@ -30,6 +30,7 @@ import {
 } from "../services/bankAnalysisStore";
 import { supabase } from "../services/supabaseService";
 import { createUnmatchedNotifications } from "../services/notificationService";
+import { PeriodPickerModal, SelectedPeriod } from "./PeriodPickerModal";
 // freePlanLimits importları kaldırıldı — abonelik sistemi devre dışı
 
 // ─────────────────────────────────────────────
@@ -144,6 +145,10 @@ const parseStmtDate = (s: SavedBankStatement): { year: number; month: number } =
     const d = new Date(s.created_at);
     return { year: d.getFullYear(), month: d.getMonth() };
   };
+  // Öncelik: kullanıcının upload sırasında seçtiği period_year/period_month
+  const py = (s as any).period_year;
+  const pm = (s as any).period_month;
+  if (py && pm && pm >= 1 && pm <= 12) return { year: py, month: pm - 1 };
   if (!s.period) return fallback();
 
   const lower = s.period.toLowerCase();
@@ -550,6 +555,10 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
     }), [invoices]);
 
   // ── Dosya işle
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const pendingPeriodRef = useRef<SelectedPeriod | null>(null);
+  const pendingFileRef = useRef<File | null>(null);
+
   const handleFile = async (file: File) => {
     if (!file) return;
 
@@ -621,7 +630,7 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
       if (uid) {
         let savedStmtId: string | null = null;
         try {
-          savedStmtId = await saveBankStatement(result, withMatches, file.name, uid, file);
+          savedStmtId = await saveBankStatement(result, withMatches, file.name, uid, file, pendingPeriodRef.current ?? undefined);
           setIsSaved(true);
           if (!userId) setUserId(uid);
           loadSaved(uid);
@@ -662,7 +671,27 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (!file) return;
+    // Drag-drop ile gelen dosyalar için dönem sor
+    pendingFileRef.current = file;
+    setPeriodPickerOpen(true);
+  };
+
+  const openUploadFlow = () => {
+    pendingFileRef.current = null;
+    setPeriodPickerOpen(true);
+  };
+
+  const handlePeriodConfirmed = (period: SelectedPeriod) => {
+    pendingPeriodRef.current = period;
+    // Modal açık kalır; yükleme (analyzing) bitince kendi kapanır
+    const preloaded = pendingFileRef.current;
+    pendingFileRef.current = null;
+    if (preloaded) {
+      handleFile(preloaded);
+    } else {
+      setTimeout(() => fileRef.current?.click(), 50);
+    }
   };
 
   // ── Kaydet
@@ -863,7 +892,7 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
             {tr("Banka Dökümanı", "Bankdokumente")}
           </div>
           <div style={{ fontSize: "10px", color: "#374151", marginTop: "1px", fontFamily: "'DM Sans',sans-serif" }}>
-            {tr("PDF ekstre yükle · Gemini AI ile analiz et · Faturalarla eşleştir", "Kontoauszug hochladen · Gemini AI analysiert · Rechnungen abgleichen")}
+            {tr("PDF ekstre yükle · Faturalarla eşleştir", "Kontoauszug hochladen · Rechnungen abgleichen")}
           </div>
         </div>
         <div style={{ display: "flex", gap: "7px" }}>
@@ -873,9 +902,7 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
             </button>
           )}
           <button
-            onClick={() => {
-              fileRef.current?.click();
-            }}
+            onClick={openUploadFlow}
             disabled={analyzing}
             style={btnStyle("#06b6d4", analyzing)}
             title=""
@@ -929,6 +956,46 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
                   >
                     <Download size={11} />
                     CSV
+                  </button>
+                )}
+                {savedStatements.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      // Fetch all transactions for all statements (stmtTxs may be partially loaded)
+                      const allTxs: Record<string, SavedTransaction[]> = { ...stmtTxs };
+                      const missing = savedStatements.filter(s => !allTxs[s.id]);
+                      if (missing.length > 0) {
+                        const results = await Promise.all(missing.map(s => fetchStatementTransactions(s.id).then(rows => ({ id: s.id, rows }))));
+                        for (const r of results) allTxs[r.id] = r.rows;
+                        setStmtTxs(allTxs);
+                      }
+                      // Build effective account codes map
+                      const codes: Record<string, string> = {};
+                      for (const txs of Object.values(allTxs)) {
+                        for (const tx of txs) {
+                          if (accountCodeOverrides[tx.id]) {
+                            codes[tx.id] = accountCodeOverrides[tx.id];
+                          } else if (tx.matched_invoice_id) {
+                            const inv = invoices.find((i: any) => String(i.id) === String(tx.matched_invoice_id));
+                            if (inv) {
+                              const suggested = getInvoiceSuggestedAccountCode(inv);
+                              if (suggested) codes[tx.id] = suggested;
+                            }
+                          }
+                        }
+                      }
+                      exportBankExcel(savedStatements, allTxs, lang, codes);
+                    }}
+                    title={tr("Tüm banka hareketlerini Excel olarak indir", "Alle Bankbewegungen als Excel herunterladen")}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "5px",
+                      background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.2)",
+                      color: "#6366f1", borderRadius: "6px", padding: "4px 9px",
+                      fontSize: "11px", fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    <Download size={11} />
+                    Excel
                   </button>
                 )}
                 <button onClick={() => userId && loadSaved(userId)} style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "3px" }}>
@@ -1200,6 +1267,20 @@ export const BankDocumentsPanel: React.FC<BankDocumentsPanelProps> = ({ propUser
       </div>{/* scroll container */}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <PeriodPickerModal
+        open={periodPickerOpen}
+        title={tr("Ekstre Dönemi", "Auszugszeitraum")}
+        subtitle={tr(
+          "Ekstre seçilen döneme kaydedilecek. Yükleme tamamlanınca bu pencere otomatik kapanır.",
+          "Der Auszug wird dem gewählten Zeitraum zugeordnet."
+        )}
+        defaultYear={selectedYear}
+        defaultMonth={selectedMonth + 1}
+        uploading={analyzing}
+        onConfirm={handlePeriodConfirmed}
+        onClose={() => { setPeriodPickerOpen(false); pendingFileRef.current = null; }}
+      />
     </div>
   );
 };
