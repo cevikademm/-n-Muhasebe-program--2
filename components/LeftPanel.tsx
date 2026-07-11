@@ -5,7 +5,7 @@ import {
   LogOut, LayoutDashboard, BarChart3,
   ClipboardList, Building2, Settings2, Crown,
   BookOpen, Building, ShieldCheck,
-  ChevronRight, Globe, Users, FileText,
+  ChevronRight, Globe, Users, FileText, Calculator,
 } from "lucide-react";
 import { NotificationBell, NotificationDrawer } from "./NotificationDrawer";
 import { supabase } from "../services/supabaseService";
@@ -172,7 +172,6 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     { key: "reports", label: t.reports, color: "#10b981" },
     { key: "forms", label: t.forms, color: "#f59e0b" },
     { key: "bankDocuments", label: t.bankDocuments, color: "#f43f5e" },
-    { key: "musteriBulma", label: tr("Müşteri Bulma", "Kundengewinnung"), color: "#8b5cf6" },
     { key: "settings", label: t.settings, color: "#64748b" },
   ];
 
@@ -184,6 +183,14 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const visibleUser = staffMode ? userItems.filter(i => i.key === "invoices") : userItems;
   const visibleAdmin = (staffMode ? [] : (userRole === "admin" ? adminItems : []));
   const allVisible = [...visibleUser, ...visibleAdmin];
+
+  // ─── Üst seviye platform sekmeleri: Muhasebe (arka plandaki tüm muhasebe
+  //     platformu tek sekme) + Müşteri Bulma. Aktif platform activeMenu'den türetilir.
+  const platform: "muhasebe" | "musteri" = activeMenu === "musteriBulma" ? "musteri" : "muhasebe";
+  const PLATFORMS: { key: "muhasebe" | "musteri"; label: string; sub: string; icon: React.ReactNode; color: string }[] = [
+    { key: "muhasebe", label: tr("Muhasebe", "Buchhaltung"), sub: tr("Fatura · Banka · Rapor", "Rechnung · Bank · Report"), icon: <Calculator size={16} />, color: "#06b6d4" },
+    { key: "musteri", label: tr("Müşteri Bulma", "Kundengewinnung"), sub: tr("Lead & e-posta otomasyonu", "Lead & E-Mail-Automation"), icon: <Users size={16} />, color: "#8b5cf6" },
+  ];
   const initials = userEmail ? userEmail[0].toUpperCase() : "U";
 
   const timeStr = time.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -374,9 +381,66 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     </div>
   );
 
+  // ─── Platform sekmeleri (üst seviye: Muhasebe / Müşteri Bulma) ──
+  const PlatformTabs = ({ onNavigate }: { onNavigate?: () => void }) => (
+    <div style={{ padding: "10px 8px 6px", display: "flex", flexDirection: "column", gap: "6px" }}>
+      {PLATFORMS.map((p) => {
+        const active = platform === p.key;
+        const rgb = hexRgb(p.color);
+        return (
+          <button
+            key={p.key}
+            onClick={() => {
+              if (p.key === "musteri") setActiveMenu("musteriBulma");
+              else if (activeMenu === "musteriBulma") setActiveMenu("dashboard");
+              onNavigate?.();
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: "10px",
+              width: "100%", padding: "10px 11px", borderRadius: "12px",
+              cursor: "pointer", textAlign: "left",
+              border: `1px solid ${active ? p.color + "55" : "rgba(255,255,255,.07)"}`,
+              background: active
+                ? `linear-gradient(135deg, rgba(${rgb},.16), rgba(${rgb},.04))`
+                : "rgba(255,255,255,.02)",
+              boxShadow: active ? `0 0 16px rgba(${rgb},.12)` : "none",
+              transition: "all .2s",
+            }}
+          >
+            <span style={{
+              width: "30px", height: "30px", borderRadius: "9px", flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: active ? `rgba(${rgb},.2)` : "rgba(255,255,255,.04)",
+              border: `1px solid ${active ? p.color + "55" : "rgba(255,255,255,.06)"}`,
+              color: active ? p.color : "var(--text-2)",
+              transition: "all .18s",
+            }}>{p.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: "13px", fontWeight: active ? 700 : 600,
+                color: active ? "#fff" : "var(--text-2)",
+                fontFamily: "'Plus Jakarta Sans', sans-serif", lineHeight: 1.2,
+              }}>{p.label}</div>
+              <div style={{
+                fontSize: "9.5px", fontWeight: 500, marginTop: "2px",
+                color: active ? p.color : "var(--text-dim)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{p.sub}</div>
+            </div>
+            {active && <ChevronRight size={12} style={{ color: p.color, flexShrink: 0, opacity: .7 }} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   // ─── SidebarContent ──────────────────────────────────────────
   const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
+      <PlatformTabs onNavigate={onNavigate} />
+      {platform === "muhasebe" && (
+      <>
+      <div style={{ margin: "6px 14px 0", height: "1px", background: "linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)" }} />
       <div style={{ padding: "10px 14px 4px" }}>
         <span style={{
           fontSize: "9px", fontWeight: 700, letterSpacing: ".14em",
@@ -562,6 +626,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             );
           })()}
         </>
+      )}
+      </>
       )}
     </>
   );

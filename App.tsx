@@ -3,7 +3,7 @@ import { supabase } from "./services/supabaseService";
 import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
 import { translations } from "./constants";
 import {
-  LayoutDashboard, FileText, BarChart3, Building2, Settings2,
+  LayoutDashboard, FileText, BarChart3, Building2, Settings2, Users,
 } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { LandingPage } from "./components/LandingPage";
@@ -488,6 +488,7 @@ export default function App() {
                   { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
                   { key: "reports" as MenuKey, icon: <BarChart3 size={18} />, label: t.reports },
                   { key: "bankDocuments" as MenuKey, icon: <Building2 size={18} />, label: t.bankDocuments },
+                  { key: "musteriBulma" as MenuKey, icon: <Users size={18} />, label: lang === "tr" ? "Müşteri" : "Kunden" },
                   { key: "settings" as MenuKey, icon: <Settings2 size={18} />, label: t.settings },
                 ]).map(item => {
                   const isActive = activeMenu === item.key;
