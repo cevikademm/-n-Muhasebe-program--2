@@ -45,7 +45,8 @@ export default function App() {
   const [initialRegister, setInitialRegister] = useState(false);
 
   // UI States
-  const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
+  // İlk açılışta Müşteri Bulma ekranı gelir (staff kullanıcılar effect ile invoices'a yönlenir).
+  const [activeMenu, setActiveMenu] = useState<MenuKey>("musteriBulma");
   const [userRole, setUserRole] = useState("user");
   const [teamCtx, setTeamCtx] = useState<TeamContext | null>(null);
   const [guardError, setGuardError] = useState<string | null>(null);

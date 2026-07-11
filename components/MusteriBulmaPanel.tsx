@@ -4,6 +4,7 @@ import { supabase } from "../services/supabaseService";
 import {
   Search, Users, Mail, Download, Loader2, MapPin, Phone, Globe,
   Star, X, Filter, MessageSquareText, Tag, Send, RefreshCw, ExternalLink,
+  Copy, Languages,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -46,6 +47,63 @@ const YANIT_COLOR: Record<string, string> = {
   red: "#f43f5e", ilgisiz: "#64748b", diger: "#94a3b8",
 };
 
+// ── Çok dilli taslak mesaj şablonları ────────────────────────────
+// {{isim}} = işletme adı (otomatik dolar), {{sehir}}, {{kategori}}
+const MSG_TEMPLATES: { code: string; label: string; flag: string; subject: string; body: string }[] = [
+  {
+    code: "tr", label: "Türkçe", flag: "🇹🇷",
+    subject: "{{isim}} için kısa bir tanışma",
+    body: "Merhaba {{isim}} ekibi,\n\nBen fikoai'den yazıyorum. İşletmenizin muhasebe ve evrak süreçlerini dijitalleştirip zamandan tasarruf etmenizi sağlayan çözümlerimizi kısaca tanıtmak isterim.\n\nSize uygun bir zamanda 10 dakikalık kısa bir görüşme yapabilir miyiz?\n\nSaygılarımızla,\nfikoai ekibi",
+  },
+  {
+    code: "de", label: "Deutsch", flag: "🇩🇪",
+    subject: "Kurze Vorstellung für {{isim}}",
+    body: "Hallo Team von {{isim}},\n\nich melde mich von fikoai. Wir helfen Unternehmen dabei, ihre Buchhaltung und Verwaltung zu digitalisieren und dadurch Zeit zu sparen.\n\nHätten Sie Interesse an einem kurzen Gespräch von 10 Minuten?\n\nBeste Grüße,\nIhr fikoai-Team",
+  },
+  {
+    code: "en", label: "English", flag: "🇬🇧",
+    subject: "A quick hello to {{isim}}",
+    body: "Hello {{isim}} team,\n\nI'm reaching out from fikoai. We help businesses digitalise their accounting and paperwork so they can save time.\n\nWould you be open to a short 10-minute call at a time that suits you?\n\nBest regards,\nThe fikoai team",
+  },
+  {
+    code: "fr", label: "Français", flag: "🇫🇷",
+    subject: "Une brève présentation pour {{isim}}",
+    body: "Bonjour à l'équipe de {{isim}},\n\nJe vous contacte de la part de fikoai. Nous aidons les entreprises à numériser leur comptabilité et leurs démarches administratives afin de gagner du temps.\n\nSeriez-vous disponible pour un court échange de 10 minutes ?\n\nCordialement,\nL'équipe fikoai",
+  },
+  {
+    code: "nl", label: "Nederlands", flag: "🇳🇱",
+    subject: "Een korte kennismaking voor {{isim}}",
+    body: "Hallo team van {{isim}},\n\nIk neem contact op namens fikoai. Wij helpen bedrijven hun boekhouding en administratie te digitaliseren en zo tijd te besparen.\n\nZou u openstaan voor een kort gesprek van 10 minuten?\n\nMet vriendelijke groet,\nHet fikoai-team",
+  },
+  {
+    code: "it", label: "Italiano", flag: "🇮🇹",
+    subject: "Una breve presentazione per {{isim}}",
+    body: "Salve team di {{isim}},\n\nvi scrivo da parte di fikoai. Aiutiamo le aziende a digitalizzare la contabilità e le pratiche amministrative per farvi risparmiare tempo.\n\nAvreste piacere di fare una breve chiamata di 10 minuti?\n\nCordiali saluti,\nIl team fikoai",
+  },
+  {
+    code: "es", label: "Español", flag: "🇪🇸",
+    subject: "Una breve presentación para {{isim}}",
+    body: "Hola equipo de {{isim}},\n\nles escribo de parte de fikoai. Ayudamos a las empresas a digitalizar su contabilidad y su gestión administrativa para ahorrar tiempo.\n\n¿Tendrían disponibilidad para una breve llamada de 10 minutos?\n\nUn saludo,\nEl equipo fikoai",
+  },
+];
+
+function guessMsgLang(lead: { ulke?: string | null }, fallback: string): string {
+  const u = (lead.ulke || "").toLowerCase();
+  if (/deu|german|österr|austria|schweiz|switz/.test(u)) return "de";
+  if (/türk|turk/.test(u)) return "tr";
+  if (/fran/.test(u)) return "fr";
+  if (/nether|nederl|holland|belg/.test(u)) return "nl";
+  if (/ital/.test(u)) return "it";
+  if (/span|españ|espan/.test(u)) return "es";
+  if (/king|britain|england|usa|united states|ireland/.test(u)) return "en";
+  return MSG_TEMPLATES.some((t) => t.code === fallback) ? fallback : "de";
+}
+const fillTpl = (s: string, lead: { isim?: string | null; sehir?: string | null; kategori?: string | null }) =>
+  String(s ?? "")
+    .replaceAll("{{isim}}", lead.isim || "")
+    .replaceAll("{{sehir}}", lead.sehir || "")
+    .replaceAll("{{kategori}}", lead.kategori || "");
+
 export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
   const { lang } = useLang();
   const tr = (t: string, d: string) => (lang === "tr" ? t : d);
@@ -73,6 +131,18 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
   // Modals
   const [mailOpen, setMailOpen] = useState(false);
   const [detail, setDetail] = useState<Lead | null>(null);
+
+  // Responsive
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const on = () => setIsMobile(mq.matches);
+    on();
+    try { mq.addEventListener("change", on); } catch { mq.addListener(on); }
+    return () => { try { mq.removeEventListener("change", on); } catch { mq.removeListener(on); } };
+  }, []);
 
   // ── Fetch ──────────────────────────────────────────────────────
   const fetchLeads = useCallback(async () => {
@@ -203,41 +273,41 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
 
   // ── UI ─────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: "22px 26px", height: "100%", overflowY: "auto" }}>
+    <div style={{ padding: isMobile ? "16px 13px 90px" : "22px 26px", height: "100%", overflowY: "auto" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(139,92,255,.14)", display: "grid", placeItems: "center", color: "#8b5cf6" }}>
+        <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(139,92,255,.14)", display: "grid", placeItems: "center", color: "#8b5cf6", flexShrink: 0 }}>
           <Users size={20} />
         </div>
-        <div>
-          <h1 style={{ fontSize: "1.35rem", fontWeight: 700, margin: 0 }}>{tr("Müşteri Bulma", "Kundengewinnung")}</h1>
-          <p style={{ margin: 0, fontSize: ".85rem", color: "var(--text-3,#64748b)" }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: isMobile ? "1.15rem" : "1.35rem", fontWeight: 700, margin: 0 }}>{tr("Müşteri Bulma", "Kundengewinnung")}</h1>
+          <p style={{ margin: 0, fontSize: isMobile ? ".78rem" : ".85rem", color: "var(--text-3,#64748b)" }}>
             {tr("Google Maps’ten hedef şehir & kategoride işletme bul, pipeline’a ekle, toplu mail at.", "Unternehmen aus Google Maps finden und kontaktieren.")}
           </p>
         </div>
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, margin: "16px 0" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: isMobile ? 9 : 12, margin: isMobile ? "13px 0" : "16px 0" }}>
         {[
           { l: tr("Toplam müşteri", "Kunden gesamt"), v: stats.total, c: "#8b5cf6" },
           { l: tr("E-postası olan", "Mit E-Mail"), v: stats.withEmail, c: "#06b6d4" },
           { l: tr("İletişime geçilen", "Kontaktiert"), v: stats.contacted, c: "#f59e0b" },
           { l: tr("Yanıt veren", "Geantwortet"), v: stats.replied, c: "#10b981" },
         ].map((s, i) => (
-          <div key={i} className="c-card" style={{ padding: "14px 16px" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: s.c }}>{s.v}</div>
-            <div style={{ fontSize: ".78rem", color: "var(--text-3,#64748b)" }}>{s.l}</div>
+          <div key={i} className="c-card" style={{ padding: isMobile ? "12px 13px" : "14px 16px", borderLeft: `3px solid ${s.c}`, position: "relative", overflow: "hidden" }}>
+            <div style={{ fontSize: isMobile ? "1.3rem" : "1.5rem", fontWeight: 700, color: s.c, lineHeight: 1.1 }}>{s.v}</div>
+            <div style={{ fontSize: isMobile ? ".72rem" : ".78rem", color: "var(--text-3,#64748b)" }}>{s.l}</div>
           </div>
         ))}
       </div>
 
       {/* Search form */}
-      <div className="c-card" style={{ padding: 18, marginBottom: 18 }}>
+      <div className="c-card" style={{ padding: isMobile ? 14 : 18, marginBottom: isMobile ? 14 : 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, fontWeight: 600 }}>
           <Search size={16} color="#8b5cf6" /> {tr("Yeni Arama", "Neue Suche")}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
           <Field label={tr("Kategori / sektör *", "Kategorie *")}>
             <input className="c-input" placeholder={tr("restoran, kuaför, avukat…", "Restaurant, Friseur…")} value={kategori} onChange={(e) => setKategori(e.target.value)} />
           </Field>
@@ -263,8 +333,8 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
             </div>
           </Field>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14 }}>
-          <button className="c-btn-primary" onClick={runSearch} disabled={searching} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
+          <button className="c-btn-primary" onClick={runSearch} disabled={searching} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, width: isMobile ? "100%" : undefined }}>
             {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
             {searching ? tr("Aranıyor…", "Suche läuft…") : tr("Müşteri Ara", "Kunden suchen")}
           </button>
@@ -281,11 +351,11 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
             {DURUMS.map((d) => <option key={d} value={d}>{durumLabel(d, tr)}</option>)}
           </select>
         </div>
-        <div style={{ position: "relative", flex: 1, minWidth: 180, maxWidth: 320 }}>
+        <div style={{ position: "relative", flex: 1, minWidth: isMobile ? "100%" : 180, maxWidth: isMobile ? "none" : 320 }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: 11, color: "#94a3b8" }} />
           <input className="c-input" style={{ paddingLeft: 30, height: 36, width: "100%" }} placeholder={tr("Ara: isim, adres, e-posta…", "Suchen…")} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div style={{ flex: 1 }} />
+        {!isMobile && <div style={{ flex: 1 }} />}
         <button className="c-btn-ghost" onClick={() => fetchLeads()} title={tr("Yenile", "Aktualisieren")} style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6 }}>
           <RefreshCw size={14} />
         </button>
@@ -298,7 +368,67 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         </button>
       </div>
 
-      {/* Leads table */}
+      {/* Leads list — mobile: cards, desktop: table */}
+      {isMobile ? (
+        <div>
+          {!loading && !loadError && filtered.length > 0 && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 2px 10px", fontSize: ".8rem", color: "var(--text-3,#64748b)" }}>
+              <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+              {tr("Tümünü seç", "Alle wählen")} · {filtered.length}
+              {selected.size > 0 && <span style={{ color: "#8b5cf6", fontWeight: 600 }}> · {selected.size} {tr("seçili", "gewählt")}</span>}
+            </label>
+          )}
+          {loading ? (
+            <div className="c-card" style={{ padding: 40, textAlign: "center", color: "var(--text-3,#64748b)" }}><Loader2 size={20} className="spin" /></div>
+          ) : loadError ? (
+            <div className="c-card" style={{ padding: 20, color: "#f43f5e", fontSize: ".85rem" }}>{loadError}</div>
+          ) : filtered.length === 0 ? (
+            <div className="c-card" style={{ padding: 44, textAlign: "center", color: "var(--text-3,#64748b)" }}>
+              <Users size={30} style={{ opacity: .4, marginBottom: 8 }} />
+              <div>{leads.length ? tr("Filtreye uyan müşteri yok.", "Keine Treffer.") : tr("Henüz müşteri yok. Yukarıdan arama yapın.", "Noch keine Kunden — starten Sie eine Suche.")}</div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {filtered.map((l) => {
+                const isSel = selected.has(l.id);
+                return (
+                  <div key={l.id} className="c-card" style={{ padding: 13, display: "flex", flexDirection: "column", gap: 9, borderLeft: `3px solid ${isSel ? "#8b5cf6" : "transparent"}` }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <input type="checkbox" checked={isSel} onChange={() => toggle(l.id)} style={{ marginTop: 3, flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: ".92rem", lineHeight: 1.25 }}>{l.isim}</div>
+                        <div style={{ fontSize: ".75rem", color: "var(--text-3,#64748b)", marginTop: 1 }}>{l.kategori}{l.adres ? ` · ${l.adres}` : ""}</div>
+                      </div>
+                      {l.puan != null && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: ".8rem", fontWeight: 600, flexShrink: 0 }}>
+                          <Star size={13} color="#f59e0b" fill="#f59e0b" />{l.puan}
+                        </span>
+                      )}
+                    </div>
+                    {(l.telefon || l.email || l.website) && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 14px", fontSize: ".78rem", color: "var(--text-2,#475569)", paddingLeft: 26 }}>
+                        {l.telefon && <a href={`tel:${l.telefon}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "inherit", textDecoration: "none" }}><Phone size={12} />{l.telefon}</a>}
+                        {l.email && <a href={`mailto:${l.email}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "inherit", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}><Mail size={12} />{l.email}</a>}
+                        {l.website && <a href={l.website} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#06b6d4", textDecoration: "none" }}><Globe size={12} />Web</a>}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: 26 }}>
+                      <select value={l.durum} onChange={(e) => setDurum(l, e.target.value)}
+                        style={{ fontSize: ".76rem", fontWeight: 600, border: "none", borderRadius: 7, padding: "5px 8px", cursor: "pointer", color: "#fff", background: DURUM_COLOR[l.durum] || "#64748b" }}>
+                        {DURUMS.map((d) => <option key={d} value={d} style={{ color: "#0f172a", background: "#fff" }}>{durumLabel(d, tr)}</option>)}
+                      </select>
+                      {mailBadge(l.mail_durumu, tr)}
+                      {l.yanit_kategorisi && <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: YANIT_COLOR[l.yanit_kategorisi] || "#94a3b8" }}>{yanitLabel(l.yanit_kategorisi, tr)}</span>}
+                      <div style={{ flex: 1 }} />
+                      <button onClick={() => setDetail(l)} className="c-btn-ghost" style={{ padding: 7, height: 32 }} title={tr("Detay", "Details")}><ExternalLink size={14} /></button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="c-card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 40px", gap: 0, padding: "10px 14px", borderBottom: "1px solid var(--line,#e2e8f0)", fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3,#64748b)", alignItems: "center" }}>
           <input type="checkbox" checked={allChecked} onChange={toggleAll} />
@@ -347,6 +477,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
           </div>
         ))}
       </div>
+      )}
 
       {mailOpen && <MailModal leads={selectedWithEmail} onClose={() => setMailOpen(false)} onSent={() => { setMailOpen(false); setSelected(new Set()); fetchLeads(); }} tr={tr} />}
       {detail && <DetailModal lead={detail} onClose={() => setDetail(null)} onSaveNotes={saveNotes} onSetDurum={setDurum} onDelete={deleteLead} onChanged={fetchLeads} tr={tr} />}
