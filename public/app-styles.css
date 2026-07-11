@@ -760,3 +760,43 @@
 
     /* Placeholder text on light bg */
     ::placeholder { color: #94a3b8 !important; }
+
+    /* ──────────────────────────────────────────────
+       AUTH SCREEN — koyu premium tema (light-theme'den muaf)
+       html.auth-dark yalnızca oturum yokken (giriş ekranı) aktiftir.
+       Daha yüksek özgüllük (html.auth-dark ...) global light !important
+       kurallarını override eder; landing ile aynı violet→cyan paleti.
+       ────────────────────────────────────────────── */
+    html.auth-dark, html.auth-dark body { background: #070b14 !important; color: #e8ecf8 !important; }
+    html.auth-dark .bg-slate-900, html.auth-dark .bg-slate-950, html.auth-dark .bg-slate-800 { background-color: #070b14 !important; }
+    html.auth-dark .text-slate-100, html.auth-dark .text-slate-200, html.auth-dark .text-white { color: #e8ecf8 !important; }
+    html.auth-dark .text-slate-300 { color: #c9d1ef !important; }
+    html.auth-dark .text-slate-400 { color: #9aa5c4 !important; }
+    html.auth-dark ::placeholder { color: rgba(154, 165, 196, .55) !important; }
+
+    /* Inputs → koyu cam */
+    html.auth-dark .c-input {
+      background: rgba(9, 14, 26, .72) !important;
+      color: #e8ecf8 !important;
+      border: 1px solid rgba(148, 163, 216, .16) !important;
+      border-radius: 10px !important;
+    }
+    html.auth-dark .c-input:focus {
+      border-color: rgba(124, 92, 255, .55) !important;
+      box-shadow: 0 0 0 3px rgba(124, 92, 255, .14) !important;
+    }
+    html.auth-dark .c-label { color: #8b95b8 !important; }
+
+    /* Glow-wrap input çerçevesi → koyu iç yüzey + violet→cyan spin border */
+    html.auth-dark .glow-wrap { border-color: rgba(148, 163, 216, .16) !important; }
+    html.auth-dark .glow-wrap::after { background: rgba(9, 14, 26, .92) !important; }
+    html.auth-dark .glow-wrap::before { background: conic-gradient(from 0deg, #7c5cff, #4cc9f0, #7c5cff) !important; }
+
+    /* Primary buton → landing gradyanı */
+    html.auth-dark .c-btn-primary {
+      background: linear-gradient(100deg, #7c5cff 0%, #5e7bff 55%, #4cc9f0 100%) !important;
+      box-shadow: 0 8px 26px -8px rgba(124, 92, 255, .55), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
+    }
+    html.auth-dark .c-btn-primary:hover {
+      box-shadow: 0 12px 34px -8px rgba(124, 92, 255, .7), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
+    }

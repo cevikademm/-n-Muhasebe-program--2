@@ -73,6 +73,9 @@
 </head>
 
 <body>
+  <!-- Giriş ekranı koyu-premium kalsın diye: React mount olmadan ÖNCE auth-dark işaretlenir.
+       Oturum açılınca App.tsx bu sınıfı kaldırır → light-theme enforcer yeniden devreye girer. -->
+  <script>document.documentElement.classList.add('auth-dark');</script>
   <script>
     // ── LIGHT THEME RUNTIME ENFORCER ──
     // Inline style="background:#0a0c11" gibi koyu renkleri DOM'da beyaza çevirir.
@@ -122,6 +125,8 @@
       let scheduled = false;
       const sweep = () => {
         scheduled = false;
+        // auth-dark aktifken (giriş ekranı) light-theme zorlamasını tamamen atla.
+        if (document.documentElement.classList.contains("auth-dark")) return;
         document.querySelectorAll("*").forEach(fixEl);
       };
       const schedule = () => {

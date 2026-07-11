@@ -3,7 +3,7 @@ import { supabase } from "./services/supabaseService";
 import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
 import { translations } from "./constants";
 import {
-  LayoutDashboard, FileText, BarChart3, Building2, Settings2, Users,
+  Calculator, Users,
 } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { LandingPage } from "./components/LandingPage";
@@ -109,6 +109,14 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // ─── Tema: giriş ekranı koyu-premium, uygulama açık tema ──────────
+  // Oturum yoksa auth-dark → muhasebe-app.html'deki light-theme enforcer devre dışı.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (session) el.classList.remove("auth-dark");
+    else el.classList.add("auth-dark");
+  }, [session]);
 
   // ─── Team Context (owner vs staff) + auto-link + isolation guard ──
   useEffect(() => {
@@ -483,20 +491,16 @@ export default function App() {
                   height: "56px",
                 }}>
                 {(teamCtx?.role === "staff" ? [
-                  { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
+                  { target: "invoices" as MenuKey, icon: <Calculator size={18} />, label: lang === "tr" ? "Muhasebe" : "Buchhaltung", active: activeMenu !== "musteriBulma" },
                 ] : [
-                  { key: "dashboard" as MenuKey, icon: <LayoutDashboard size={18} />, label: t.dashboard },
-                  { key: "invoices" as MenuKey, icon: <FileText size={18} />, label: t.invoices },
-                  { key: "reports" as MenuKey, icon: <BarChart3 size={18} />, label: t.reports },
-                  { key: "bankDocuments" as MenuKey, icon: <Building2 size={18} />, label: t.bankDocuments },
-                  { key: "musteriBulma" as MenuKey, icon: <Users size={18} />, label: lang === "tr" ? "Müşteri" : "Kunden" },
-                  { key: "settings" as MenuKey, icon: <Settings2 size={18} />, label: t.settings },
+                  { target: "dashboard" as MenuKey, icon: <Calculator size={18} />, label: lang === "tr" ? "Muhasebe" : "Buchhaltung", active: activeMenu !== "musteriBulma" },
+                  { target: "musteriBulma" as MenuKey, icon: <Users size={18} />, label: lang === "tr" ? "Müşteri Bulma" : "Kundengewinnung", active: activeMenu === "musteriBulma" },
                 ]).map(item => {
-                  const isActive = activeMenu === item.key;
+                  const isActive = item.active;
                   return (
                     <button
-                      key={item.key}
-                      onClick={() => handleMenuChange(item.key)}
+                      key={item.target}
+                      onClick={() => handleMenuChange(item.target)}
                       style={{
                         flex: 1,
                         display: "flex",
@@ -528,7 +532,7 @@ export default function App() {
                         fontFamily: "'Plus Jakarta Sans', sans-serif",
                         letterSpacing: ".02em",
                         lineHeight: 1,
-                        maxWidth: "56px",
+                        maxWidth: "140px",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",

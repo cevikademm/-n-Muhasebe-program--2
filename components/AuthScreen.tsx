@@ -145,18 +145,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
 
   // ─── Main Auth Screen ────────────────────
   return (
-    <div className="min-h-screen flex relative overflow-hidden" style={{ background: "#0d0f15" }}>
+    <div className="min-h-screen flex relative overflow-hidden" style={{ background: "rgb(7,11,20)" }}>
 
       {/* Neon Tubes Background */}
       <div className="absolute inset-0 z-0 pointer-events-auto"><TubesBackground /></div>
 
       {/* Grid overlay */}
       <div className="absolute inset-0 pointer-events-none z-0" style={{
-        backgroundImage: "linear-gradient(rgba(6,182,212,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,.04) 1px, transparent 1px)",
+        backgroundImage: "linear-gradient(rgba(124,92,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,92,255,.04) 1px, transparent 1px)",
         backgroundSize: "40px 40px"
       }} />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[300px] pointer-events-none z-0" style={{
-        background: "radial-gradient(ellipse at center, rgba(6,182,212,.08) 0%, transparent 70%)"
+        background: "radial-gradient(ellipse at center, rgba(124,92,255,.08) 0%, transparent 70%)"
       }} />
 
       {/* Back + Language switcher */}
@@ -186,7 +186,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
           <button key={l} onClick={() => setLang(l)}
             className="font-syne px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer transition-all border"
             style={lang === l
-              ? { background: "#06b6d4", color: "#fff", borderColor: "#06b6d4" }
+              ? { background: "#7c5cff", color: "#fff", borderColor: "#7c5cff" }
               : { background: "transparent", color: "#3a3f4a", borderColor: "#1c1f27" }}>
             {l.toUpperCase()}
           </button>
@@ -280,17 +280,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
               width: "100%",
               maxWidth: "360px",
               borderRadius: "24px",
-              border: "1px solid rgba(6,182,212,0.2)",
+              border: "1px solid rgba(124,92,255,0.2)",
               background: "rgba(15, 17, 21, 0.85)",
               backdropFilter: "blur(24px)",
               overflow: "hidden",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.4), 0 0 40px rgba(6,182,212,0.05)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4), 0 0 40px rgba(124,92,255,0.05)",
             }}
           >
             {/* Card header accent */}
             <div style={{
               height: "4px",
-              background: "linear-gradient(90deg, #06b6d4, #0891b2, #f97316)",
+              background: "linear-gradient(90deg, #7c5cff, #5e7bff, #4cc9f0)",
             }} />
 
             <div style={{ padding: "32px 28px" }}>
@@ -301,11 +301,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 gap: "6px",
                 padding: "6px 14px",
                 borderRadius: "20px",
-                background: "rgba(6,182,212,0.1)",
-                border: "1px solid rgba(6,182,212,0.2)",
+                background: "rgba(124,92,255,0.1)",
+                border: "1px solid rgba(124,92,255,0.2)",
                 marginBottom: "20px",
               }}>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "#06b6d4", letterSpacing: "0.05em" }}>fikoai.de</span>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#7c5cff", letterSpacing: "0.05em" }}>fikoai.de</span>
               </div>
 
               {/* Tagline */}
@@ -346,12 +346,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                       width: "5px",
                       height: "5px",
                       borderRadius: "50%",
-                      background: i === 4 ? "#f97316" : "#06b6d4",
+                      background: i === 4 ? "#4cc9f0" : "#7c5cff",
                       flexShrink: 0,
                     }} />
                     <span style={{
                       fontSize: "13px",
-                      color: i === 4 ? "rgba(249,115,22,0.9)" : "rgba(255,255,255,0.55)",
+                      color: i === 4 ? "rgba(76,201,240,0.9)" : "rgba(255,255,255,0.55)",
                       fontWeight: i === 4 ? 600 : 400,
                     }}>{item}</span>
                   </div>
@@ -390,7 +390,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                   { key: "ai", val: tr("Yapay Zeka", "Künstliche Intelligenz") },
                 ].map(({ key, val }) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#06b6d4", fontFamily: "'Syne', sans-serif", minWidth: "20px" }}>{key}</span>
+                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#7c5cff", fontFamily: "'Syne', sans-serif", minWidth: "20px" }}>{key}</span>
                     <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>=</span>
                     <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)" }}>{val}</span>
                   </div>
@@ -401,8 +401,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
               <div style={{
                 padding: "12px 16px",
                 borderRadius: "12px",
-                background: "rgba(249,115,22,0.06)",
-                border: "1px solid rgba(249,115,22,0.12)",
+                background: "rgba(76,201,240,0.06)",
+                border: "1px solid rgba(76,201,240,0.12)",
               }}>
                 <p style={{
                   fontSize: "11px",
@@ -470,7 +470,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "flex-start",
-                background: "linear-gradient(135deg, rgba(249,115,22,0.06) 0%, transparent 50%)",
+                background: "linear-gradient(135deg, rgba(76,201,240,0.06) 0%, transparent 50%)",
               }}>
                 <div>
                   <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "20px", margin: 0, fontFamily: "'Syne', sans-serif" }}>
@@ -535,7 +535,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                   {/* Divider */}
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "2px 0" }}>
                     <div style={{ flex: 1, height: "1px", background: "#1c1f27" }} />
-                    <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#06b6d4" }}>{t.companyInfo}</span>
+                    <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#7c5cff" }}>{t.companyInfo}</span>
                     <div style={{ flex: 1, height: "1px", background: "#1c1f27" }} />
                   </div>
 
@@ -581,7 +581,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                     <div style={{ position: "relative" }}>
                       <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "15px", lineHeight: 1, pointerEvents: "none" }}>🇩🇪</span>
                       <input type="text" className="c-input" value="Deutschland" readOnly
-                        style={{ paddingLeft: "36px", cursor: "not-allowed", background: "rgba(6,182,212,.04)", borderColor: "rgba(6,182,212,.15)", color: "#9ca3af", userSelect: "none" }} />
+                        style={{ paddingLeft: "36px", cursor: "not-allowed", background: "rgba(124,92,255,.04)", borderColor: "rgba(124,92,255,.15)", color: "#9ca3af", userSelect: "none" }} />
                     </div>
                   </div>
 
@@ -633,14 +633,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                         type="checkbox"
                         checked={state}
                         onChange={e => setter(e.target.checked)}
-                        style={{ marginTop: "2px", accentColor: "#06b6d4", cursor: "pointer" }}
+                        style={{ marginTop: "2px", accentColor: "#7c5cff", cursor: "pointer" }}
                       />
                       <span>
                         {icon}{" "}
                         <button
                           type="button"
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowAgreementModal(key); }}
-                          style={{ background: "none", border: "none", color: "#06b6d4", cursor: "pointer", textDecoration: "underline", fontSize: "13px", padding: 0 }}
+                          style={{ background: "none", border: "none", color: "#7c5cff", cursor: "pointer", textDecoration: "underline", fontSize: "13px", padding: 0 }}
                         >
                           {label}
                         </button>
@@ -662,7 +662,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                     padding: "14px",
                     borderRadius: "12px",
                     border: "none",
-                    background: "linear-gradient(135deg, #f97316, #ea580c)",
+                    background: "linear-gradient(135deg, #4cc9f0, #7c5cff)",
                     color: "#fff",
                     fontSize: "14px",
                     fontWeight: 700,
@@ -672,7 +672,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                     justifyContent: "center",
                     gap: "8px",
                     opacity: (modalLoading || !acceptPrivacy || !acceptDistanceSelling || !acceptDeliveryReturn) ? 0.5 : 1,
-                    boxShadow: "0 4px 18px rgba(249,115,22,0.3)",
+                    boxShadow: "0 4px 18px rgba(76,201,240,0.3)",
                     letterSpacing: "0.3px",
                   }}
                 >
@@ -726,11 +726,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 overflowY: "auto",
                 borderRadius: "20px",
                 border: "1px solid rgba(255,255,255,0.1)",
-                background: "#111318",
+                background: "rgb(17,19,24)",
               }}
               onClick={e => e.stopPropagation()}
             >
-              <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#111318", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgb(17,19,24)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: "#fff", fontWeight: 700, fontSize: "15px" }}>
                   {showAgreementModal === "privacy" && tr("Gizlilik Sözleşmesi", "Datenschutzvereinbarung")}
                   {showAgreementModal === "distance" && tr("Mesafeli Satış Sözleşmesi", "Fernabsatzvertrag")}
