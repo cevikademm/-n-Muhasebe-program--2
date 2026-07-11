@@ -3,6 +3,9 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
+    { "source": "/app", "destination": "/muhasebe-app.html" },
+    { "source": "/giris", "destination": "/muhasebe-app.html" },
+    { "source": "/login", "destination": "/muhasebe-app.html" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }

@@ -8,6 +8,16 @@ export default defineConfig({
     host: '0.0.0.0',
   },
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      input: {
+        // Landing page (fikoai.de) — served at "/"
+        main: path.resolve(__dirname, 'index.html'),
+        // Muhasebe / login uygulaması — served at "/app" (see vercel.json rewrite)
+        app: path.resolve(__dirname, 'muhasebe-app.html'),
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
