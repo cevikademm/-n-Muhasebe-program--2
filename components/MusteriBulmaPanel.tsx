@@ -482,7 +482,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
       {mailOpen && <MailModal leads={selectedWithEmail} onClose={() => setMailOpen(false)} onSent={() => { setMailOpen(false); setSelected(new Set()); fetchLeads(); }} tr={tr} />}
       {detail && <DetailModal lead={detail} onClose={() => setDetail(null)} onSaveNotes={saveNotes} onSetDurum={setDurum} onDelete={deleteLead} onChanged={fetchLeads} tr={tr} />}
 
-      <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@keyframes drawerIn{from{transform:translateX(24px);opacity:.4}to{transform:translateX(0);opacity:1}}`}</style>
     </div>
   );
 };
@@ -581,11 +581,52 @@ const DetailModal: React.FC<{
   const [reply, setReply] = useState("");
   const [classifying, setClassifying] = useState(false);
 
+  // Çok dilli taslak mesaj
+  const [msgCode, setMsgCode] = useState<string>(() => guessMsgLang(lead, tr("tr", "de")));
+  const [subject, setSubject] = useState("");
+  const [mbody, setMbody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<string | null>(null);
+
   const loadHistory = useCallback(async () => {
     const { data } = await supabase.from("lead_emails").select("*").eq("lead_id", lead.id).order("created_at", { ascending: true });
     setHistory((data as LeadEmail[]) || []);
   }, [lead.id]);
   useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  // Dil değişince şablonu şirket adıyla otomatik doldur
+  useEffect(() => {
+    const t = MSG_TEMPLATES.find((x) => x.code === msgCode) || MSG_TEMPLATES[0];
+    setSubject(fillTpl(t.subject, lead));
+    setMbody(fillTpl(t.body, lead));
+    setSendResult(null);
+  }, [msgCode, lead.id]);
+
+  const sendDraft = async () => {
+    if (!lead.email) { setSendResult(tr("Bu müşterinin e-postası yok.", "Keine E-Mail vorhanden.")); return; }
+    if (!subject.trim() || !mbody.trim()) { setSendResult(tr("Konu ve mesaj gerekli.", "Betreff und Text erforderlich.")); return; }
+    setSending(true); setSendResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-lead-emails", {
+        body: { lead_ids: [lead.id], subject, body: mbody },
+      });
+      if (error || !data?.success) { setSendResult(tr("Hata: ", "Fehler: ") + (data?.error || error?.message || "")); }
+      else if (data.sent) { setSendResult(tr("✓ Gönderildi.", "✓ Gesendet.")); await loadHistory(); onChanged(); }
+      else { setSendResult(tr("Gönderilemedi.", "Nicht gesendet.") + (data.skipped ? tr(" (e-posta yok)", " (keine E-Mail)") : "")); }
+    } catch (e: any) { setSendResult(String(e?.message || e)); }
+    finally { setSending(false); }
+  };
+
+  const copyDraft = async () => {
+    try {
+      await navigator.clipboard.writeText(`${subject}\n\n${mbody}`);
+      setSendResult(tr("Panoya kopyalandı.", "In Zwischenablage kopiert."));
+    } catch { setSendResult(tr("Kopyalanamadı.", "Kopieren fehlgeschlagen.")); }
+  };
+
+  const mailtoHref = lead.email
+    ? `mailto:${lead.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mbody)}`
+    : undefined;
 
   const classifyReply = async () => {
     if (!reply.trim()) return;
@@ -597,7 +638,7 @@ const DetailModal: React.FC<{
   };
 
   return (
-    <Overlay onClose={onClose}>
+    <Drawer onClose={onClose}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 700 }}>{lead.isim}</h3>
@@ -623,6 +664,47 @@ const DetailModal: React.FC<{
       <Field label={tr("Notlar", "Notizen")}>
         <textarea className="c-input" style={{ minHeight: 70, resize: "vertical", fontFamily: "inherit" }} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => onSaveNotes(lead.id, notes)} placeholder={tr("Bu müşteriyle ilgili notlar…", "Notizen…")} />
       </Field>
+
+      {/* Çok dilli taslak mesaj */}
+      <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line,#e2e8f0)" }}>
+        <div style={{ fontSize: ".8rem", fontWeight: 700, color: "var(--text-2,#475569)", display: "flex", alignItems: "center", gap: 6 }}>
+          <Languages size={14} /> {tr("Taslak mesaj", "Nachrichtenvorlage")}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0 12px" }}>
+          {MSG_TEMPLATES.map((t) => (
+            <button key={t.code} type="button" onClick={() => setMsgCode(t.code)}
+              className={t.code === msgCode ? "c-btn-primary" : "c-btn-ghost"}
+              style={{ padding: "4px 10px", height: 30, fontSize: ".78rem", display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span>{t.flag}</span> {t.label}
+            </button>
+          ))}
+        </div>
+        <Field label={tr("Konu", "Betreff")}>
+          <input className="c-input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </Field>
+        <div style={{ height: 10 }} />
+        <Field label={tr("Mesaj", "Nachricht")}>
+          <textarea className="c-input" style={{ minHeight: 150, resize: "vertical", fontFamily: "inherit" }} value={mbody} onChange={(e) => setMbody(e.target.value)} />
+        </Field>
+        <div style={{ fontSize: ".72rem", color: "#94a3b8", marginTop: 6 }}>
+          {tr("Şirket adı otomatik eklenir.", "Firmenname wird automatisch eingefügt.")}
+          {!lead.email && <span style={{ color: "#f43f5e" }}> · {tr("Bu müşterinin e-postası yok.", "Keine E-Mail vorhanden.")}</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button className="c-btn-primary" onClick={sendDraft} disabled={sending || !lead.email} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />} {tr("Gönder", "Senden")}
+          </button>
+          <button type="button" className="c-btn-ghost" onClick={copyDraft} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Copy size={14} /> {tr("Kopyala", "Kopieren")}
+          </button>
+          {mailtoHref && (
+            <a className="c-btn-ghost" href={mailtoHref} style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
+              <Mail size={14} /> {tr("Mail uygulamasında aç", "Im Mail-Programm öffnen")}
+            </a>
+          )}
+          {sendResult && <span style={{ fontSize: ".8rem", color: "var(--text-2,#475569)" }}>{sendResult}</span>}
+        </div>
+      </div>
 
       {/* Email history */}
       <div style={{ marginTop: 16, fontSize: ".8rem", fontWeight: 700, color: "var(--text-2,#475569)", display: "flex", alignItems: "center", gap: 6 }}>
@@ -652,13 +734,22 @@ const DetailModal: React.FC<{
           {classifying ? <Loader2 size={14} className="spin" /> : <Tag size={14} />} {tr("Sınıflandır", "Klassifizieren")}
         </button>
       </div>
-    </Overlay>
+    </Drawer>
   );
 };
 
 const Overlay: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({ children, onClose }) => (
   <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,.55)", display: "grid", placeItems: "center", zIndex: 1000, padding: 20 }}>
     <div onClick={(e) => e.stopPropagation()} className="c-card" style={{ width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto", padding: 22 }}>
+      {children}
+    </div>
+  </div>
+);
+
+// ── Sağ panel (drawer) ───────────────────────────────────────────
+const Drawer: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({ children, onClose }) => (
+  <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,.45)", display: "flex", justifyContent: "flex-end", zIndex: 1000 }}>
+    <div onClick={(e) => e.stopPropagation()} className="c-card" style={{ width: "100%", maxWidth: 460, height: "100%", borderRadius: 0, overflowY: "auto", padding: 22, boxShadow: "-16px 0 40px rgba(2,6,23,.18)", animation: "drawerIn .22s cubic-bezier(.22,.61,.36,1)" }}>
       {children}
     </div>
   </div>
