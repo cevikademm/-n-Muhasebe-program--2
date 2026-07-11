@@ -95,6 +95,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   forms: <ClipboardList size={15} />,
   bankDocuments: <Building2 size={15} />,
   invoices: <FileText size={15} />,
+  musteriBulma: <Users size={15} />,
   settings: <Settings2 size={15} />,
   accountPlans: <BookOpen size={15} />,
   companies: <Building size={15} />,
@@ -171,6 +172,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     { key: "reports", label: t.reports, color: "#10b981" },
     { key: "forms", label: t.forms, color: "#f59e0b" },
     { key: "bankDocuments", label: t.bankDocuments, color: "#f43f5e" },
+    { key: "musteriBulma", label: tr("Müşteri Bulma", "Kundengewinnung"), color: "#8b5cf6" },
     { key: "settings", label: t.settings, color: "#64748b" },
   ];
 

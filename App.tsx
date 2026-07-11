@@ -22,6 +22,7 @@ import { AdminPanel } from "./components/AdminPanel";
 import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
 import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
 import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
+import { MusteriBulmaPanel } from "./components/MusteriBulmaPanel";
 
 // New Legal Pages
 import { AboutUsPanel } from "./components/AboutUsPanel";
@@ -343,6 +344,10 @@ export default function App() {
           onReanalyze={reanalyzeInvoice}
         />
       );
+    }
+
+    if (activeMenu === "musteriBulma") {
+      return <MusteriBulmaPanel ownerId={teamCtx?.effectiveOwnerId || session?.user?.id} />;
     }
 
     if (activeMenu === "about") return <AboutUsPanel />;

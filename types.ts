@@ -183,7 +183,7 @@ export interface UserSettings {
   updated_at: string;
 }
 
-export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'settings' | 'adminView' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
+export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'musteriBulma' | 'settings' | 'adminView' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
 
 export interface UserProfile {
   id: string;
