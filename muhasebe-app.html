@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#ffffff" />
+  <!-- ⚠ GÜVENLİK (ORT-05): Güvenlik başlıkları — XSS, clickjacking, MIME sniffing koruması -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="X-Frame-Options" content="DENY" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <!-- CSP disabled for production compatibility -->
+  <title>FikoAI</title>
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Space+Mono:wght@400;700&display=swap"
+    rel="stylesheet">
+  <!-- ⚠ GÜVENLİK (ORT-02): Tailwind CDN — ÜRETIM ortamında npm paketi olarak build'e dahil edilmeli.
+         CDN versiyonu yalnızca geliştirme amaçlıdır. SRI hash CDN play sürümüne uygulanamaz. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            carbon: {
+              50: '#e8f9fc',
+              100: '#caf1f8',
+              200: '#96e4f2',
+              300: '#5dd0e8',
+              400: '#22b4d4',
+              500: '#06b6d4',
+              600: '#0891b2',
+              700: '#0e7490',
+              800: '#155e75',
+              900: '#164e63',
+            },
+            surface: {
+              50: '#f8fafc',
+              100: '#e2e8f0',
+              200: '#94a3b8',
+              300: '#64748b',
+              400: '#475569',
+              500: '#334155',
+              600: '#253040',
+              700: '#1c1f27',
+              800: '#15181f',
+              850: '#0d0f15',
+              900: '#111318',
+              950: '#090b0f',
+            }
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', '-apple-system', 'sans-serif'],
+            syne: ['Space Grotesk', 'sans-serif'],
+            mono: ['Space Mono', 'monospace'],
+          },
+          screens: { xs: '480px' }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/app-styles.css" />
+</head>
+
+<body>
+  <script>
+    // ── LIGHT THEME RUNTIME ENFORCER ──
+    // Inline style="background:#0a0c11" gibi koyu renkleri DOM'da beyaza çevirir.
+    // CSS attribute selector React inline style'ları (rgb formatına dönüştürülmüş) için yetersiz kaldığından
+    // bu walker tüm element'leri kontrol edip koyu arka planları override eder.
+    (function () {
+      const DARK_LUM = 90;     // 0–255: bunun altı koyu sayılır
+      const LIGHT_TEXT_LUM = 200; // 0–255: bunun üstü açık metin sayılır
+      const parseRgb = (s) => {
+        const m = s && s.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s]+([\d.]+))?\)/);
+        return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] != null ? +m[4] : 1 } : null;
+      };
+      const lum = (c) => (c.r + c.g + c.b) / 3;
+
+      const fixEl = (el) => {
+        if (!(el instanceof HTMLElement)) return;
+        // Inline style varsa kontrol et — computed değil, sadece inline
+        const inline = el.getAttribute("style");
+        if (inline) {
+          // Inline style içinde koyu hex (#0xx, #1xx) varsa background-image'i sıfırla
+          if (/#0[0-9a-f]{2}|#1[0-5][0-9a-f]/i.test(inline) && /background/i.test(inline)) {
+            el.style.setProperty("background-color", "#ffffff", "important");
+            el.style.setProperty("background-image", "none", "important");
+          }
+          // background / background-color
+          const cs = getComputedStyle(el);
+          const bg = parseRgb(cs.backgroundColor);
+          if (bg && bg.a > 0.5 && lum(bg) < DARK_LUM) {
+            el.style.setProperty("background-color", "#ffffff", "important");
+            el.style.setProperty("background-image", "none", "important");
+          }
+          // border colors
+          ["borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor"].forEach((k) => {
+            const bc = parseRgb(cs[k]);
+            if (bc && bc.a > 0.3 && lum(bc) < DARK_LUM) {
+              el.style.setProperty(k.replace(/([A-Z])/g, "-$1").toLowerCase(), "rgba(15,23,42,.12)", "important");
+            }
+          });
+          // light text on light bg → koyu metin
+          const tc = parseRgb(cs.color);
+          if (tc && lum(tc) > LIGHT_TEXT_LUM) {
+            el.style.setProperty("color", "#0f172a", "important");
+          }
+        }
+      };
+
+      let scheduled = false;
+      const sweep = () => {
+        scheduled = false;
+        document.querySelectorAll("*").forEach(fixEl);
+      };
+      const schedule = () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(sweep);
+      };
+
+      const init = () => {
+        sweep();
+        const obs = new MutationObserver((muts) => {
+          for (const m of muts) {
+            if (m.type === "attributes" || m.addedNodes.length) { schedule(); break; }
+          }
+        });
+        obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+      };
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+      } else {
+        init();
+      }
+    })();
+  </script>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>
