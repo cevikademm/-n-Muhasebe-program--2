@@ -39,7 +39,8 @@ export default function App() {
   const [lang, setLang] = useState<Language>("tr");
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showLanding, setShowLanding] = useState(true);
+  // /app doğrudan giriş ekranını açar; tanıtım/landing artık fikoai.de kök sayfasıdır.
+  const [showLanding, setShowLanding] = useState(false);
   const [initialRegister, setInitialRegister] = useState(false);
 
   // UI States
@@ -427,7 +428,7 @@ export default function App() {
             onLangChange={setLang}
           />
         ) : !session ? (
-          <AuthScreen onAuth={setSession} initialRegister={initialRegister} onBack={() => setShowLanding(true)} />
+          <AuthScreen onAuth={setSession} initialRegister={initialRegister} onBack={() => { window.location.href = "/"; }} />
         ) : (
           <div
             className="flex h-screen overflow-hidden flex-col md:flex-row"

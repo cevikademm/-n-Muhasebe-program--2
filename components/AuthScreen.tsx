@@ -318,8 +318,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 margin: "0 0 16px 0",
               }}>
                 {tr(
-                  "Muhasebe artık düşünüyor.",
-                  "Buchhaltung denkt jetzt mit."
+                  "Tek sistem, tüm işletmeniz.",
+                  "Ein System für Ihr ganzes Unternehmen."
                 )}
               </h3>
 
@@ -331,11 +331,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 marginBottom: "20px",
               }}>
                 {[
-                  tr("Faturayı yükle.", "Rechnung hochladen."),
-                  tr("Banka dökümanları ile eşleştir.", "Mit Bankbelegen abgleichen."),
-                  tr("SKR03/SKR04 sınıflandırıldı.", "SKR03/SKR04 klassifiziert."),
-                  tr("DATEV'e aktarıldı.", "An DATEV exportiert."),
-                  tr("Hepsi saniyeler içinde.", "Alles in Sekunden."),
+                  tr("Web siteleri & dijital vitrin.", "Websites & digitale Präsenz."),
+                  tr("QR menü & sipariş sistemi.", "QR-Menü & Bestellsystem."),
+                  tr("Personel & vardiya yönetimi.", "Personal- & Schichtplanung."),
+                  tr("AI destekli muhasebe & otomasyon.", "KI-Buchhaltung & Automatisierung."),
+                  tr("Hepsi tek panelde.", "Alles in einem Panel."),
                 ].map((item, i) => (
                   <div key={i} style={{
                     display: "flex",
@@ -369,8 +369,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 margin: "0 0 16px 0",
               }}>
                 {tr(
-                  "Ön muhasebe dönemi bitti. Evraklarını doğrudan muhasebecine ilet — tam, eksiksiz, yapay zeka destekli.",
-                  "Die Vorbuchhaltung ist vorbei. Belege direkt an den Steuerberater — vollständig, lückenlos, KI-gestützt."
+                  "İşletmenizi olduğu gibi anlatan modern dijital sistemler — web, otomasyon ve yapay zeka. Almanca & Türkçe, tek elden.",
+                  "Moderne digitale Systeme für Ihr Unternehmen — Web, Automatisierung und KI. Auf Deutsch & Türkisch, aus einer Hand."
                 )}
               </p>
 
@@ -385,8 +385,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
                 marginBottom: "16px",
               }}>
                 {[
-                  { key: "fi", val: "Finanzbuchhaltung" },
-                  { key: "ko", val: "Kontierung" },
+                  { key: "web", val: tr("Web & Dijital Vitrin", "Web & digitale Präsenz") },
+                  { key: "sys", val: tr("Otomasyon & Sistem", "Automatisierung & System") },
                   { key: "ai", val: tr("Yapay Zeka", "Künstliche Intelligenz") },
                 ].map(({ key, val }) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
