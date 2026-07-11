@@ -215,26 +215,55 @@ serve(async (req) => {
         return true;
       });
 
+      // ── Tekilleştirme (dedup) ─────────────────────────────────────
+      // Bir işletme "aynı" sayılır: aynı place_id VEYA aynı normalize
+      // isim+adres. Böylece Google'da mükerrer kayıt (farklı place_id)
+      // ya da Apify'ın tekrar döndürdüğü kayıtlar tek kez listelenir.
+      const norm = (s: any) =>
+        String(s ?? "").toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim();
+      const nameKey = (r: any) => `${norm(r.isim)}|${norm(r.adres)}`;
+
+      // 1) Batch içi tekilleştirme (Apify aynı yeri iki kez verebilir → aksi
+      //    halde upsert "cannot affect row a second time" hatası verir)
+      const seenPid = new Set<string>();
+      const seenKey = new Set<string>();
+      rows = rows.filter((r) => {
+        const pid = r.place_id ? String(r.place_id) : "";
+        const k = nameKey(r);
+        if ((pid && seenPid.has(pid)) || seenKey.has(k)) return false;
+        if (pid) seenPid.add(pid);
+        seenKey.add(k);
+        return true;
+      });
+
+      // 2) Owner'ın MEVCUT tüm leadlerine karşı tekilleştirme (önceki
+      //    aramalarda bulunmuş müşteriyi tekrar ekleme/listeleme)
+      const { data: existingLeads } = await admin
+        .from("leads").select("place_id,isim,adres").eq("user_id", ownerId);
+      const exPid = new Set<string>();
+      const exKey = new Set<string>();
+      for (const e of existingLeads || []) {
+        if (e.place_id) exPid.add(String(e.place_id));
+        exKey.add(nameKey(e));
+      }
+      const fresh = rows.filter((r) => !((r.place_id && exPid.has(String(r.place_id))) || exKey.has(nameKey(r))));
+      const duplicates = rows.length - fresh.length;
+
+      // 3) Yalnızca yeni olanları ekle. onConflict DO NOTHING (ignoreDuplicates)
+      //    → yarış durumunda bile mükerrer oluşmaz ve mevcut satır (elle
+      //    girilen e-posta vb.) EZİLMEZ.
       let saved: any[] = [];
-      if (rows.length) {
-        // place_id olanlar upsert (dedup), olmayanlar düz insert
-        const withId = rows.filter((r) => r.place_id);
-        const withoutId = rows.filter((r) => !r.place_id);
-        if (withId.length) {
-          const { data } = await admin
-            .from("leads")
-            .upsert(withId, { onConflict: "user_id,place_id" })
-            .select();
-          if (data) saved = saved.concat(data);
-        }
-        if (withoutId.length) {
-          const { data } = await admin.from("leads").insert(withoutId).select();
-          if (data) saved = saved.concat(data);
-        }
+      if (fresh.length) {
+        const { data, error } = await admin
+          .from("leads")
+          .upsert(fresh, { onConflict: "user_id,place_id", ignoreDuplicates: true })
+          .select();
+        if (error) console.error("leads insert error", error.message);
+        if (data) saved = data;
       }
 
       await admin.from("lead_searches").update({ status: "done", result_count: saved.length }).eq("id", searchId);
-      return json({ success: true, status: "done", count: saved.length, leads: saved });
+      return json({ success: true, status: "done", count: saved.length, duplicates, leads: saved });
     }
 
     return json({ success: false, error: "Geçersiz action" }, 400);

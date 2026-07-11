@@ -81,6 +81,15 @@ serve(async (req) => {
     const bodyTpl = String(body?.body || "").trim();
     const reply_to = String(body?.reply_to || Deno.env.get("LEADS_REPLY_TO") || caller.email || "").trim();
 
+    // Ekler (tanıtım PDF'i): yalnızca https + fikoai.de altındaki dosyalara izin
+    // ver (SSRF/kötüye kullanım koruması). Resend "path" ile uzak dosyayı çeker.
+    const rawAtt = Array.isArray(body?.attachments) ? body.attachments : [];
+    const attachments = rawAtt
+      .filter((a: any) => a && typeof a.path === "string" && typeof a.filename === "string")
+      .filter((a: any) => { try { const u = new URL(a.path); return u.protocol === "https:" && /(^|\.)fikoai\.de$/.test(u.hostname); } catch { return false; } })
+      .slice(0, 5)
+      .map((a: any) => ({ filename: String(a.filename).slice(0, 120), path: a.path }));
+
     if (!leadIds.length) return json({ success: false, error: "En az bir müşteri seçin." }, 400);
     if (!subject || !bodyTpl) return json({ success: false, error: "Konu ve mesaj zorunludur." }, 400);
 
@@ -105,6 +114,7 @@ serve(async (req) => {
             reply_to,
             subject: fill(subject, lead),
             html,
+            ...(attachments.length ? { attachments } : {}),
           }),
         });
         if (r.ok) {

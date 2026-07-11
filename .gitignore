@@ -33,6 +33,9 @@ banka ekstresi/
 report/
 hata çıktısı/
 *.pdf
+# İstisna: müşteri tanıtım sunumları Vercel'de servis edilmeli (fikoai.de/sunum/*)
+!public/sunum/
+!public/sunum/*.pdf
 FIBU_SUNUM.*
 .claude/
 

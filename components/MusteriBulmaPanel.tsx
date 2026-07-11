@@ -2,14 +2,19 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLang } from "../LanguageContext";
 import { supabase } from "../services/supabaseService";
 import {
+  KAMPANYALAR, LANGS, ilkKampanya, kampanyaByCode, kampanyaDilleri,
+  kampanyaSablon, kampanyaEk, sunumSatiri,
+} from "./musteriBulmaKampanyalar";
+import {
   Search, Users, Mail, Download, Loader2, MapPin, Phone, Globe,
   Star, X, Filter, MessageSquareText, Tag, Send, RefreshCw, ExternalLink,
-  Copy, Languages, Save,
+  Copy, Languages, Save, Paperclip, Megaphone, Trash2,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────
 interface Lead {
   id: string;
+  place_id: string | null;
   isim: string;
   kategori: string | null;
   adres: string | null;
@@ -24,6 +29,7 @@ interface Lead {
   ulke: string | null;
   durum: string;
   mail_durumu: string;
+  whatsapp_durumu?: string;
   yanit_kategorisi: string | null;
   notlar: string | null;
   etiketler: string[] | null;
@@ -88,46 +94,8 @@ function leadGroup(l: { search?: Lead["search"] }, tr: (t: string, g: string) =>
   return { key, label: kat, sub: city || country, title };
 }
 
-// ── Çok dilli taslak mesaj şablonları ────────────────────────────
-// {{isim}} = işletme adı (otomatik dolar), {{sehir}}, {{kategori}}
-const MSG_TEMPLATES: { code: string; label: string; flag: string; subject: string; body: string }[] = [
-  {
-    code: "tr", label: "Türkçe", flag: "🇹🇷",
-    subject: "{{isim}} için kısa bir tanışma",
-    body: "Merhaba {{isim}} ekibi,\n\nBen fikoai'den yazıyorum. İşletmenizin muhasebe ve evrak süreçlerini dijitalleştirip zamandan tasarruf etmenizi sağlayan çözümlerimizi kısaca tanıtmak isterim.\n\nSize uygun bir zamanda 10 dakikalık kısa bir görüşme yapabilir miyiz?\n\nSaygılarımızla,\nfikoai ekibi",
-  },
-  {
-    code: "de", label: "Deutsch", flag: "🇩🇪",
-    subject: "Kurze Vorstellung für {{isim}}",
-    body: "Hallo Team von {{isim}},\n\nich melde mich von fikoai. Wir helfen Unternehmen dabei, ihre Buchhaltung und Verwaltung zu digitalisieren und dadurch Zeit zu sparen.\n\nHätten Sie Interesse an einem kurzen Gespräch von 10 Minuten?\n\nBeste Grüße,\nIhr fikoai-Team",
-  },
-  {
-    code: "en", label: "English", flag: "🇬🇧",
-    subject: "A quick hello to {{isim}}",
-    body: "Hello {{isim}} team,\n\nI'm reaching out from fikoai. We help businesses digitalise their accounting and paperwork so they can save time.\n\nWould you be open to a short 10-minute call at a time that suits you?\n\nBest regards,\nThe fikoai team",
-  },
-  {
-    code: "fr", label: "Français", flag: "🇫🇷",
-    subject: "Une brève présentation pour {{isim}}",
-    body: "Bonjour à l'équipe de {{isim}},\n\nJe vous contacte de la part de fikoai. Nous aidons les entreprises à numériser leur comptabilité et leurs démarches administratives afin de gagner du temps.\n\nSeriez-vous disponible pour un court échange de 10 minutes ?\n\nCordialement,\nL'équipe fikoai",
-  },
-  {
-    code: "nl", label: "Nederlands", flag: "🇳🇱",
-    subject: "Een korte kennismaking voor {{isim}}",
-    body: "Hallo team van {{isim}},\n\nIk neem contact op namens fikoai. Wij helpen bedrijven hun boekhouding en administratie te digitaliseren en zo tijd te besparen.\n\nZou u openstaan voor een kort gesprek van 10 minuten?\n\nMet vriendelijke groet,\nHet fikoai-team",
-  },
-  {
-    code: "it", label: "Italiano", flag: "🇮🇹",
-    subject: "Una breve presentazione per {{isim}}",
-    body: "Salve team di {{isim}},\n\nvi scrivo da parte di fikoai. Aiutiamo le aziende a digitalizzare la contabilità e le pratiche amministrative per farvi risparmiare tempo.\n\nAvreste piacere di fare una breve chiamata di 10 minuti?\n\nCordiali saluti,\nIl team fikoai",
-  },
-  {
-    code: "es", label: "Español", flag: "🇪🇸",
-    subject: "Una breve presentación para {{isim}}",
-    body: "Hola equipo de {{isim}},\n\nles escribo de parte de fikoai. Ayudamos a las empresas a digitalizar su contabilidad y su gestión administrativa para ahorrar tiempo.\n\n¿Tendrían disponibilidad para una breve llamada de 10 minutos?\n\nUn saludo,\nEl equipo fikoai",
-  },
-];
-
+// ── Taslak mesaj şablonları & kampanyalar musteriBulmaKampanyalar.ts'de ──
+// Lead'in ülkesinden taslak dilini tahmin eder.
 function guessMsgLang(lead: { ulke?: string | null }, fallback: string): string {
   const u = (lead.ulke || "").toLowerCase();
   if (/deu|german|österr|austria|schweiz|switz/.test(u)) return "de";
@@ -137,7 +105,7 @@ function guessMsgLang(lead: { ulke?: string | null }, fallback: string): string 
   if (/ital/.test(u)) return "it";
   if (/span|españ|espan/.test(u)) return "es";
   if (/king|britain|england|usa|united states|ireland/.test(u)) return "en";
-  return MSG_TEMPLATES.some((t) => t.code === fallback) ? fallback : "de";
+  return LANGS.some((t) => t.code === fallback) ? fallback : "de";
 }
 const fillTpl = (s: string, lead: { isim?: string | null; sehir?: string | null; kategori?: string | null }) =>
   String(s ?? "")
@@ -172,7 +140,14 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
 
   // Modals
   const [mailOpen, setMailOpen] = useState(false);
+  const [waOpen, setWaOpen] = useState(false);
   const [detail, setDetail] = useState<Lead | null>(null);
+
+  // Onay diyaloğu (native confirm yerine)
+  const [confirmState, setConfirmState] = useState<{
+    title: string; message: React.ReactNode; confirmLabel: string; count?: number; onConfirm: () => Promise<void> | void;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   // Responsive
   const [isMobile, setIsMobile] = useState(
@@ -196,7 +171,16 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
       .eq("user_id", ownerId)
       .order("created_at", { ascending: false });
     if (error) setLoadError(error.message);
-    else setLeads((data as Lead[]) || []);
+    else {
+      // Güvenlik ağı: aynı place_id'yi iki kez gösterme (sunucu zaten engelliyor)
+      const list = (data as Lead[]) || [];
+      const seen = new Set<string>();
+      setLeads(list.filter((l) => {
+        if (!l.place_id) return true;
+        if (seen.has(l.place_id)) return false;
+        seen.add(l.place_id); return true;
+      }));
+    }
     setLoading(false);
   }, [ownerId]);
 
@@ -236,12 +220,15 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         tries++;
         const { data: p } = await supabase.functions.invoke("find-customers", { body: { action: "poll", searchId } });
         if (p?.status === "done") {
-          setSearchMsg(tr(`✓ ${p.count} müşteri bulundu / güncellendi.`, `✓ ${p.count} Kunden gefunden.`));
+          const dup = p.duplicates ? tr(` · ${p.duplicates} zaten listede`, ` · ${p.duplicates} bereits vorhanden`) : "";
+          setSearchMsg(tr(`✓ ${p.count} yeni müşteri${dup}.`, `✓ ${p.count} neue Kunden${dup}.`));
           await fetchLeads(); setSearching(false); return;
         }
         if ((p && p.status === "error") || tries > 45) {
           setSearchMsg(p?.error || tr("Arama tamamlanamadı.", "Suche fehlgeschlagen."));
-          setSearching(false); return;
+          // Poll bitmese/timeout olsa bile edge fonksiyonu leadleri arka
+          // planda eklemiş olabilir → listeyi yine de tazele ki gizli kalmasın.
+          await fetchLeads(); setSearching(false); return;
         }
         setSearchMsg(tr(`Google Maps taranıyor… (${tries})`, `Google Maps wird durchsucht… (${tries})`));
         setTimeout(poll, 5000);
@@ -262,12 +249,53 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
     await supabase.from("leads").update({ notlar }).eq("id", leadId);
     setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, notlar } : l)));
   };
-  const deleteLead = async (lead: Lead) => {
-    if (!confirm(tr(`"${lead.isim}" silinsin mi?`, `"${lead.isim}" löschen?`))) return;
-    await supabase.from("leads").delete().eq("id", lead.id);
-    setSelected((s) => { const n = new Set(s); n.delete(lead.id); return n; });
-    setDetail(null);
-    fetchLeads();
+  const deleteLead = (lead: Lead) => {
+    setConfirmState({
+      title: tr("Müşteriyi sil", "Kunde löschen"),
+      confirmLabel: tr("Sil", "Löschen"),
+      message: (
+        <>
+          <strong style={{ color: "var(--text-1,#0f172a)" }}>“{lead.isim}”</strong>{" "}
+          {tr("kalıcı olarak silinecek.", "wird dauerhaft gelöscht.")}
+          <br />
+          <span style={{ fontSize: ".8rem", color: "var(--text-3,#94a3b8)" }}>{tr("Bu işlem geri alınamaz.", "Dies kann nicht rückgängig gemacht werden.")}</span>
+        </>
+      ),
+      onConfirm: async () => {
+        await supabase.from("leads").delete().eq("id", lead.id);
+        setSelected((s) => { const n = new Set(s); n.delete(lead.id); return n; });
+        setDetail(null);
+        fetchLeads();
+      },
+    });
+  };
+  // Toplu silme (seçili müşteriler)
+  const deleteMany = (ids: string[]) => {
+    if (!ids.length) return;
+    setConfirmState({
+      title: tr("Seçili müşterileri sil", "Ausgewählte Kunden löschen"),
+      confirmLabel: tr("Hepsini sil", "Alle löschen"),
+      count: ids.length,
+      message: (
+        <>
+          <strong style={{ color: "var(--text-1,#0f172a)" }}>{ids.length}</strong>{" "}
+          {tr("müşteri listeden kalıcı olarak silinecek.", "Kunden werden dauerhaft aus der Liste gelöscht.")}
+          <br />
+          <span style={{ fontSize: ".8rem", color: "var(--text-3,#94a3b8)" }}>{tr("Bu işlem geri alınamaz.", "Dies kann nicht rückgängig gemacht werden.")}</span>
+        </>
+      ),
+      onConfirm: async () => {
+        await supabase.from("leads").delete().in("id", ids);
+        setSelected((s) => { const n = new Set(s); ids.forEach((id) => n.delete(id)); return n; });
+        fetchLeads();
+      },
+    });
+  };
+  const runConfirm = async () => {
+    if (!confirmState) return;
+    setConfirmBusy(true);
+    try { await confirmState.onConfirm(); }
+    finally { setConfirmBusy(false); setConfirmState(null); }
   };
 
   // ── Derived ────────────────────────────────────────────────────
@@ -307,6 +335,14 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
 
   const selectedLeads = leads.filter((l) => selected.has(l.id));
   const selectedWithEmail = selectedLeads.filter((l) => l.email);
+  const selectedWithWhatsapp = selectedLeads.filter((l) => isWhatsappNumber(l.telefon));
+
+  // WhatsApp gönderim durumunu işaretle (wa.me ile açılan kayıtlar "gönderildi")
+  const markWhatsappSent = async (ids: string[]) => {
+    if (!ids.length) return;
+    await supabase.from("leads").update({ whatsapp_durumu: "gonderildi" }).in("id", ids);
+    setLeads((ls) => ls.map((l) => (ids.includes(l.id) ? { ...l, whatsapp_durumu: "gonderildi" } : l)));
+  };
 
   // ── Export ─────────────────────────────────────────────────────
   const exportXlsx = async () => {
@@ -433,6 +469,16 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
           style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Mail size={14} /> {tr("Toplu Mail", "Massen-Mail")} {selectedWithEmail.length ? `(${selectedWithEmail.length})` : ""}
         </button>
+        <button className="c-btn-ghost" onClick={() => setWaOpen(true)} disabled={!selectedWithWhatsapp.length}
+          title={tr("Seçili numaralara WhatsApp", "WhatsApp an ausgewählte Nummern")}
+          style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6, color: selectedWithWhatsapp.length ? WA_GREEN : undefined, borderColor: selectedWithWhatsapp.length ? "rgba(37,211,102,.45)" : undefined }}>
+          <WhatsAppGlyph size={14} /> {tr("Toplu WhatsApp", "Massen-WhatsApp")} {selectedWithWhatsapp.length ? `(${selectedWithWhatsapp.length})` : ""}
+        </button>
+        <button className="c-btn-ghost" onClick={() => deleteMany([...selected])} disabled={!selected.size}
+          title={tr("Seçilenleri sil", "Ausgewählte löschen")}
+          style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6, color: selected.size ? "#f43f5e" : undefined, borderColor: selected.size ? "rgba(244,63,94,.4)" : undefined }}>
+          <Trash2 size={14} /> {tr("Sil", "Löschen")} {selected.size ? `(${selected.size})` : ""}
+        </button>
       </div>
 
       {/* Leads list — mobile: cards, desktop: table */}
@@ -477,10 +523,8 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
                       )}
                     </div>
                     {(l.telefon || l.email || l.website) && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 14px", fontSize: ".78rem", color: "var(--text-2,#475569)", paddingLeft: 26 }}>
-                        {l.telefon && <PhoneLinks phone={l.telefon} tr={tr} iconSize={12} />}
-                        {l.email && <a href={`mailto:${l.email}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "inherit", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}><Mail size={12} />{l.email}</a>}
-                        {l.website && <a href={l.website} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#06b6d4", textDecoration: "none" }}><Globe size={12} />Web</a>}
+                      <div style={{ paddingLeft: 26 }}>
+                        <ContactActions lead={l} tr={tr} />
                       </div>
                     )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: 26 }}>
@@ -489,9 +533,11 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
                         {DURUMS.map((d) => <option key={d} value={d} style={{ color: "#0f172a", background: "#fff" }}>{durumLabel(d, tr)}</option>)}
                       </select>
                       {mailBadge(l.mail_durumu, tr)}
+                      {waBadge(l.whatsapp_durumu)}
                       {l.yanit_kategorisi && <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: YANIT_COLOR[l.yanit_kategorisi] || "#94a3b8" }}>{yanitLabel(l.yanit_kategorisi, tr)}</span>}
                       <div style={{ flex: 1 }} />
                       <button onClick={() => setDetail(l)} className="c-btn-ghost" style={{ padding: 7, height: 32 }} title={tr("Detay", "Details")}><ExternalLink size={14} /></button>
+                      <button onClick={() => deleteLead(l)} className="c-btn-ghost" style={{ padding: 7, height: 32, color: "#f43f5e" }} title={tr("Sil", "Löschen")}><Trash2 size={14} /></button>
                     </div>
                   </div>
                 );
@@ -501,7 +547,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         </div>
       ) : (
       <div className="c-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 40px", gap: 0, padding: "10px 14px", borderBottom: "1px solid var(--line,#e2e8f0)", fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3,#64748b)", alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 76px", gap: 0, padding: "10px 14px", borderBottom: "1px solid var(--line,#e2e8f0)", fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3,#64748b)", alignItems: "center" }}>
           <input type="checkbox" checked={allChecked} onChange={toggleAll} />
           <div>{tr("İşletme", "Unternehmen")}</div>
           <div>{tr("İletişim", "Kontakt")}</div>
@@ -524,7 +570,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         ) : filtered.map((l) => {
           const g = leadGroup(l, tr);
           return (
-          <div key={l.id} style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 40px", gap: 0, padding: "11px 14px", borderBottom: "1px solid var(--line,#f1f5f9)", fontSize: ".85rem", alignItems: "center" }}>
+          <div key={l.id} style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 76px", gap: 0, padding: "11px 14px", borderBottom: "1px solid var(--line,#f1f5f9)", fontSize: ".85rem", alignItems: "center" }}>
             <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
@@ -535,10 +581,8 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
                 {l.kategori}{l.adres ? ` · ${l.adres}` : ""}
               </div>
             </div>
-            <div style={{ fontSize: ".78rem", color: "var(--text-2,#475569)", display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-              {l.telefon && <PhoneLinks phone={l.telefon} tr={tr} iconSize={11} />}
-              {l.email && <a href={`mailto:${l.email}`} onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#06b6d4", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Mail size={11} />{l.email}</a>}
-              {l.website && <a href={l.website} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#06b6d4" }}><Globe size={11} />Web</a>}
+            <div style={{ minWidth: 0 }}>
+              <ContactActions lead={l} tr={tr} />
             </div>
             <div>
               <select value={l.durum} onChange={(e) => setDurum(l, e.target.value)}
@@ -547,9 +591,12 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
               </select>
             </div>
             <div>{l.puan != null ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Star size={12} color="#f59e0b" fill="#f59e0b" />{l.puan}</span> : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
-            <div>{mailBadge(l.mail_durumu, tr)}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>{mailBadge(l.mail_durumu, tr)}{waBadge(l.whatsapp_durumu)}</div>
             <div>{l.yanit_kategorisi ? <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: YANIT_COLOR[l.yanit_kategorisi] || "#94a3b8" }}>{yanitLabel(l.yanit_kategorisi, tr)}</span> : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
-            <button onClick={() => setDetail(l)} className="c-btn-ghost" style={{ padding: 6, height: 30 }} title={tr("Detay", "Details")}><ExternalLink size={13} /></button>
+            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+              <button onClick={() => setDetail(l)} className="c-btn-ghost" style={{ padding: 6, height: 30 }} title={tr("Detay", "Details")}><ExternalLink size={13} /></button>
+              <button onClick={() => deleteLead(l)} className="c-btn-ghost" style={{ padding: 6, height: 30, color: "#f43f5e" }} title={tr("Sil", "Löschen")}><Trash2 size={13} /></button>
+            </div>
           </div>
           );
         })}
@@ -557,9 +604,21 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
       )}
 
       {mailOpen && <MailModal leads={selectedWithEmail} onClose={() => setMailOpen(false)} onSent={() => { setMailOpen(false); setSelected(new Set()); fetchLeads(); }} tr={tr} />}
+      {waOpen && <WhatsAppModal leads={selectedWithWhatsapp} onClose={() => setWaOpen(false)} onSent={(ids) => { setWaOpen(false); markWhatsappSent(ids); }} tr={tr} />}
       {detail && <DetailModal lead={detail} onClose={() => setDetail(null)} onSaveNotes={saveNotes} onSetDurum={setDurum} onDelete={deleteLead} onChanged={fetchLeads} tr={tr} />}
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          cancelLabel={tr("Vazgeç", "Abbrechen")}
+          loading={confirmBusy}
+          onCancel={() => { if (!confirmBusy) setConfirmState(null); }}
+          onConfirm={runConfirm}
+        />
+      )}
 
-      <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@keyframes drawerIn{from{transform:translateX(24px);opacity:.4}to{transform:translateX(0);opacity:1}}`}</style>
+      <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@keyframes drawerIn{from{transform:translateX(24px);opacity:.4}to{transform:translateX(0);opacity:1}}@keyframes confFade{from{opacity:0}to{opacity:1}}@keyframes confPop{from{transform:scale(.92) translateY(8px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}@keyframes confPulse{0%,100%{transform:scale(1);opacity:.55}50%{transform:scale(1.35);opacity:0}}`}</style>
     </div>
   );
 };
@@ -576,6 +635,64 @@ const Check: React.FC<{ label: string; checked: boolean; onChange: (v: boolean) 
     <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> {label}
   </label>
 );
+
+// ── Modern onay diyaloğu (native confirm yerine) ─────────────────
+const ConfirmDialog: React.FC<{
+  title: string; message: React.ReactNode; confirmLabel: string; cancelLabel: string;
+  loading?: boolean; onConfirm: () => void; onCancel: () => void;
+}> = ({ title, message, confirmLabel, cancelLabel, loading, onConfirm, onCancel }) => {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (loading) return;
+      if (e.key === "Escape") onCancel();
+      else if (e.key === "Enter") onConfirm();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [loading, onCancel, onConfirm]);
+
+  return (
+    <div onClick={() => { if (!loading) onCancel(); }} role="dialog" aria-modal="true"
+      style={{
+        position: "fixed", inset: 0, zIndex: 1200, display: "grid", placeItems: "center", padding: 20,
+        background: "rgba(2,6,23,.62)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+        animation: "confFade .18s ease",
+      }}>
+      <div onClick={(e) => e.stopPropagation()} className="c-card"
+        style={{
+          width: "100%", maxWidth: 396, borderRadius: 22, padding: "30px 26px 22px",
+          textAlign: "center", position: "relative", overflow: "hidden",
+          boxShadow: "0 30px 70px -18px rgba(2,6,23,.55)",
+          animation: "confPop .26s cubic-bezier(.34,1.56,.64,1)",
+        }}>
+        {/* üstte yumuşak kırmızı ışıma */}
+        <div style={{ position: "absolute", top: -70, left: "50%", transform: "translateX(-50%)", width: 260, height: 140, background: "radial-gradient(closest-side, rgba(244,63,94,.30), transparent)", pointerEvents: "none" }} />
+
+        {/* ikon + nabız halkası */}
+        <div style={{ position: "relative", width: 66, height: 66, margin: "0 auto 18px" }}>
+          <span style={{ position: "absolute", inset: 0, borderRadius: 20, background: "rgba(244,63,94,.4)", animation: "confPulse 1.8s ease-in-out infinite" }} />
+          <div style={{ position: "relative", width: 66, height: 66, borderRadius: 20, display: "grid", placeItems: "center", color: "#f43f5e", background: "rgba(244,63,94,.14)", border: "1px solid rgba(244,63,94,.30)" }}>
+            <Trash2 size={28} />
+          </div>
+        </div>
+
+        <h3 style={{ margin: "0 0 10px", fontSize: "1.15rem", fontWeight: 700 }}>{title}</h3>
+        <div style={{ fontSize: ".9rem", color: "var(--text-2,#475569)", lineHeight: 1.55, marginBottom: 24 }}>{message}</div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onCancel} disabled={loading} className="c-btn-ghost"
+            style={{ flex: 1, height: 46, fontWeight: 600, borderRadius: 12 }}>
+            {cancelLabel}
+          </button>
+          <button onClick={onConfirm} disabled={loading} className="c-btn-danger"
+            style={{ flex: 1, height: 46, fontWeight: 600, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+            {loading ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />} {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // İşletmenin solunda görünen "aradığım grup" etiketi
 const GroupChip: React.FC<{ g: LeadGroup; max?: number }> = ({ g, max = 150 }) => {
@@ -643,6 +760,52 @@ const PhoneLinks: React.FC<{ phone: string; tr: (t: string, g: string) => string
   );
 };
 
+// İletişim ikonları yan yana: mail · WhatsApp · telefon · web (tıkla → iletişime geç)
+const ContactActions: React.FC<{ lead: Lead; tr: (t: string, g: string) => string; showNumber?: boolean }> = ({ lead, tr, showNumber = true }) => {
+  const wa = lead.telefon ? isWhatsappNumber(lead.telefon) : false;
+  const intl = lead.telefon ? toIntlNumber(lead.telefon) : "";
+  const waDil = guessMsgLang(lead, tr("tr", "de"));
+  const waK = ilkKampanya();
+  const waEk = kampanyaEk(waK, waDil);
+  const waHref = `https://wa.me/${intl}?text=${encodeURIComponent(fillTpl(kampanyaSablon(waK, waDil).body, lead) + sunumSatiri(waEk, waDil))}`;
+  const chip = (bg: string, color: string): React.CSSProperties => ({
+    width: 30, height: 30, borderRadius: 8, background: bg, color,
+    display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, textDecoration: "none",
+  });
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const none = !lead.email && !lead.telefon && !lead.website;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        {lead.email && (
+          <a href={`mailto:${lead.email}`} onClick={stop} title={`${tr("Mail", "Mail")} · ${lead.email}`} style={chip("rgba(6,182,212,.13)", "#06b6d4")}>
+            <Mail size={15} />
+          </a>
+        )}
+        {wa && (
+          <a href={waHref} target="_blank" rel="noopener noreferrer" onClick={stop} title={`WhatsApp · ${lead.telefon}`} style={chip("rgba(37,211,102,.15)", WA_GREEN)}>
+            <WhatsAppGlyph size={16} />
+          </a>
+        )}
+        {lead.telefon && (
+          <a href={`tel:${lead.telefon}`} onClick={stop} title={`${tr("Ara", "Anrufen")} · ${lead.telefon}`} style={chip("rgba(100,116,139,.15)", "#475569")}>
+            <Phone size={15} />
+          </a>
+        )}
+        {lead.website && (
+          <a href={lead.website} target="_blank" rel="noopener noreferrer" onClick={stop} title={lead.website} style={chip("rgba(139,92,246,.13)", "#8b5cf6")}>
+            <Globe size={15} />
+          </a>
+        )}
+        {none && <span style={{ color: "#cbd5e1", fontSize: ".82rem" }}>—</span>}
+      </div>
+      {showNumber && lead.telefon && (
+        <span style={{ fontSize: ".72rem", color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.telefon}</span>
+      )}
+    </div>
+  );
+};
+
 function durumLabel(d: string, tr: (t: string, g: string) => string) {
   const m: Record<string, [string, string]> = {
     yeni: ["Yeni", "Neu"], ilgili: ["İlgili", "Interessiert"], iletisimde: ["İletişimde", "In Kontakt"],
@@ -666,20 +829,57 @@ function mailBadge(s: string, tr: (t: string, g: string) => string) {
   if (s === "gonderilmedi") return <span style={{ color: "#cbd5e1" }}>—</span>;
   return <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: c }}>{txt}</span>;
 }
+// WhatsApp gönderim rozeti — sadece gönderildiyse yeşil WhatsApp işareti
+function waBadge(s: string | undefined) {
+  if (s !== "gonderildi") return null;
+  return (
+    <span title="WhatsApp" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: ".7rem", fontWeight: 600, padding: "2px 7px", borderRadius: 20, color: "#fff", background: WA_GREEN }}>
+      <WhatsAppGlyph size={11} />
+    </span>
+  );
+}
 
 // ── Mail modal ───────────────────────────────────────────────────
 const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => void; tr: (t: string, g: string) => string }> = ({ leads, onClose, onSent, tr }) => {
+  // Seçilen leadlerde en yaygın dili varsayılan al
+  const defLang = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const l of leads) { const g = guessMsgLang(l, "de"); c[g] = (c[g] || 0) + 1; }
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "de";
+  }, [leads]);
+
+  const [campCode, setCampCode] = useState<string>("");   // zorunlu — boşken gönderilemez
+  const [langCode, setLangCode] = useState<string>(defLang);
+  const [attachOn, setAttachOn] = useState(true);
   const [subject, setSubject] = useState("");
-  const [body, setBody] = useState(tr("Merhaba {{isim}},\n\n", "Hallo {{isim}},\n\n"));
+  const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
+  const camp = kampanyaByCode(campCode);
+  const ek = camp ? kampanyaEk(camp, langCode) : null;
+
+  // Konu/dil değişince şablonu doldur (placeholder'lar edge fonksiyonunda dolar)
+  useEffect(() => {
+    if (!camp) { setSubject(""); setBody(""); return; }
+    const s = kampanyaSablon(camp, langCode);
+    setSubject(s.subject); setBody(s.body); setResult(null);
+  }, [campCode, langCode]);
+
+  const pickCamp = (code: string) => {
+    setCampCode(code);
+    const k = kampanyaByCode(code);
+    if (k) { const langs = kampanyaDilleri(k); if (!langs.includes(langCode)) setLangCode(langs.includes(defLang) ? defLang : langs[0]); }
+  };
+
   const send = async () => {
+    if (!campCode) { setResult(tr("Önce bir konu seçin.", "Bitte zuerst ein Thema wählen.")); return; }
     if (!subject.trim() || !body.trim()) { setResult(tr("Konu ve mesaj gerekli.", "Betreff und Text erforderlich.")); return; }
     setSending(true); setResult(null);
     try {
+      const attachments = attachOn && ek ? [{ filename: ek.name, path: ek.url }] : undefined;
       const { data, error } = await supabase.functions.invoke("send-lead-emails", {
-        body: { lead_ids: leads.map((l) => l.id), subject, body },
+        body: { lead_ids: leads.map((l) => l.id), subject, body, attachments },
       });
       if (error || !data?.success) { setResult(tr("Hata: ", "Fehler: ") + (data?.error || error?.message || "")); setSending(false); return; }
       setResult(tr(`✓ ${data.sent} gönderildi, ${data.failed} hata, ${data.skipped} atlandı.`, `✓ ${data.sent} gesendet.`));
@@ -694,22 +894,205 @@ const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => vo
         <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Mail size={18} color="#8b5cf6" /> {tr("Toplu Mail", "Massen-Mail")} · {leads.length}</h3>
         <button onClick={onClose} className="c-btn-ghost" style={{ padding: 6 }}><X size={16} /></button>
       </div>
-      <p style={{ fontSize: ".8rem", color: "var(--text-3,#64748b)", marginTop: 0 }}>
-        {tr("Değişkenler: ", "Variablen: ")}<code>{"{{isim}}"}</code> <code>{"{{sehir}}"}</code> <code>{"{{kategori}}"}</code>
-      </p>
-      <Field label={tr("Konu", "Betreff")}>
-        <input className="c-input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={tr("Örn: {{isim}} için özel web çözümü", "Betreff…")} />
+
+      {/* Konu (kampanya) seçimi — zorunlu */}
+      <Field label={tr("Konu / kampanya *", "Thema / Kampagne *")}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {KAMPANYALAR.map((k) => (
+            <button key={k.code} type="button" onClick={() => pickCamp(k.code)}
+              className={k.code === campCode ? "c-btn-primary" : "c-btn-ghost"}
+              title={tr(k.aciklama.tr, k.aciklama.de)}
+              style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
+              <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
+            </button>
+          ))}
+        </div>
+        {!campCode && <div style={{ fontSize: ".75rem", color: "#f43f5e", marginTop: 6 }}>{tr("Devam etmek için bir konu seçin.", "Zum Fortfahren ein Thema wählen.")}</div>}
       </Field>
-      <div style={{ height: 12 }} />
-      <Field label={tr("Mesaj", "Nachricht")}>
-        <textarea className="c-input" style={{ minHeight: 180, resize: "vertical", fontFamily: "inherit" }} value={body} onChange={(e) => setBody(e.target.value)} />
-      </Field>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}>
-        <button className="c-btn-primary" onClick={send} disabled={sending} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+
+      {camp && (
+        <>
+          <div style={{ height: 12 }} />
+          {/* Dil */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {kampanyaDilleri(camp).map((code) => {
+              const L = LANGS.find((x) => x.code === code)!;
+              return (
+                <button key={code} type="button" onClick={() => setLangCode(code)}
+                  className={code === langCode ? "c-btn-primary" : "c-btn-ghost"}
+                  style={{ padding: "3px 9px", height: 28, fontSize: ".76rem", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <span>{L.flag}</span> {L.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ height: 12 }} />
+          <p style={{ fontSize: ".8rem", color: "var(--text-3,#64748b)", margin: "0 0 8px" }}>
+            {tr("Değişkenler: ", "Variablen: ")}<code>{"{{isim}}"}</code> <code>{"{{sehir}}"}</code> <code>{"{{kategori}}"}</code>
+          </p>
+          <Field label={tr("Konu", "Betreff")}>
+            <input className="c-input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </Field>
+          <div style={{ height: 12 }} />
+          <Field label={tr("Mesaj", "Nachricht")}>
+            <textarea className="c-input" style={{ minHeight: 180, resize: "vertical", fontFamily: "inherit" }} value={body} onChange={(e) => setBody(e.target.value)} />
+          </Field>
+
+          {/* Ek dosya (sunum) */}
+          {ek && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: ".82rem", color: "var(--text-2,#475569)", cursor: "pointer" }}>
+              <input type="checkbox" checked={attachOn} onChange={(e) => setAttachOn(e.target.checked)} />
+              <Paperclip size={14} color={attachOn ? "#8b5cf6" : "#94a3b8"} />
+              {tr("Sunumu ekle", "Präsentation anhängen")}:
+              <a href={ek.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "#06b6d4", textDecoration: "none" }}>{ek.name}</a>
+            </label>
+          )}
+        </>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
+        <button className="c-btn-primary" onClick={send} disabled={sending || !campCode} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           {sending ? <Loader2 size={15} className="spin" /> : <Send size={15} />} {tr("Gönder", "Senden")}
         </button>
         {result && <span style={{ fontSize: ".82rem", color: "var(--text-2,#475569)" }}>{result}</span>}
       </div>
+    </Overlay>
+  );
+};
+
+// ── Toplu WhatsApp modal (wa.me ile sırayla aç) ──────────────────
+const WhatsAppModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: (ids: string[]) => void; tr: (t: string, g: string) => string }> = ({ leads, onClose, onSent, tr }) => {
+  const defLang = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const l of leads) { const g = guessMsgLang(l, "de"); c[g] = (c[g] || 0) + 1; }
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "de";
+  }, [leads]);
+
+  const [campCode, setCampCode] = useState<string>("");
+  const [langCode, setLangCode] = useState<string>(defLang);
+  const [attachOn, setAttachOn] = useState(true);
+  const [body, setBody] = useState("");
+  const [idx, setIdx] = useState(0);
+  const [sentIds, setSentIds] = useState<string[]>([]);
+
+  const camp = kampanyaByCode(campCode);
+  const ek = camp ? kampanyaEk(camp, langCode) : null;
+
+  useEffect(() => {
+    if (!camp) { setBody(""); return; }
+    setBody(kampanyaSablon(camp, langCode).body);
+    setIdx(0); setSentIds([]);
+  }, [campCode, langCode]);
+
+  const pickCamp = (code: string) => {
+    setCampCode(code);
+    const k = kampanyaByCode(code);
+    if (k) { const langs = kampanyaDilleri(k); if (!langs.includes(langCode)) setLangCode(langs.includes(defLang) ? defLang : langs[0]); }
+  };
+
+  const waHrefFor = (l: Lead) => {
+    const text = fillTpl(body, l) + (attachOn ? sunumSatiri(ek, langCode) : "");
+    return `https://wa.me/${toIntlNumber(l.telefon)}?text=${encodeURIComponent(text)}`;
+  };
+
+  const done = idx >= leads.length;
+  const cur = !done ? leads[idx] : null;
+
+  const openNext = () => {
+    if (!cur) return;
+    window.open(waHrefFor(cur), "_blank", "noopener");
+    setSentIds((s) => [...s, cur.id]);
+    setIdx((i) => i + 1);
+  };
+  const skip = () => setIdx((i) => i + 1);
+  const closeAndMark = () => { if (sentIds.length) onSent(sentIds); else onClose(); };
+
+  return (
+    <Overlay onClose={closeAndMark}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8, color: WA_GREEN }}><WhatsAppGlyph size={18} /> {tr("Toplu WhatsApp", "Massen-WhatsApp")} · {leads.length}</h3>
+        <button onClick={closeAndMark} className="c-btn-ghost" style={{ padding: 6 }}><X size={16} /></button>
+      </div>
+      <p style={{ fontSize: ".78rem", color: "var(--text-3,#64748b)", marginTop: 0 }}>
+        {tr("Numaralar tek tek WhatsApp'ta açılır; her sohbette 'Gönder'e basın. Açılan kayıt 'gönderildi' işaretlenir.", "Nummern werden nacheinander in WhatsApp geöffnet; in jedem Chat auf 'Senden' klicken.")}
+      </p>
+
+      {/* Konu (kampanya) seçimi — zorunlu */}
+      <Field label={tr("Konu / kampanya *", "Thema / Kampagne *")}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {KAMPANYALAR.map((k) => (
+            <button key={k.code} type="button" onClick={() => pickCamp(k.code)}
+              className={k.code === campCode ? "c-btn-primary" : "c-btn-ghost"}
+              title={tr(k.aciklama.tr, k.aciklama.de)}
+              style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
+              <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
+            </button>
+          ))}
+        </div>
+        {!campCode && <div style={{ fontSize: ".75rem", color: "#f43f5e", marginTop: 6 }}>{tr("Devam etmek için bir konu seçin.", "Zum Fortfahren ein Thema wählen.")}</div>}
+      </Field>
+
+      {camp && (
+        <>
+          <div style={{ height: 12 }} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {kampanyaDilleri(camp).map((code) => {
+              const L = LANGS.find((x) => x.code === code)!;
+              return (
+                <button key={code} type="button" onClick={() => setLangCode(code)}
+                  className={code === langCode ? "c-btn-primary" : "c-btn-ghost"}
+                  style={{ padding: "3px 9px", height: 28, fontSize: ".76rem", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <span>{L.flag}</span> {L.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ height: 12 }} />
+          <p style={{ fontSize: ".8rem", color: "var(--text-3,#64748b)", margin: "0 0 8px" }}>
+            {tr("Değişkenler: ", "Variablen: ")}<code>{"{{isim}}"}</code> <code>{"{{sehir}}"}</code> <code>{"{{kategori}}"}</code>
+          </p>
+          <Field label={tr("Mesaj", "Nachricht")}>
+            <textarea className="c-input" style={{ minHeight: 150, resize: "vertical", fontFamily: "inherit" }} value={body} onChange={(e) => setBody(e.target.value)} />
+          </Field>
+
+          {ek && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: ".82rem", color: "var(--text-2,#475569)", cursor: "pointer" }}>
+              <input type="checkbox" checked={attachOn} onChange={(e) => setAttachOn(e.target.checked)} />
+              <Paperclip size={14} color={attachOn ? "#8b5cf6" : "#94a3b8"} />
+              {tr("Sunum linkini ekle", "Präsentationslink anhängen")}
+            </label>
+          )}
+
+          {/* Sırayla gönderim akışı */}
+          <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(37,211,102,.06)", border: "1px solid rgba(37,211,102,.2)" }}>
+            {done ? (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontWeight: 700, color: WA_GREEN }}>{tr("Tümü açıldı", "Alle geöffnet")} · {sentIds.length}/{leads.length}</div>
+                <button className="c-btn-primary" onClick={() => onSent(sentIds)} style={{ marginTop: 10, background: WA_GREEN }}>
+                  {tr("Bitir & işaretle", "Fertig & markieren")}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: ".82rem", marginBottom: 8 }}>
+                  {idx + 1}/{leads.length} · <strong>{cur?.isim}</strong> <span style={{ color: "#94a3b8" }}>{cur?.telefon}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="c-btn-primary" onClick={openNext} disabled={!campCode} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: WA_GREEN }}>
+                    <WhatsAppGlyph size={14} /> {tr("Aç & sonraki", "Öffnen & weiter")}
+                  </button>
+                  <button className="c-btn-ghost" onClick={skip} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{tr("Atla", "Überspringen")}</button>
+                </div>
+                <div style={{ marginTop: 10, height: 6, background: "rgba(148,163,184,.18)", borderRadius: 6, overflow: "hidden" }}>
+                  <div style={{ width: `${(idx / leads.length) * 100}%`, height: "100%", background: WA_GREEN, transition: "width .2s" }} />
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </Overlay>
   );
 };
@@ -724,12 +1107,26 @@ const DetailModal: React.FC<{
   const [reply, setReply] = useState("");
   const [classifying, setClassifying] = useState(false);
 
-  // Çok dilli taslak mesaj
+  // Kampanya (konu) + çok dilli taslak mesaj — konu seçilmeden gönderilemez
+  const [campCode, setCampCode] = useState<string>("");
   const [msgCode, setMsgCode] = useState<string>(() => guessMsgLang(lead, tr("tr", "de")));
+  const [attachOn, setAttachOn] = useState(true);
   const [subject, setSubject] = useState("");
   const [mbody, setMbody] = useState("");
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<string | null>(null);
+
+  const camp = kampanyaByCode(campCode);
+  const ek = camp ? kampanyaEk(camp, msgCode) : null;
+  const waIntl = lead.telefon ? toIntlNumber(lead.telefon) : "";
+  const waText = mbody + (attachOn ? sunumSatiri(ek, msgCode) : "");
+  const waHref = camp && waIntl ? `https://wa.me/${waIntl}?text=${encodeURIComponent(waText)}` : undefined;
+
+  const pickCamp = (code: string) => {
+    setCampCode(code);
+    const k = kampanyaByCode(code);
+    if (k) { const langs = kampanyaDilleri(k); if (!langs.includes(msgCode)) { const g = guessMsgLang(lead, tr("tr", "de")); setMsgCode(langs.includes(g) ? g : langs[0]); } }
+  };
 
   // Manuel e-posta (web sitesinden ekleme)
   const [email, setEmail] = useState(lead.email || "");
@@ -753,15 +1150,18 @@ const DetailModal: React.FC<{
   }, [lead.id]);
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
-  // Dil değişince şablonu şirket adıyla otomatik doldur
+  // Konu/dil değişince şablonu şirket adıyla otomatik doldur (konu yoksa boş)
   useEffect(() => {
-    const t = MSG_TEMPLATES.find((x) => x.code === msgCode) || MSG_TEMPLATES[0];
-    setSubject(fillTpl(t.subject, lead));
-    setMbody(fillTpl(t.body, lead));
+    const k = kampanyaByCode(campCode);
+    if (!k) { setSubject(""); setMbody(""); setSendResult(null); return; }
+    const s = kampanyaSablon(k, msgCode);
+    setSubject(fillTpl(s.subject, lead));
+    setMbody(fillTpl(s.body, lead));
     setSendResult(null);
-  }, [msgCode, lead.id]);
+  }, [campCode, msgCode, lead.id]);
 
   const sendDraft = async () => {
+    if (!campCode) { setSendResult(tr("Önce bir konu seçin.", "Bitte zuerst ein Thema wählen.")); return; }
     const em = email.trim();
     if (!em) { setSendResult(tr("Önce e-posta ekleyin.", "Zuerst E-Mail hinzufügen.")); return; }
     if (!subject.trim() || !mbody.trim()) { setSendResult(tr("Konu ve mesaj gerekli.", "Betreff und Text erforderlich.")); return; }
@@ -772,8 +1172,9 @@ const DetailModal: React.FC<{
         await supabase.from("leads").update({ email: em }).eq("id", lead.id);
         setSavedEmail(em); onChanged();
       }
+      const attachments = attachOn && ek ? [{ filename: ek.name, path: ek.url }] : undefined;
       const { data, error } = await supabase.functions.invoke("send-lead-emails", {
-        body: { lead_ids: [lead.id], subject, body: mbody },
+        body: { lead_ids: [lead.id], subject, body: mbody, attachments },
       });
       if (error || !data?.success) { setSendResult(tr("Hata: ", "Fehler: ") + (data?.error || error?.message || "")); }
       else if (data.sent) { setSendResult(tr("✓ Gönderildi.", "✓ Gesendet.")); await loadHistory(); onChanged(); }
@@ -784,13 +1185,13 @@ const DetailModal: React.FC<{
 
   const copyDraft = async () => {
     try {
-      await navigator.clipboard.writeText(`${subject}\n\n${mbody}`);
+      await navigator.clipboard.writeText(`${subject}\n\n${mbody}${attachOn ? sunumSatiri(ek, msgCode) : ""}`);
       setSendResult(tr("Panoya kopyalandı.", "In Zwischenablage kopiert."));
     } catch { setSendResult(tr("Kopyalanamadı.", "Kopieren fehlgeschlagen.")); }
   };
 
   const mailtoHref = email.trim()
-    ? `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mbody)}`
+    ? `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mbody + (attachOn ? sunumSatiri(ek, msgCode) : ""))}`
     : undefined;
 
   const classifyReply = async () => {
@@ -858,45 +1259,87 @@ const DetailModal: React.FC<{
         <textarea className="c-input" style={{ minHeight: 70, resize: "vertical", fontFamily: "inherit" }} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => onSaveNotes(lead.id, notes)} placeholder={tr("Bu müşteriyle ilgili notlar…", "Notizen…")} />
       </Field>
 
-      {/* Çok dilli taslak mesaj */}
+      {/* Konu (kampanya) + çok dilli taslak mesaj — konu seçilmeden ilerlenemez */}
       <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line,#e2e8f0)" }}>
         <div style={{ fontSize: ".8rem", fontWeight: 700, color: "var(--text-2,#475569)", display: "flex", alignItems: "center", gap: 6 }}>
-          <Languages size={14} /> {tr("Taslak mesaj", "Nachrichtenvorlage")}
+          <Megaphone size={14} /> {tr("Konu / kampanya", "Thema / Kampagne")} <span style={{ color: "#f43f5e" }}>*</span>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0 12px" }}>
-          {MSG_TEMPLATES.map((t) => (
-            <button key={t.code} type="button" onClick={() => setMsgCode(t.code)}
-              className={t.code === msgCode ? "c-btn-primary" : "c-btn-ghost"}
-              style={{ padding: "4px 10px", height: 30, fontSize: ".78rem", display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span>{t.flag}</span> {t.label}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 4px" }}>
+          {KAMPANYALAR.map((k) => (
+            <button key={k.code} type="button" onClick={() => pickCamp(k.code)}
+              className={k.code === campCode ? "c-btn-primary" : "c-btn-ghost"}
+              title={tr(k.aciklama.tr, k.aciklama.de)}
+              style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
+              <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
             </button>
           ))}
         </div>
-        <Field label={tr("Konu", "Betreff")}>
-          <input className="c-input" value={subject} onChange={(e) => setSubject(e.target.value)} />
-        </Field>
-        <div style={{ height: 10 }} />
-        <Field label={tr("Mesaj", "Nachricht")}>
-          <textarea className="c-input" style={{ minHeight: 150, resize: "vertical", fontFamily: "inherit" }} value={mbody} onChange={(e) => setMbody(e.target.value)} />
-        </Field>
-        <div style={{ fontSize: ".72rem", color: "#94a3b8", marginTop: 6 }}>
-          {tr("Şirket adı otomatik eklenir.", "Firmenname wird automatisch eingefügt.")}
-          {!email.trim() && <span style={{ color: "#f43f5e" }}> · {tr("Göndermek için yukarıdan e-posta ekleyin.", "Zum Senden oben E-Mail hinzufügen.")}</span>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <button className="c-btn-primary" onClick={sendDraft} disabled={sending || !email.trim()} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />} {tr("Gönder", "Senden")}
-          </button>
-          <button type="button" className="c-btn-ghost" onClick={copyDraft} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Copy size={14} /> {tr("Kopyala", "Kopieren")}
-          </button>
-          {mailtoHref && (
-            <a className="c-btn-ghost" href={mailtoHref} style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
-              <Mail size={14} /> {tr("Mail uygulamasında aç", "Im Mail-Programm öffnen")}
-            </a>
-          )}
-          {sendResult && <span style={{ fontSize: ".8rem", color: "var(--text-2,#475569)" }}>{sendResult}</span>}
-        </div>
+
+        {!camp ? (
+          <div style={{ fontSize: ".8rem", color: "var(--text-3,#64748b)", background: "var(--panel-2,#f8fafc)", border: "1px dashed var(--line,#e2e8f0)", borderRadius: 10, padding: "14px 16px", marginTop: 8 }}>
+            {tr("Mesaj taslağı ve ek dosya için önce bir konu seçin.", "Für Textentwurf und Anhang zuerst ein Thema wählen.")}
+          </div>
+        ) : (
+          <>
+            {/* Taslak dili */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "12px 0 10px", flexWrap: "wrap" }}>
+              <Languages size={13} color="#94a3b8" />
+              {kampanyaDilleri(camp).map((code) => {
+                const L = LANGS.find((x) => x.code === code)!;
+                return (
+                  <button key={code} type="button" onClick={() => setMsgCode(code)}
+                    className={code === msgCode ? "c-btn-primary" : "c-btn-ghost"}
+                    style={{ padding: "4px 10px", height: 30, fontSize: ".78rem", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <span>{L.flag}</span> {L.label}
+                  </button>
+                );
+              })}
+            </div>
+            <Field label={tr("Konu", "Betreff")}>
+              <input className="c-input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+            </Field>
+            <div style={{ height: 10 }} />
+            <Field label={tr("Mesaj", "Nachricht")}>
+              <textarea className="c-input" style={{ minHeight: 150, resize: "vertical", fontFamily: "inherit" }} value={mbody} onChange={(e) => setMbody(e.target.value)} />
+            </Field>
+
+            {/* Ek dosya (sunum) */}
+            {ek && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: ".82rem", color: "var(--text-2,#475569)", cursor: "pointer", flexWrap: "wrap" }}>
+                <input type="checkbox" checked={attachOn} onChange={(e) => setAttachOn(e.target.checked)} />
+                <Paperclip size={14} color={attachOn ? "#8b5cf6" : "#94a3b8"} />
+                {tr("Sunumu ekle", "Präsentation anhängen")}:
+                <a href={ek.url} target="_blank" rel="noopener noreferrer" style={{ color: "#06b6d4", textDecoration: "none" }}>{ek.name}</a>
+              </label>
+            )}
+
+            <div style={{ fontSize: ".72rem", color: "#94a3b8", marginTop: 8 }}>
+              {tr("Şirket adı otomatik eklenir. WhatsApp'ta sunum linki eklenir.", "Firmenname wird automatisch eingefügt. Bei WhatsApp wird der Präsentationslink angehängt.")}
+              {!email.trim() && <span style={{ color: "#f43f5e" }}> · {tr("E-posta ile göndermek için yukarıya e-posta ekleyin.", "Zum Senden per E-Mail oben E-Mail hinzufügen.")}</span>}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <button className="c-btn-primary" onClick={sendDraft} disabled={sending || !email.trim()} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />} {tr("Mail gönder", "E-Mail senden")}
+              </button>
+              {waHref && (
+                <a className="c-btn-ghost" href={waHref} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", color: WA_GREEN, borderColor: WA_GREEN }}>
+                  <WhatsAppGlyph size={15} /> {tr("WhatsApp'tan gönder", "Per WhatsApp")}
+                </a>
+              )}
+              <button type="button" className="c-btn-ghost" onClick={copyDraft} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Copy size={14} /> {tr("Kopyala", "Kopieren")}
+              </button>
+              {mailtoHref && (
+                <a className="c-btn-ghost" href={mailtoHref} style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
+                  <Mail size={14} /> {tr("Mail uygulamasında aç", "Im Mail-Programm öffnen")}
+                </a>
+              )}
+              {sendResult && <span style={{ fontSize: ".8rem", color: "var(--text-2,#475569)" }}>{sendResult}</span>}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Email history */}
