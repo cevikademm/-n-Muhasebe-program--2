@@ -336,6 +336,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
     <div class="nav-links" id="navLinks">
       <a href="#leistungen" data-i18n="nav.services">Leistungen</a>
       <a href="#referenzen" data-i18n="nav.refs">Referenzen</a>
+      <a href="#muhasebe" data-i18n="nav.acc">Buchhaltung</a>
       <a href="#prozess" data-i18n="nav.process">Arbeitsweise</a>
       <a href="#ueber" data-i18n="nav.about">Über uns</a>
       <a href="#kontakt" data-i18n="nav.contact">Kontakt</a>
@@ -554,14 +555,55 @@ footer{border-top:1px solid var(--line);margin-top:110px}
   </div>
 </section>
 
+<!-- ============ MUHASEBE (fikoai Buchhaltung) ============ -->
+<section id="muhasebe">
+  <div class="sec-head center reveal">
+    <span class="sec-tag" data-i18n="acc.tag">Eigenes Produkt · Buchhaltung</span>
+    <h2 data-i18n="acc.h2">fikoai muhasebe — Buchhaltung mit KI, auf Enterprise-Niveau gedacht</h2>
+    <p data-i18n="acc.p">Aus unserer eigenen Buchhaltung entstanden und im echten Einsatz erprobt: Belege werden per KI erfasst, nach DATEV SKR03 kontiert, mit Kontoauszügen abgeglichen und als prüffertiges Paket an den Steuerberater übergeben — aufgebaut auf der Logik echter Enterprise-Finanzbuchhaltung.</p>
+  </div>
+  <div class="grid-3">
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h13a1 1 0 0 1 1 1v17l-2.5-1.5L14 21l-2.5-1.5L9 21l-2.5-1.5L4 21V4a1 1 0 0 1 1-1z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div>
+      <h3 data-i18n="acc.f1.h">Beleg-KI & Kontierung</h3>
+      <p data-i18n="acc.f1.p">Rechnungen und Belege werden automatisch gelesen, geprüft und DATEV-SKR03-konform kontiert — ohne manuelles Abtippen.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5h18L12 3z"/><path d="M4 10.5v8M9 10.5v8M15 10.5v8M20 10.5v8M3 21h18"/></svg></div>
+      <h3 data-i18n="acc.f2.h">Bankabgleich & Kontrolle</h3>
+      <p data-i18n="acc.f2.p">Kontoauszüge werden automatisch mit Belegen abgeglichen. Offene Posten und Abweichungen fallen sofort auf.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 12 3 3 5-6"/></svg></div>
+      <h3 data-i18n="acc.f3.h">Steuerberater-fertig</h3>
+      <p data-i18n="acc.f3.p">Auf Knopfdruck entsteht ein sauberes, DATEV-konformes Paket — direkt bereit für den Steuerberater.</p>
+    </div>
+  </div>
+  <div class="chips reveal" style="justify-content:center;margin-top:26px">
+    <span class="chip" data-i18n="acc.q1">DATEV SKR03-konform</span>
+    <span class="chip" data-i18n="acc.q2">Im echten Einsatz erprobt</span>
+    <span class="chip" data-i18n="acc.q3">Mit echten Steuerberater-Workflows getestet</span>
+    <span class="chip" data-i18n="acc.q4">Auf SAP-FI-Logik aufgebaut</span>
+  </div>
+  <div class="reveal" style="text-align:center;margin-top:26px">
+    <a href="#kontakt" class="btn btn-primary magnetic"><span data-i18n="acc.cta">Demo anfragen</span><span class="shine"></span></a>
+    <p style="color:var(--muted);font-size:.85rem;margin-top:12px" data-i18n="acc.note">Live-Demo auf Anfrage — die App ist zugangsbeschränkt.</p>
+  </div>
+</section>
+
 <!-- ============ ABOUT ============ -->
 <section id="ueber">
   <div class="about-wrap">
     <div class="about-txt reveal">
       <span class="sec-tag" data-i18n="ab.tag">Über fikoai</span>
       <h2 data-i18n="ab.h2">Software aus der Praxis — nicht vom Reißbrett</h2>
-      <p data-i18n="ab.p1">Hinter fikoai steht <b>Adem Çevik</b> — und die Überzeugung, dass gute Software im Betrieb entsteht, nicht am Schreibtisch. Jedes unserer Systeme wurde dort gebaut, wo gearbeitet wird: am Kiosk-Tresen, im Gutachterbüro, in der Großküche, in der Backstube.</p>
-      <p data-i18n="ab.p2">Deshalb fragen wir zuerst nicht <b>„Welche Technik?"</b>, sondern <b>„Wo verlieren Sie Zeit und Geld?"</b>. Die Antwort wird zum System: eines, das Ihr Team versteht, gerne benutzt — und das mit Ihrem Unternehmen wächst.</p>
+      <p data-i18n-html="ab.p1">Hinter fikoai steht <b>Adem Çevik</b> — seit über <b>20 Jahren im SAP-FI-Umfeld</b> (Financial Accounting) eines der führenden Unternehmen der Türkei, mit fortlaufender <b>ABAP-Entwicklung</b>. Diese Enterprise-Tiefe trifft auf echte Praxis: Jedes unserer Systeme wurde dort gebaut, wo gearbeitet wird — am Kiosk-Tresen, im Gutachterbüro, in der Großküche.</p>
+      <p data-i18n-html="ab.p2">Deshalb fragen wir zuerst nicht <b>„Welche Technik?"</b>, sondern <b>„Wo verlieren Sie Zeit und Geld?"</b>. Die Antwort wird zu einem <b>maßgeschneiderten</b> System — Enterprise-Standards, zugeschnitten auf die Größe Ihres Betriebs: eines, das Ihr Team versteht, gerne benutzt und mit Ihrem Unternehmen wächst.</p>
+      <div class="chips" style="margin-top:22px">
+        <span class="chip" data-i18n="ab.x1">20 Jahre SAP FI</span>
+        <span class="chip" data-i18n="ab.x2">ABAP-Entwicklung</span>
+        <span class="chip" data-i18n="ab.x3">Individualentwicklung</span>
+      </div>
       <div class="about-points">
         <div class="pt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span data-i18n="ab.pt1">Direkter Kontakt — keine Agentur-Warteschleife</span></div>
         <div class="pt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span data-i18n="ab.pt2">Deutsch & Türkisch — auch für Ihre Kunden</span></div>
@@ -570,10 +612,10 @@ footer{border-top:1px solid var(--line);margin-top:110px}
       </div>
     </div>
     <div class="quote-card reveal">
-      <blockquote data-i18n="ab.quote">„Ich habe Software nicht im Hörsaal kennengelernt, sondern im Familienbetrieb — dort, wo ein fehlender Schichtplan echtes Geld kostet. Genau solche Probleme löse ich heute für andere Unternehmen."</blockquote>
+      <blockquote data-i18n="ab.quote">„Tagsüber große SAP-Finanzprozesse, abends das System im Familienbetrieb — beide haben mir dasselbe beigebracht: Gute Software entsteht, wo echte Zahlen auf echte Arbeit treffen. Genau das baue ich heute für andere Unternehmen."</blockquote>
       <div class="who">
         <div class="avatar">AÇ</div>
-        <div><div class="nm">Adem Çevik</div><div class="rl" data-i18n="ab.role">Gründer, fikoai</div></div>
+        <div><div class="nm">Adem Çevik</div><div class="rl" data-i18n="ab.role">Gründer fikoai · SAP-FI-Spezialist</div></div>
       </div>
     </div>
   </div>
@@ -654,7 +696,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
 /* ================= i18n ================= */
 const I18N = {
 tr: {
-  'nav.services':'Hizmetler','nav.refs':'Referanslar','nav.process':'Nasıl Çalışırız','nav.about':'Hakkımızda','nav.contact':'İletişim','nav.cta':'Proje Başlat','nav.login':'Giriş',
+  'nav.services':'Hizmetler','nav.refs':'Referanslar','nav.acc':'Muhasebe','nav.process':'Nasıl Çalışırız','nav.about':'Hakkımızda','nav.contact':'İletişim','nav.cta':'Proje Başlat','nav.login':'Giriş',
   'hero.eyebrow':'Yapay Zeka · Özel Yazılım · Otomasyon · Dijital Ürünler',
   'hero.h1':'Her firma farklıdır.<br><span class="grad">Yazılımı da öyle olmalı.</span>',
   'hero.sub':'İş akışlarınızı analiz ediyor; dijital sistemleri firmanızın gerçekte nasıl çalıştığına göre tasarlıyor, geliştiriyor ve otomatikleştiriyoruz. Yapay zeka ajanlarından iç platformlara, müşteri portallarından kurumsal yazılıma kadar her çözüm tek bir akıllı ekosistem olarak kurulur.',
@@ -687,12 +729,22 @@ tr: {
   'ref.7.t':'Restoran','ref.7.p':'Aynı ilke, bambaşka bir marka: kendi görünümü, kendi yapısı ve kendi menüsüyle dijital QR menü — çünkü işletmeye özel demek, hiçbir sistemin bir diğerine benzememesi demek.','ref.7.c2':'Özel Tasarım',
   'ref.8.t':'Eğitim Danışmanlığı','ref.8.p':'Almanya için bir eğitim danışmanlığının erişime ihtiyacı vardı: Web sitesi artı komple bir sosyal medya içerik sistemi — takipçileri başvurana dönüştüren postlar, reels\'ler ve kampanyalar.','ref.8.c3':'Müşteri Kazanma',
   'ref.9.t':'Muhasebe · Yapay Zeka','ref.9.h':'fikoai Akıllı Muhasebe','ref.9.p':'Her şeyin başladığı kendi AI sistemimiz: Faturalar otomatik analiz edilir, DATEV SKR03\'e göre kodlanır, banka hareketleriyle eşleştirilir ve hazır PDF paketi olarak vergi danışmanına teslim edilir.','ref.9.c2':'Belge AI','ref.9.c3':'Steuerberater Paketi',
+  'acc.tag':'Kendi Ürünümüz · Muhasebe',
+  'acc.h2':'fikoai muhasebe — Yapay zekâ destekli muhasebe, kurumsal seviyede',
+  'acc.p':'Kendi muhasebemizden doğdu ve canlı kullanımda denendi: Belgeler yapay zekâ ile okunur, DATEV SKR03\'e göre kodlanır, banka hareketleriyle eşleştirilir ve denetime hazır bir paket olarak vergi danışmanına teslim edilir — gerçek kurumsal finans muhasebesi mantığı üzerine kurulu.',
+  'acc.f1.h':'Belge Yapay Zekâsı & Kodlama','acc.f1.p':'Faturalar ve belgeler otomatik okunur, kontrol edilir ve DATEV SKR03\'e uygun kodlanır — elle giriş yok.',
+  'acc.f2.h':'Banka Eşleştirme & Kontrol','acc.f2.p':'Banka hareketleri belgelerle otomatik eşleştirilir. Açık kalemler ve farklar anında görünür olur.',
+  'acc.f3.h':'Danışmana Hazır','acc.f3.p':'Tek tıkla temiz ve DATEV uyumlu bir paket oluşur — doğrudan vergi danışmanına hazır.',
+  'acc.q1':'DATEV SKR03 uyumlu','acc.q2':'Canlı kullanımda denendi','acc.q3':'Gerçek mali müşavir akışlarıyla test edildi','acc.q4':'SAP FI mantığı üzerine kurulu',
+  'acc.cta':'Demo talep et',
+  'acc.note':'Canlı demo talep üzerine — uygulama erişime kapalıdır.',
   'ab.tag':'fikoai Hakkında','ab.h2':'Masa başından değil — sahadan gelen yazılım',
-  'ab.p1':'fikoai\'nin arkasında <b>Adem Çevik</b> var — ve iyi yazılımın masa başında değil, işletmenin içinde doğduğu inancı. Sistemlerimizin her biri işin yapıldığı yerde kuruldu: kiosk tezgahında, ekspertiz bürosunda, endüstriyel mutfakta, fırında.',
-  'ab.p2':'Bu yüzden önce <b>"Hangi teknoloji?"</b> diye değil, <b>"Nerede zaman ve para kaybediyorsunuz?"</b> diye soruyoruz. Cevap sisteme dönüşüyor: Ekibinizin anladığı, severek kullandığı — ve firmanızla birlikte büyüyen bir sisteme.',
+  'ab.p1':'fikoai\'nin arkasında <b>Adem Çevik</b> var — Türkiye\'nin önde gelen bir kuruluşunda <b>20 yılı aşkın SAP FI</b> (Mali Muhasebe) deneyimi ve süregelen <b>ABAP geliştirme</b> çalışmalarıyla. Bu kurumsal derinlik gerçek sahayla buluşuyor: Sistemlerimizin her biri işin yapıldığı yerde kuruldu — kiosk tezgahında, ekspertiz bürosunda, endüstriyel mutfakta.',
+  'ab.p2':'Bu yüzden önce <b>"Hangi teknoloji?"</b> diye değil, <b>"Nerede zaman ve para kaybediyorsunuz?"</b> diye soruyoruz. Cevap, <b>işletmenize özel</b> bir sisteme dönüşüyor — kurumsal standartlar, firmanızın ölçeğine göre uyarlanır: Ekibinizin anladığı, severek kullandığı ve firmanızla büyüyen bir sistem.',
   'ab.pt1':'Doğrudan iletişim — ajans bekleme hattı yok','ab.pt2':'Almanca & Türkçe — müşterileriniz için de','ab.pt3':'Modern teknoloji: AI, bulut, gerçek zamanlı','ab.pt4':'Yayına aldıktan sonra da destek',
-  'ab.quote':'"Yazılımı üniversite sırasında değil, aile işletmesinde tanıdım — eksik bir vardiya planının gerçek paraya mal olduğu yerde. Bugün başka işletmeler için tam da bu problemleri çözüyorum."',
-  'ab.role':'Kurucu, fikoai',
+  'ab.quote':'"Gündüz büyük ölçekli SAP finans süreçleri, akşam aile işletmesinin sistemi — ikisi de bana aynı şeyi öğretti: İyi yazılım, gerçek rakamların gerçek işle buluştuğu yerde doğar. Bugün başka işletmeler için tam da bunu kuruyorum."',
+  'ab.x1':'20 yıl SAP FI','ab.x2':'ABAP geliştirme','ab.x3':'Özel yazılım geliştirme',
+  'ab.role':'Kurucu fikoai · SAP FI uzmanı',
   'ct.tag':'İletişim','ct.h2':'Nerede aksıyor, bize anlatın','ct.p':'İlk görüşme ücretsiz ve bağlayıcı değil — Almanca veya Türkçe.',
   'ct.direct':'Doğrudan Hat','ct.direct.p':'Bize en hızlı WhatsApp\'tan ulaşırsınız — genellikle birkaç saat içinde yanıtlarız.',
   'ct.phone':'Telefon','ct.email':'E-posta',
