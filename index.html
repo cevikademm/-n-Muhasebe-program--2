@@ -314,18 +314,13 @@ footer{border-top:1px solid var(--line);margin-top:110px}
 .svc-icon{background:linear-gradient(135deg,rgba(124,92,255,.18),rgba(76,201,240,.08));border-color:rgba(124,92,255,.32)}
 
 /* ---------- social media: platform pills ---------- */
-.sm-plats{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:780px;margin:-18px auto 42px}
+.sm-plats{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:920px;margin:-18px auto 42px}
 .sm-plat{display:inline-flex;align-items:center;gap:9px;padding:9px 17px;border-radius:99px;
   border:1px solid var(--line2);background:linear-gradient(140deg,rgba(22,30,52,.72),rgba(11,17,32,.6));
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   font-size:.86rem;font-weight:600;color:#c9d1ef;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
-.sm-plat .d{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.sm-plat .d1{background:#e1306c;box-shadow:0 0 8px rgba(225,48,108,.75)}
-.sm-plat .d2{background:#4cc9f0;box-shadow:0 0 8px rgba(76,201,240,.75)}
-.sm-plat .d3{background:#5e7bff;box-shadow:0 0 8px rgba(94,123,255,.75)}
-.sm-plat .d4{background:#7c5cff;box-shadow:0 0 8px rgba(124,92,255,.75)}
-.sm-plat .d5{background:#f6a94e;box-shadow:0 0 8px rgba(246,169,78,.75)}
-.sm-plat .d6{background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.75)}
+.sm-plat .sm-ic{width:19px;height:19px;flex-shrink:0;display:block}
+.sm-plat .sm-ic svg{width:100%;height:100%;display:block}
 
 /* 7 nav linki: orta genişliklerde sıkıştır, 1000px altında hamburger menüye geç */
 @media(max-width:1240px) and (min-width:1001px){
@@ -486,12 +481,12 @@ footer{border-top:1px solid var(--line);margin-top:110px}
   </div>
 
   <div class="sm-plats reveal">
-    <span class="sm-plat"><span class="d d1"></span>Instagram</span>
-    <span class="sm-plat"><span class="d d2"></span>TikTok</span>
-    <span class="sm-plat"><span class="d d3"></span>Facebook</span>
-    <span class="sm-plat"><span class="d d4"></span>LinkedIn</span>
-    <span class="sm-plat"><span class="d d5"></span>YouTube</span>
-    <span class="sm-plat"><span class="d d6"></span>Google Business</span>
+    <span class="sm-plat"><span class="sm-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#FFD521"/><stop offset="25%" stop-color="#F50000"/><stop offset="60%" stop-color="#B900B4"/><stop offset="100%" stop-color="#5B6DF8"/></linearGradient></defs><path fill="url(#igGrad)" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg></span>Instagram</span>
+    <span class="sm-plat"><span class="sm-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#25F4EE" d="M11.6.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/><path fill="#FE2C55" d="M13.45.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/><path fill="#fff" d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg></span>TikTok</span>
+    <span class="sm-plat"><span class="sm-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877F2"/><path fill="#fff" d="M16.671 15.469 17.203 12h-3.328V9.749c0-.949.465-1.874 1.956-1.874h1.513V4.922s-1.374-.235-2.687-.235c-2.741 0-4.533 1.662-4.533 4.669V12H7.078v3.469h3.046v8.385a12.1 12.1 0 0 0 3.75 0v-8.385z"/></svg></span>Facebook</span>
+    <span class="sm-plat"><span class="sm-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0A66C2"/><path fill="#fff" d="M8.2 18.5H5.4V9.7h2.8v8.8ZM6.8 8.5a1.63 1.63 0 1 1 0-3.26 1.63 1.63 0 0 1 0 3.26Zm11.7 10h-2.79v-4.28c0-1.02-.02-2.33-1.42-2.33-1.42 0-1.64 1.11-1.64 2.26v4.35H9.86V9.7h2.68v1.2h.04c.37-.71 1.29-1.45 2.65-1.45 2.83 0 3.36 1.86 3.36 4.29v4.76Z"/></svg></span>LinkedIn</span>
+    <span class="sm-plat"><span class="sm-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><path fill="#fff" d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg></span>YouTube</span>
+    <span class="sm-plat"><span class="sm-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"/></svg></span>Google Business</span>
   </div>
 
   <div class="grid-3">
