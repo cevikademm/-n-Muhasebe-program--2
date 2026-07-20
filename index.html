@@ -263,6 +263,11 @@ section{max-width:var(--maxw);margin:0 auto;padding:110px 24px 10px;position:rel
 .f-group textarea{resize:vertical;min-height:110px}
 .f-group input:focus,.f-group select:focus,.f-group textarea:focus{outline:none;border-color:var(--acc)}
 .form-note{font-size:.78rem;color:var(--muted2);margin-top:12px}
+.form-status{font-size:.86rem;margin-top:14px;padding:11px 14px;border-radius:10px;border:1px solid transparent;line-height:1.5}
+.form-status.ok{color:#0f7a4d;background:rgba(16,185,129,.10);border-color:rgba(16,185,129,.32)}
+.form-status.err{color:#b3261e;background:rgba(239,68,68,.09);border-color:rgba(239,68,68,.30)}
+.form-status.pending{color:var(--muted2);background:rgba(120,120,120,.08);border-color:var(--line)}
+.hp-field{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none}
 
 /* ---------- footer ---------- */
 footer{border-top:1px solid var(--line);margin-top:110px}
@@ -321,6 +326,30 @@ footer{border-top:1px solid var(--line);margin-top:110px}
   font-size:.86rem;font-weight:600;color:#c9d1ef;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
 .sm-plat .sm-ic{width:19px;height:19px;flex-shrink:0;display:block}
 .sm-plat .sm-ic svg{width:100%;height:100%;display:block}
+
+/* ---------- KFZ spotlight banner ---------- */
+.kfz-banner{position:relative;overflow:hidden;border:1px solid var(--line2);border-radius:24px;
+  background:linear-gradient(150deg,rgba(20,28,48,.74),rgba(10,16,32,.6));
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  padding:52px 46px 46px;
+  box-shadow:0 40px 90px -40px rgba(4,8,20,.95),inset 0 1px 0 rgba(255,255,255,.07)}
+.kfz-banner::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad)}
+.kfz-banner::after{content:'';position:absolute;top:-140px;right:-90px;width:440px;height:440px;pointer-events:none;
+  background:radial-gradient(circle,rgba(124,92,255,.17),rgba(76,201,240,.05) 55%,transparent 70%)}
+.kfz-head{max-width:730px;margin-bottom:38px;position:relative;z-index:1}
+.kfz-head h2{font-size:clamp(1.55rem,3vw,2.25rem);font-weight:700;line-height:1.16;margin:14px 0 16px}
+.kfz-head p{color:var(--muted);font-size:1.02rem}
+.kfz-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;position:relative;z-index:1}
+.kfz-item{border:1px solid var(--line);border-radius:16px;padding:26px 24px;background:rgba(255,255,255,.022);
+  transition:border-color .3s,transform .3s}
+.kfz-item:hover{border-color:rgba(124,92,255,.42);transform:translateY(-4px)}
+.kfz-item .svc-icon{width:44px;height:44px;border-radius:12px;margin-bottom:16px}
+.kfz-item .svc-icon svg{width:21px;height:21px}
+.kfz-item h3{font-size:1.05rem;font-weight:600;margin-bottom:9px}
+.kfz-item p{font-size:.9rem;color:var(--muted)}
+.kfz-foot{position:relative;z-index:1;margin-top:30px;text-align:center}
+@media(max-width:1020px){.kfz-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.kfz-grid{grid-template-columns:1fr}.kfz-banner{padding:36px 22px 32px}}
 
 /* 7 nav linki: orta genişliklerde sıkıştır, 1000px altında hamburger menüye geç */
 @media(max-width:1240px) and (min-width:1001px){
@@ -678,6 +707,47 @@ footer{border-top:1px solid var(--line);margin-top:110px}
   </div>
 </section>
 
+<!-- ============ KFZ (Gecit-KFZ Branchenplattform) ============ -->
+<section id="kfz">
+  <div class="kfz-banner reveal">
+    <div class="kfz-head">
+      <span class="sec-tag" data-i18n="kfz.tag">Branchenplattform · Kfz-Gutachten</span>
+      <h2 data-i18n="kfz.h2">Gecit-KFZ — vom Papiergutachten zur KI-Plattform</h2>
+      <p data-i18n="kfz.p">Gutachten liefen über Papier, Telefon und fünf verschiedene Programme. Heute läuft der komplette Ablauf über ein System: Aufnahmen rein, Analyse per KI, fertiges Gutachten raus — und jede beteiligte Partei sieht genau das, was sie sehen soll.</p>
+    </div>
+
+    <div class="kfz-grid">
+      <div class="kfz-item">
+        <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17v-4l2-5h14l2 5v4"/><path d="M5 17h14"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17" cy="17.5" r="1.6"/></svg></div>
+        <h3 data-i18n="kfz.1.h">120-Punkte-KI-Analyse</h3>
+        <p data-i18n="kfz.1.p">Der Fahrzeugzustand wird anhand der Aufnahmen in 120 Punkten bewertet. Die KI liefert die Grundlage — der Sachverständige entscheidet.</p>
+      </div>
+      <div class="kfz-item">
+        <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 10h10M7 14h6"/></svg></div>
+        <h3 data-i18n="kfz.2.h">Kennzeichen- & Fahrzeugschein-OCR</h3>
+        <p data-i18n="kfz.2.p">Kennzeichen und Fahrzeugschein werden abfotografiert und automatisch ausgelesen — keine Fahrzeugdaten mehr abtippen.</p>
+      </div>
+      <div class="kfz-item">
+        <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <h3 data-i18n="kfz.3.h">Fünf Portale, ein System</h3>
+        <p data-i18n="kfz.3.p">Kunde, Anwalt, Versicherung und Werkstatt haben jeweils einen eigenen Zugang — dazu das interne Portal des Büros.</p>
+      </div>
+    </div>
+
+    <div class="chips reveal" style="justify-content:center;margin-top:24px;position:relative;z-index:1">
+      <span class="chip" data-i18n="kfz.q1">KI-Analyse</span>
+      <span class="chip" data-i18n="kfz.q2">Kennzeichen-OCR</span>
+      <span class="chip" data-i18n="kfz.q3">Rollenbasierte Portale</span>
+      <span class="chip" data-i18n="kfz.q4">Ein System statt fünf Programme</span>
+    </div>
+
+    <div class="kfz-foot reveal">
+      <a href="#kontakt" class="btn btn-primary magnetic"><span data-i18n="kfz.cta">Ähnliche Plattform besprechen</span><span class="shine"></span></a>
+      <p style="color:var(--muted);font-size:.85rem;margin-top:12px" data-i18n="kfz.note">Ihre Branche hat eigene Abläufe? Genau dafür bauen wir Plattformen.</p>
+    </div>
+  </div>
+</section>
+
 <!-- ============ ABOUT ============ -->
 <section id="ueber">
   <div class="about-wrap">
@@ -753,8 +823,10 @@ footer{border-top:1px solid var(--line);margin-top:110px}
         </div>
       </div>
       <div class="f-group"><label for="fMsg" data-i18n="fm.msg">Ihre Nachricht</label><textarea id="fMsg" required placeholder="Beschreiben Sie kurz, wo es bei Ihnen hakt…" data-i18n-ph="fm.msg.ph"></textarea></div>
-      <button type="submit" class="btn btn-primary" style="width:100%" data-i18n="fm.send">Nachricht senden</button>
-      <div class="form-note" data-i18n="fm.note">Ihre Nachricht öffnet Ihr E-Mail-Programm — es werden keine Daten auf dieser Seite gespeichert.</div>
+      <div class="hp-field" aria-hidden="true"><label for="fHp">Firmenwebsite</label><input id="fHp" tabindex="-1" autocomplete="off"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%" id="fSend" data-i18n="fm.send">Nachricht senden</button>
+      <div class="form-status" id="fStatus" role="status" aria-live="polite" hidden></div>
+      <div class="form-note" data-i18n="fm.note">Ihre Anfrage geht direkt an unser Team — wir antworten meist innerhalb weniger Stunden.</div>
     </form>
   </div>
 </section>
@@ -824,6 +896,14 @@ tr: {
   'acc.f2.h':'Banka Eşleştirme & Kontrol','acc.f2.p':'Banka hareketleri belgelerle otomatik eşleştirilir. Açık kalemler ve farklar anında görünür olur.',
   'acc.f3.h':'Danışmana Hazır','acc.f3.p':'Tek tıkla temiz ve DATEV uyumlu bir paket oluşur — doğrudan vergi danışmanına hazır.',
   'acc.q1':'DATEV SKR03 uyumlu','acc.q2':'Canlı kullanımda denendi','acc.q3':'Gerçek mali müşavir akışlarıyla test edildi','acc.q4':'SAP FI mantığı üzerine kurulu',
+  'kfz.tag':'Sektör Platformu · Oto Ekspertiz',
+  'kfz.h2':'Gecit-KFZ — kağıt ekspertizden yapay zekâ platformuna',
+  'kfz.p':'Ekspertiz raporları kağıt, telefon ve beş ayrı programla yürüyordu. Bugün tüm akış tek sistemde: görüntüler girer, yapay zekâ analiz eder, hazır rapor çıkar — ve her taraf yalnızca görmesi gerekeni görür.',
+  'kfz.1.h':'120 Noktalı Yapay Zekâ Analizi','kfz.1.p':'Araç durumu, çekilen görüntüler üzerinden 120 noktada değerlendirilir. Yapay zekâ zemini hazırlar — kararı eksper verir.',
+  'kfz.2.h':'Plaka & Ruhsat OCR','kfz.2.p':'Plaka ve ruhsat fotoğraflanır, bilgiler otomatik okunur — araç verilerini elle yazmak yok.',
+  'kfz.3.h':'Beş Portal, Tek Sistem','kfz.3.p':'Müşteri, avukat, sigorta ve kaporta için ayrı erişim — buna büronun kendi iç paneli de dahil.',
+  'kfz.q1':'Yapay zekâ analizi','kfz.q2':'Plaka OCR','kfz.q3':'Rol bazlı portaller','kfz.q4':'Beş program yerine tek sistem',
+  'kfz.cta':'Benzer Bir Platform Konuşalım','kfz.note':'Sektörünüzün kendine özgü akışları mı var? Tam da bunun için platform kuruyoruz.',
   'acc.cta':'Demo talep et',
   'acc.note':'Canlı demo talep üzerine — uygulama erişime kapalıdır.',
   'ab.tag':'fikoai Hakkında','ab.h2':'Masa başından değil — sahadan gelen yazılım',
@@ -839,7 +919,9 @@ tr: {
   'fm.name':'Adınız','fm.name.ph':'Adınız Soyadınız','fm.firma':'Firma','fm.firma.ph':'Firma GmbH','fm.mail':'E-posta','fm.topic':'Konu nedir?',
   'fm.t1':'Web sitesi / dijital vitrin','fm.t2':'QR menü / sipariş sistemi','fm.t3':'Personel & işletme yönetimi','fm.t4':'Sektöre özel platform','fm.t5':'Online müşteri kazanma','fm.t6':'Yapay zeka & otomasyon','fm.t7':'Başka bir şey','fm.t8':'Sosyal medya danışmanlığı',
   'fm.msg':'Mesajınız','fm.msg.ph':'Kısaca anlatın: nerede sıkışıyorsunuz…','fm.send':'Mesajı Gönder',
-  'fm.note':'Mesajınız e-posta programınızı açar — bu sayfada hiçbir veri saklanmaz.',
+  'fm.note':'Mesajınız doğrudan ekibimize ulaşır — genellikle birkaç saat içinde yanıtlarız.',
+  'fm.sending':'Gönderiliyor…','fm.ok':'Teşekkürler! Mesajınız bize ulaştı — en kısa sürede dönüş yapacağız.',
+  'fm.err':'Mesaj gönderilemedi. Lütfen tekrar deneyin veya bize doğrudan info@fikoai.de adresinden yazın.',
   'ft.tag':'İşletmeye özel dijital sistemler','ft.imp':'Impressum','ft.ds':'Datenschutz',
   'chip.1':'QR menü 48 saatte yayında','chip.2':'Vardiya planı otomatik','chip.3':'AI faturalarınızı okur','chip.4':'3D mutfak planlama',
   'card.1':'QR Menü & Sipariş','card.2':'Vardiya Planlama','card.3':'AI Muhasebe','card.4':'Müşteri Portalı','card.5':'3D Mutfak Planlama','card.6':'Belge Zekâsı',
@@ -1139,16 +1221,44 @@ document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
   M.animate('.hero .eyebrow',{opacity:[0,1],transform:['translateY(-16px)','translateY(0)']},{duration:.6,easing:'ease-out'});
 })();
 
-/* ================= form (mailto) ================= */
-document.getElementById('contactForm').addEventListener('submit', e=>{
+/* ================= form → contact-form edge function ================= */
+const CONTACT_ENDPOINT = 'https://edlbvezskqbxasqkszvd.supabase.co/functions/v1/contact-form';
+const FORM_DE = {
+  'fm.sending':'Wird gesendet…',
+  'fm.ok':'Vielen Dank! Ihre Nachricht ist bei uns angekommen — wir melden uns in Kürze.',
+  'fm.err':'Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es erneut oder schreiben Sie uns direkt an info@fikoai.de.'
+};
+const fTxt = k => (currentLang==='tr' && I18N.tr[k]) ? I18N.tr[k] : FORM_DE[k];
+
+document.getElementById('contactForm').addEventListener('submit', async e=>{
   e.preventDefault();
-  const g = id=>document.getElementById(id).value;
+  const form = e.currentTarget;
+  const btn = document.getElementById('fSend');
+  const box = document.getElementById('fStatus');
+  const v = id => document.getElementById(id).value.trim();
   const topic = document.getElementById('fTopic');
-  const topicTxt = topic.options[topic.selectedIndex].textContent;
-  const subj = encodeURIComponent(`[fikoai.de] ${topicTxt} — ${g('fName')}`);
-  const body = encodeURIComponent(
-    `Name: ${g('fName')}\nFirma: ${g('fFirma')}\nE-Mail: ${g('fMail')}\nThema: ${topicTxt}\n\n${g('fMsg')}`);
-  location.href = `mailto:info@fikoai.de?subject=${subj}&body=${body}`;
+  const show = (cls,msg)=>{ box.hidden=false; box.className='form-status '+cls; box.textContent=msg; };
+
+  btn.disabled = true;
+  show('pending', fTxt('fm.sending'));
+  try{
+    const res = await fetch(CONTACT_ENDPOINT, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: v('fName'), firma: v('fFirma'), email: v('fMail'),
+        topic: topic.options[topic.selectedIndex].textContent,
+        message: v('fMsg'), lang: currentLang, hp: v('fHp')
+      })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.success){ show('ok', fTxt('fm.ok')); form.reset(); }
+    else { show('err', data.error || fTxt('fm.err')); }
+  }catch(err){
+    show('err', fTxt('fm.err'));
+  }finally{
+    btn.disabled = false;
+  }
 });
 </script>
 </body>
