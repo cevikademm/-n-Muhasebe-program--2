@@ -348,7 +348,26 @@ footer{border-top:1px solid var(--line);margin-top:110px}
 .kfz-item h3{font-size:1.05rem;font-weight:600;margin-bottom:9px}
 .kfz-item p{font-size:.9rem;color:var(--muted)}
 .kfz-foot{position:relative;z-index:1;margin-top:30px;text-align:center}
+/* öne çıkan satır: eş zamanlı erişim + tasarruf rakamı */
+.kfz-featrow{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-bottom:16px;position:relative;z-index:1}
+.kfz-feature{border:1px solid rgba(124,92,255,.34);border-radius:18px;padding:28px 26px;
+  background:linear-gradient(140deg,rgba(124,92,255,.13),rgba(76,201,240,.05))}
+.kfz-feature h3{font-size:1.18rem;font-weight:600;margin-bottom:10px}
+.kfz-feature p{font-size:.93rem;color:var(--muted)}
+.kfz-roles{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.kfz-role{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:99px;
+  border:1px solid var(--line2);background:rgba(7,11,20,.5);font-size:.8rem;font-weight:600;color:#c9d1ef}
+.kfz-role .lv{width:6px;height:6px;border-radius:50%;background:#4ade80;
+  box-shadow:0 0 0 0 rgba(74,222,128,.6);animation:pulse 2s infinite}
+.kfz-save{border:1px solid rgba(76,201,240,.34);border-radius:18px;padding:26px 22px;
+  background:linear-gradient(150deg,rgba(76,201,240,.11),rgba(124,92,255,.05));
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.kfz-save .amt{font-family:'Space Grotesk';font-size:clamp(2.3rem,4.2vw,3.1rem);font-weight:700;line-height:1;
+  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.kfz-save .amt-sub{font-size:.95rem;font-weight:600;color:#dfe5f7;margin-top:10px}
+.kfz-save .amt-note{font-size:.8rem;color:var(--muted);margin-top:7px;line-height:1.5}
 @media(max-width:1020px){.kfz-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:860px){.kfz-featrow{grid-template-columns:1fr}}
 @media(max-width:700px){.kfz-grid{grid-template-columns:1fr}.kfz-banner{padding:36px 22px 32px}}
 
 /* 7 nav linki: orta genişliklerde sıkıştır, 1000px altında hamburger menüye geç */
@@ -711,9 +730,27 @@ footer{border-top:1px solid var(--line);margin-top:110px}
 <section id="kfz">
   <div class="kfz-banner reveal">
     <div class="kfz-head">
-      <span class="sec-tag" data-i18n="kfz.tag">Branchenplattform · Kfz-Gutachten</span>
-      <h2 data-i18n="kfz.h2">Gecit-KFZ — vom Papiergutachten zur KI-Plattform</h2>
-      <p data-i18n="kfz.p">Gutachten liefen über Papier, Telefon und fünf verschiedene Programme. Heute läuft der komplette Ablauf über ein System: Aufnahmen rein, Analyse per KI, fertiges Gutachten raus — und jede beteiligte Partei sieht genau das, was sie sehen soll.</p>
+      <span class="sec-tag" data-i18n="kfz.tag">Branchenplattform · Gutachten</span>
+      <h2 data-i18n="kfz.h2">Vom Papiergutachten zur KI-Plattform</h2>
+      <p data-i18n="kfz.p">Ein Gutachten lief über Papier, Telefon und fünf verschiedene Programme. Heute läuft der komplette Ablauf über ein System: Aufnahmen rein, Analyse per KI, fertiges Gutachten raus — und alle Beteiligten arbeiten gleichzeitig an derselben Akte.</p>
+    </div>
+
+    <div class="kfz-featrow">
+      <div class="kfz-feature">
+        <h3 data-i18n="kfz.live.h">Alle sehen dieselbe Akte — gleichzeitig</h3>
+        <p data-i18n="kfz.live.p">Kunde, Anwalt, Versicherer und Admin öffnen dasselbe Gutachten zur selben Zeit und sehen live denselben Stand. Kein Hin- und Herschicken von PDFs, keine veralteten Versionen, kein Nachtelefonieren — wer etwas ergänzt, ist bei allen anderen sofort sichtbar.</p>
+        <div class="kfz-roles">
+          <span class="kfz-role"><span class="lv"></span><span data-i18n="kfz.r1">Kunde</span></span>
+          <span class="kfz-role"><span class="lv"></span><span data-i18n="kfz.r2">Anwalt</span></span>
+          <span class="kfz-role"><span class="lv"></span><span data-i18n="kfz.r3">Versicherer</span></span>
+          <span class="kfz-role"><span class="lv"></span><span data-i18n="kfz.r4">Admin</span></span>
+        </div>
+      </div>
+      <div class="kfz-save">
+        <div class="amt">120 €</div>
+        <div class="amt-sub" data-i18n="kfz.save.sub">Ersparnis pro Gutachten</div>
+        <div class="amt-note" data-i18n="kfz.save.note">So viel spart das Büro bei der Erstellung eines einzigen Gutachtens.</div>
+      </div>
     </div>
 
     <div class="kfz-grid">
@@ -728,17 +765,17 @@ footer{border-top:1px solid var(--line);margin-top:110px}
         <p data-i18n="kfz.2.p">Kennzeichen und Fahrzeugschein werden abfotografiert und automatisch ausgelesen — keine Fahrzeugdaten mehr abtippen.</p>
       </div>
       <div class="kfz-item">
-        <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-        <h3 data-i18n="kfz.3.h">Fünf Portale, ein System</h3>
-        <p data-i18n="kfz.3.p">Kunde, Anwalt, Versicherung und Werkstatt haben jeweils einen eigenen Zugang — dazu das interne Portal des Büros.</p>
+        <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/><path d="m10.5 14.5 1.5 1.5 3-3"/></svg></div>
+        <h3 data-i18n="kfz.3.h">Ein System statt fünf Programme</h3>
+        <p data-i18n="kfz.3.p">Auftrag, Analyse, Dokumente und Kommunikation laufen an einer Stelle — Papier, Telefonketten und Programmwechsel entfallen.</p>
       </div>
     </div>
 
     <div class="chips reveal" style="justify-content:center;margin-top:24px;position:relative;z-index:1">
       <span class="chip" data-i18n="kfz.q1">KI-Analyse</span>
       <span class="chip" data-i18n="kfz.q2">Kennzeichen-OCR</span>
-      <span class="chip" data-i18n="kfz.q3">Rollenbasierte Portale</span>
-      <span class="chip" data-i18n="kfz.q4">Ein System statt fünf Programme</span>
+      <span class="chip" data-i18n="kfz.q3">Gleichzeitiger Zugriff</span>
+      <span class="chip" data-i18n="kfz.q4">120 € Ersparnis pro Gutachten</span>
     </div>
 
     <div class="kfz-foot reveal">
@@ -896,13 +933,18 @@ tr: {
   'acc.f2.h':'Banka Eşleştirme & Kontrol','acc.f2.p':'Banka hareketleri belgelerle otomatik eşleştirilir. Açık kalemler ve farklar anında görünür olur.',
   'acc.f3.h':'Danışmana Hazır','acc.f3.p':'Tek tıkla temiz ve DATEV uyumlu bir paket oluşur — doğrudan vergi danışmanına hazır.',
   'acc.q1':'DATEV SKR03 uyumlu','acc.q2':'Canlı kullanımda denendi','acc.q3':'Gerçek mali müşavir akışlarıyla test edildi','acc.q4':'SAP FI mantığı üzerine kurulu',
-  'kfz.tag':'Sektör Platformu · Oto Ekspertiz',
-  'kfz.h2':'Gecit-KFZ — kağıt ekspertizden yapay zekâ platformuna',
-  'kfz.p':'Ekspertiz raporları kağıt, telefon ve beş ayrı programla yürüyordu. Bugün tüm akış tek sistemde: görüntüler girer, yapay zekâ analiz eder, hazır rapor çıkar — ve her taraf yalnızca görmesi gerekeni görür.',
+  'kfz.tag':'Sektör Platformu · Gutachten',
+  'kfz.h2':'Kağıt Gutachten\'den yapay zekâ platformuna',
+  'kfz.p':'Bir Gutachten kağıt, telefon ve beş ayrı programla yürüyordu. Bugün tüm akış tek sistemde: görüntüler girer, yapay zekâ analiz eder, hazır Gutachten çıkar — ve tüm taraflar aynı dosya üzerinde eş zamanlı çalışır.',
+  'kfz.live.h':'Herkes aynı dosyayı görür — aynı anda',
+  'kfz.live.p':'Müşteri, avukat, sigortacı ve admin aynı Gutachten\'i aynı anda açar ve canlı olarak aynı durumu görür. PDF gönderip durmak yok, eski sürümle uğraşmak yok, telefonla teyit yok — biri bir şey eklediğinde diğerlerinde anında görünür.',
+  'kfz.r1':'Müşteri','kfz.r2':'Avukat','kfz.r3':'Sigortacı','kfz.r4':'Admin',
+  'kfz.save.sub':'Gutachten başına tasarruf',
+  'kfz.save.note':'Büro, tek bir Gutachten hazırlarken bu kadar tasarruf ediyor.',
   'kfz.1.h':'120 Noktalı Yapay Zekâ Analizi','kfz.1.p':'Araç durumu, çekilen görüntüler üzerinden 120 noktada değerlendirilir. Yapay zekâ zemini hazırlar — kararı eksper verir.',
   'kfz.2.h':'Plaka & Ruhsat OCR','kfz.2.p':'Plaka ve ruhsat fotoğraflanır, bilgiler otomatik okunur — araç verilerini elle yazmak yok.',
-  'kfz.3.h':'Beş Portal, Tek Sistem','kfz.3.p':'Müşteri, avukat, sigorta ve kaporta için ayrı erişim — buna büronun kendi iç paneli de dahil.',
-  'kfz.q1':'Yapay zekâ analizi','kfz.q2':'Plaka OCR','kfz.q3':'Rol bazlı portaller','kfz.q4':'Beş program yerine tek sistem',
+  'kfz.3.h':'Beş Program Yerine Tek Sistem','kfz.3.p':'İş emri, analiz, belgeler ve iletişim tek yerde toplanır — kağıt, telefon zincirleri ve program değiştirmek ortadan kalkar.',
+  'kfz.q1':'Yapay zekâ analizi','kfz.q2':'Plaka OCR','kfz.q3':'Eş zamanlı erişim','kfz.q4':'Gutachten başına 120 € tasarruf',
   'kfz.cta':'Benzer Bir Platform Konuşalım','kfz.note':'Sektörünüzün kendine özgü akışları mı var? Tam da bunun için platform kuruyoruz.',
   'acc.cta':'Demo talep et',
   'acc.note':'Canlı demo talep üzerine — uygulama erişime kapalıdır.',
