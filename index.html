@@ -91,8 +91,9 @@ nav.scrolled{border-bottom-color:var(--line2);box-shadow:0 12px 40px -22px rgba(
 .nav-inner{max-width:var(--maxw);margin:0 auto;padding:0 24px;height:68px;display:flex;align-items:center;gap:28px}
 .wordmark{font-size:1.35rem;font-weight:700;display:flex;align-items:center;gap:2px}
 .wordmark .dot{width:9px;height:9px;border-radius:50%;background:var(--grad);display:inline-block;margin-left:3px;box-shadow:0 0 12px rgba(124,92,255,.8)}
-.nav-links{display:flex;gap:26px;margin-left:auto;align-items:center}
-.nav-links a{font-size:.92rem;color:var(--muted);font-weight:500;transition:color .2s}
+.nav-links{display:flex;gap:18px;margin-left:auto;align-items:center}
+.nav-links a{font-size:.88rem;color:var(--muted);font-weight:500;transition:color .2s;white-space:nowrap}
+.btn-nav,.btn-login{white-space:nowrap}
 .nav-links a:hover{color:var(--txt)}
 .nav-actions{display:flex;align-items:center;gap:12px;margin-left:auto}
 .lang-switch{display:flex;border:1px solid var(--line2);border-radius:99px;overflow:hidden;font-size:.8rem;font-weight:600;flex-shrink:0}
@@ -293,11 +294,6 @@ footer{border-top:1px solid var(--line);margin-top:110px}
   .about-wrap,.contact-wrap{grid-template-columns:1fr}
 }
 @media(max-width:700px){
-  .nav-links{display:none;position:fixed;top:68px;left:0;right:0;flex-direction:column;background:rgba(7,11,20,.97);backdrop-filter:blur(16px);padding:26px 24px 30px;gap:20px;border-bottom:1px solid var(--line);align-items:flex-start}
-  .nav-links.open{display:flex}
-  .nav-links .btn-nav{margin-top:6px}
-  .nav-actions{gap:9px;margin-right:6px}
-  .hamburger{display:block}
   .grid-3,.grid-ref,.steps,.f-row{grid-template-columns:1fr}
   .hero{padding-top:140px}
   .stat{flex:1 1 40%;border-right:none;border-bottom:1px solid var(--line)}
@@ -316,6 +312,38 @@ footer{border-top:1px solid var(--line);margin-top:110px}
   background:linear-gradient(150deg,rgba(19,27,47,.62),rgba(11,17,32,.72));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
 .svc-icon{background:linear-gradient(135deg,rgba(124,92,255,.18),rgba(76,201,240,.08));border-color:rgba(124,92,255,.32)}
+
+/* ---------- social media: platform pills ---------- */
+.sm-plats{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:780px;margin:-18px auto 42px}
+.sm-plat{display:inline-flex;align-items:center;gap:9px;padding:9px 17px;border-radius:99px;
+  border:1px solid var(--line2);background:linear-gradient(140deg,rgba(22,30,52,.72),rgba(11,17,32,.6));
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  font-size:.86rem;font-weight:600;color:#c9d1ef;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.sm-plat .d{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sm-plat .d1{background:#e1306c;box-shadow:0 0 8px rgba(225,48,108,.75)}
+.sm-plat .d2{background:#4cc9f0;box-shadow:0 0 8px rgba(76,201,240,.75)}
+.sm-plat .d3{background:#5e7bff;box-shadow:0 0 8px rgba(94,123,255,.75)}
+.sm-plat .d4{background:#7c5cff;box-shadow:0 0 8px rgba(124,92,255,.75)}
+.sm-plat .d5{background:#f6a94e;box-shadow:0 0 8px rgba(246,169,78,.75)}
+.sm-plat .d6{background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.75)}
+
+/* 7 nav linki: orta genişliklerde sıkıştır, 1000px altında hamburger menüye geç */
+@media(max-width:1240px) and (min-width:1001px){
+  .nav-inner{gap:16px}
+  .nav-links{gap:13px}
+  .nav-links a{font-size:.82rem}
+  .btn-nav{padding:8px 12px;font-size:.8rem}
+  .btn-login{padding:8px 11px;font-size:.83rem}
+}
+@media(max-width:1000px){
+  .nav-links{display:none;position:fixed;top:68px;left:0;right:0;flex-direction:column;
+    background:rgba(7,11,20,.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    padding:26px 24px 30px;gap:20px;border-bottom:1px solid var(--line);align-items:flex-start}
+  .nav-links.open{display:flex}
+  .nav-links .btn-nav{margin-top:6px}
+  .nav-actions{gap:9px;margin-right:6px}
+  .hamburger{display:block}
+}
 </style>
 </head>
 <body>
@@ -335,6 +363,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
     <a href="#top" class="wordmark">fikoai<span class="dot"></span></a>
     <div class="nav-links" id="navLinks">
       <a href="#leistungen" data-i18n="nav.services">Leistungen</a>
+      <a href="#social" data-i18n="nav.social">Social Media</a>
       <a href="#referenzen" data-i18n="nav.refs">Referenzen</a>
       <a href="#muhasebe" data-i18n="nav.acc">Buchhaltung</a>
       <a href="#prozess" data-i18n="nav.process">Arbeitsweise</a>
@@ -445,6 +474,69 @@ footer{border-top:1px solid var(--line);margin-top:110px}
       <p data-i18n="svc.6.p">Belege automatisch erkennen, Dokumente vorbereiten, Berichte erstellen: KI übernimmt die Routinearbeit — Ihr Team den Rest.</p>
       <div class="svc-ref"><span data-i18n="svc.ref">Referenz:</span> <b>fikoai Buchhaltung · Gecit-KFZ KI</b></div>
     </div>
+  </div>
+</section>
+
+<!-- ============ SOCIAL MEDIA BERATUNG ============ -->
+<section id="social">
+  <div class="sec-head center reveal">
+    <span class="sec-tag" data-i18n="sm.tag">Social-Media-Beratung</span>
+    <h2 data-i18n="sm.h2">Sichtbar werden, wo Ihre Kunden wirklich sind</h2>
+    <p data-i18n="sm.p">Von der Strategie über die Content-Produktion bis zur Kampagne: Wir bauen Ihre Social-Media-Präsenz als System auf — klare Botschaft, fester Rhythmus, messbare Ergebnisse. Auf Deutsch und Türkisch.</p>
+  </div>
+
+  <div class="sm-plats reveal">
+    <span class="sm-plat"><span class="d d1"></span>Instagram</span>
+    <span class="sm-plat"><span class="d d2"></span>TikTok</span>
+    <span class="sm-plat"><span class="d d3"></span>Facebook</span>
+    <span class="sm-plat"><span class="d d4"></span>LinkedIn</span>
+    <span class="sm-plat"><span class="d d5"></span>YouTube</span>
+    <span class="sm-plat"><span class="d d6"></span>Google Business</span>
+  </div>
+
+  <div class="grid-3">
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></svg></div>
+      <h3 data-i18n="sm.1.h">Content-Strategie & Redaktionsplan</h3>
+      <p data-i18n="sm.1.p">Zielgruppe, Tonalität und Themenplan stehen fest, bevor der erste Post entsteht. So hat jeder Beitrag ein Ziel — statt Zufall zu sein.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></div>
+      <h3 data-i18n="sm.2.h">Content-Produktion: Reels & Posts</h3>
+      <p data-i18n="sm.2.p">Grafik, Video, Text und Hashtags: fertige Inhalte im festen Rhythmus — abgestimmt auf Ihre Marke und Ihre Filialen.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h3l5 4V5L8 9H5a1 1 0 0 0-1 1z"/><path d="M17 9a4 4 0 0 1 0 6"/></svg></div>
+      <h3 data-i18n="sm.3.h">Werbekampagnen: Meta & Google</h3>
+      <p data-i18n="sm.3.p">Kampagnen mit sauberem Targeting und Budgetkontrolle — vom ersten Klick bis zur konkreten Anfrage in Ihrem Postfach.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/><path d="M8.5 10.5h7M8.5 14h4.5"/></svg></div>
+      <h3 data-i18n="sm.4.h">Community-Management</h3>
+      <p data-i18n="sm.4.p">Kommentare, Nachrichten und Bewertungen werden schnell und professionell beantwortet — auf Deutsch und auf Türkisch.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="5" y="12" width="3.5" height="6" rx="1"/><rect x="10.25" y="8" width="3.5" height="10" rx="1"/><rect x="15.5" y="4" width="3.5" height="14" rx="1"/></svg></div>
+      <h3 data-i18n="sm.5.h">Analyse & Reporting</h3>
+      <p data-i18n="sm.5.p">Monatliche Auswertung von Reichweite, Interaktion und Anfragen. Sie sehen schwarz auf weiß, was funktioniert — und was nicht.</p>
+    </div>
+    <div class="card reveal">
+      <div class="svc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 1.9 4.7L18.6 9l-4.7 1.9L12 15.6l-1.9-4.7L5.4 9l4.7-1.3z"/><path d="M18 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></div>
+      <h3 data-i18n="sm.6.h">Markenauftritt & Vorlagen</h3>
+      <p data-i18n="sm.6.p">Logo, Farben, Schriften und fertige Vorlagen: ein einheitlicher Auftritt auf allen Kanälen — auch wenn Ihr Team selbst postet.</p>
+    </div>
+  </div>
+
+  <div class="chips reveal" style="justify-content:center;margin-top:26px">
+    <span class="chip" data-i18n="sm.q1">Deutsch & Türkisch</span>
+    <span class="chip" data-i18n="sm.q2">Fester Redaktionsplan</span>
+    <span class="chip" data-i18n="sm.q3">Monatliches Reporting</span>
+    <span class="chip" data-i18n="sm.q4">Direkter Ansprechpartner</span>
+  </div>
+
+  <div class="reveal" style="text-align:center;margin-top:26px">
+    <a href="#kontakt" class="btn btn-primary magnetic"><span data-i18n="sm.cta">Social-Media-Gespräch vereinbaren</span><span class="shine"></span></a>
+    <p style="color:var(--muted);font-size:.85rem;margin-top:12px" data-i18n="sm.note">Erstgespräch kostenlos und unverbindlich — auf Deutsch oder Türkisch.</p>
   </div>
 </section>
 
@@ -659,6 +751,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
             <option data-i18n="fm.t3">Personal & Betriebsführung</option>
             <option data-i18n="fm.t4">Branchenplattform</option>
             <option data-i18n="fm.t5">Online-Kundengewinnung</option>
+            <option data-i18n="fm.t8">Social-Media-Beratung</option>
             <option data-i18n="fm.t6">KI & Automatisierung</option>
             <option data-i18n="fm.t7">Etwas anderes</option>
           </select>
@@ -696,7 +789,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
 /* ================= i18n ================= */
 const I18N = {
 tr: {
-  'nav.services':'Hizmetler','nav.refs':'Referanslar','nav.acc':'Muhasebe','nav.process':'Nasıl Çalışırız','nav.about':'Hakkımızda','nav.contact':'İletişim','nav.cta':'Proje Başlat','nav.login':'Giriş',
+  'nav.services':'Hizmetler','nav.refs':'Referanslar','nav.acc':'Muhasebe','nav.process':'Nasıl Çalışırız','nav.about':'Hakkımızda','nav.contact':'İletişim','nav.social':'Sosyal Medya','nav.cta':'Proje Başlat','nav.login':'Giriş',
   'hero.eyebrow':'Yapay Zeka · Özel Yazılım · Otomasyon · Dijital Ürünler',
   'hero.h1':'Her firma farklıdır.<br><span class="grad">Yazılımı da öyle olmalı.</span>',
   'hero.sub':'İş akışlarınızı analiz ediyor; dijital sistemleri firmanızın gerçekte nasıl çalıştığına göre tasarlıyor, geliştiriyor ve otomatikleştiriyoruz. Yapay zeka ajanlarından iç platformlara, müşteri portallarından kurumsal yazılıma kadar her çözüm tek bir akıllı ekosistem olarak kurulur.',
@@ -749,12 +842,22 @@ tr: {
   'ct.direct':'Doğrudan Hat','ct.direct.p':'Bize en hızlı WhatsApp\'tan ulaşırsınız — genellikle birkaç saat içinde yanıtlarız.',
   'ct.phone':'Telefon','ct.email':'E-posta',
   'fm.name':'Adınız','fm.name.ph':'Adınız Soyadınız','fm.firma':'Firma','fm.firma.ph':'Firma GmbH','fm.mail':'E-posta','fm.topic':'Konu nedir?',
-  'fm.t1':'Web sitesi / dijital vitrin','fm.t2':'QR menü / sipariş sistemi','fm.t3':'Personel & işletme yönetimi','fm.t4':'Sektöre özel platform','fm.t5':'Online müşteri kazanma','fm.t6':'Yapay zeka & otomasyon','fm.t7':'Başka bir şey',
+  'fm.t1':'Web sitesi / dijital vitrin','fm.t2':'QR menü / sipariş sistemi','fm.t3':'Personel & işletme yönetimi','fm.t4':'Sektöre özel platform','fm.t5':'Online müşteri kazanma','fm.t6':'Yapay zeka & otomasyon','fm.t7':'Başka bir şey','fm.t8':'Sosyal medya danışmanlığı',
   'fm.msg':'Mesajınız','fm.msg.ph':'Kısaca anlatın: nerede sıkışıyorsunuz…','fm.send':'Mesajı Gönder',
   'fm.note':'Mesajınız e-posta programınızı açar — bu sayfada hiçbir veri saklanmaz.',
   'ft.tag':'İşletmeye özel dijital sistemler','ft.imp':'Impressum','ft.ds':'Datenschutz',
   'chip.1':'QR menü 48 saatte yayında','chip.2':'Vardiya planı otomatik','chip.3':'AI faturalarınızı okur','chip.4':'3D mutfak planlama',
   'card.1':'QR Menü & Sipariş','card.2':'Vardiya Planlama','card.3':'AI Muhasebe','card.4':'Müşteri Portalı','card.5':'3D Mutfak Planlama','card.6':'Belge Zekâsı',
+  'sm.tag':'Sosyal Medya Danışmanlığı','sm.h2':'Müşterilerinizin gerçekten olduğu yerde görünür olun',
+  'sm.p':'Stratejiden içerik üretimine, reklam kampanyalarından raporlamaya: Sosyal medya varlığınızı bir sistem olarak kuruyoruz — net mesaj, düzenli ritim ve ölçülebilir sonuçlarla. Almanca ve Türkçe.',
+  'sm.1.h':'İçerik Stratejisi & Yayın Planı','sm.1.p':'Hedef kitle, ton ve içerik takvimi daha ilk paylaşım çıkmadan belli olur. Böylece her içeriğin bir amacı olur — tesadüf değil.',
+  'sm.2.h':'İçerik Üretimi: Reels & Post','sm.2.p':'Grafik, video, metin ve hashtag: markanıza ve şubelerinize uygun, düzenli ritimde yayına hazır içerikler.',
+  'sm.3.h':'Reklam Kampanyaları: Meta & Google','sm.3.p':'Doğru hedefleme ve bütçe kontrolüyle kampanyalar — ilk tıklamadan gelen kutunuza düşen somut talebe kadar.',
+  'sm.4.h':'Topluluk Yönetimi','sm.4.p':'Yorumlar, mesajlar ve değerlendirmeler hızlı ve profesyonelce yanıtlanır — hem Almanca hem Türkçe.',
+  'sm.5.h':'Analiz & Raporlama','sm.5.p':'Erişim, etkileşim ve gelen taleplerin aylık değerlendirmesi. Neyin işe yarayıp yaramadığını net olarak görürsünüz.',
+  'sm.6.h':'Marka Kimliği & Şablonlar','sm.6.p':'Logo, renkler, yazı tipleri ve hazır şablonlar: ekibiniz kendisi paylaşsa bile tüm kanallarda tutarlı bir görünüm.',
+  'sm.q1':'Almanca & Türkçe','sm.q2':'Düzenli yayın planı','sm.q3':'Aylık raporlama','sm.q4':'Doğrudan muhatap',
+  'sm.cta':'Sosyal Medya Görüşmesi Ayarla','sm.note':'İlk görüşme ücretsiz ve bağlayıcı değil — Almanca veya Türkçe.',
   'rot.fix':'Sizin için kuruyoruz:'
 },
 de: {} /* default text is already German */
