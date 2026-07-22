@@ -374,7 +374,11 @@ yani takım üyeleri (staff) sahibin verisini görür.
 supabase functions deploy sm-publish
 supabase functions deploy sm-account-connect   # _shared/social/types.ts değişti
 supabase functions deploy ig-metrics-sync      # _shared/composio.ts'i paylaşıyor
-supabase functions deploy sm-uretim            # üretim kuyruğu + içe aktarma
+# ⚠ sm-uretim MUTLAKA --no-verify-jwt ile: ajan çağrısında Authorization
+#   başlığı YOK (Claude'un oturumu yok), gateway JWT arasa kod hiç çalışmaz.
+#   Kimlik doğrulama fonksiyonun İÇİNDE: JWT ya da x-ajan-secret.
+#   (lead-inbound de aynı sebeple verify_jwt=false.)
+supabase functions deploy sm-uretim --no-verify-jwt
 
 # 3) Ajan yolu için secret (Claude/MCP üretim turu bunu kullanır)
 supabase secrets set SM_AJAN_SECRET=$(openssl rand -hex 24)

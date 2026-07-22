@@ -123,6 +123,13 @@ serve(async (req) => {
       }
 
       uid = kullanici.id;
+
+      // Ön kayıt işaretini kaldır: hesap artık gerçek bir müşteri hesabı.
+      // (davet-olustur bu bayrağı, aynı adrese tekrar davet gönderilebilsin
+      // diye koyuyor; sahiplenildikten sonra kalmamalı.)
+      await admin.auth.admin.updateUserById(uid, {
+        user_metadata: { davet_id: davet.id, davet_bekliyor: false },
+      });
     } else {
       const sifre = String(body?.sifre || "");
       // NIST SP 800-63B — kayıt formundaki kuralla aynı (min 8 karakter).
@@ -130,25 +137,40 @@ serve(async (req) => {
         return json({ success: false, error: "Şifre en az 8 karakter olmalı" }, 400);
       }
 
-      // Davet gönderildikten sonra hesap açılmış olabilir — yarış durumu.
+      // davet-olustur, Google yolunun `disable_signup` engeline takılmaması
+      // için hesabı ÖN KAYIT olarak zaten açmış olabilir (rastgele şifreyle,
+      // user_metadata.davet_bekliyor = true). O durumda yeni hesap açmıyoruz,
+      // müşterinin belirlediği şifreyi mevcut ön kayda yazıyoruz.
       const { data: mevcutId } = await admin.rpc("kullanici_id_bul", { p_email: davet.email });
-      if (mevcutId) {
-        return json({
-          success: false,
-          error: "Bu e-posta ile zaten bir hesap var. Lütfen giriş yapın.",
-        }, 409);
-      }
 
-      const { data: created, error: createErr } = await admin.auth.admin.createUser({
-        email: davet.email,
-        password: sifre,
-        email_confirm: true,   // davet linki zaten adres sahipliğini kanıtlıyor
-        user_metadata: { davet_id: davet.id },
-      });
-      if (createErr || !created?.user) {
-        return json({ success: false, error: "Hesap oluşturulamadı: " + (createErr?.message || "bilinmeyen hata") }, 500);
+      if (mevcutId) {
+        const { data: mevcut } = await admin.auth.admin.getUserById(mevcutId);
+        if (mevcut?.user?.user_metadata?.davet_bekliyor !== true) {
+          return json({
+            success: false,
+            error: "Bu e-posta ile zaten bir hesap var. Lütfen giriş yapın.",
+          }, 409);
+        }
+        const { error: updErr } = await admin.auth.admin.updateUserById(mevcutId, {
+          password: sifre,
+          user_metadata: { davet_id: davet.id, davet_bekliyor: false },
+        });
+        if (updErr) {
+          return json({ success: false, error: "Şifre belirlenemedi: " + updErr.message }, 500);
+        }
+        uid = mevcutId;
+      } else {
+        const { data: created, error: createErr } = await admin.auth.admin.createUser({
+          email: davet.email,
+          password: sifre,
+          email_confirm: true,   // davet linki zaten adres sahipliğini kanıtlıyor
+          user_metadata: { davet_id: davet.id, davet_bekliyor: false },
+        });
+        if (createErr || !created?.user) {
+          return json({ success: false, error: "Hesap oluşturulamadı: " + (createErr?.message || "bilinmeyen hata") }, 500);
+        }
+        uid = created.user.id;
       }
-      uid = created.user.id;
     }
 
     // Bu noktadan sonra bir adım hata verirse hesap açık kalır ama eksik

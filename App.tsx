@@ -42,9 +42,30 @@ import { runIsolationGuard } from "./services/isolationGuard";
 import { useModuller } from "./services/useModuller";
 import { MODULLER, MODUL_TANIM, MENU_MODUL, ilkAcikMenu, menuErisilebilir } from "./services/moduller";
 
-/** Davet linki: /app?davet=<token>. Mount anında bir kez okunur. */
+/**
+ * Davet linki: /app?davet=<token>. Mount anında bir kez okunur.
+ *
+ * Google OAuth dönüşünde adres çubuğundaki token kaybolabilir (Supabase
+ * "Redirect URLs" listesi eksikse sağlayıcı Site URL'e düşer). Bu durumda
+ * müşteri ortada kalmasın diye, OAuth'a giderken saklanan token 15 dakika
+ * boyunca yedek olarak kullanılır.
+ */
+const DAVET_BEKLEYEN = "davet_bekleyen";
 const davetTokeniOku = (): string => {
-  try { return new URLSearchParams(window.location.search).get("davet") || ""; } catch { return ""; }
+  try {
+    const url = new URLSearchParams(window.location.search).get("davet");
+    if (url) return url;
+
+    const ham = sessionStorage.getItem(DAVET_BEKLEYEN);
+    if (!ham) return "";
+    const { token, ts } = JSON.parse(ham);
+    // Eski bir kayıt normal girişte davet ekranını açmasın.
+    if (!token || Date.now() - Number(ts || 0) > 15 * 60 * 1000) {
+      sessionStorage.removeItem(DAVET_BEKLEYEN);
+      return "";
+    }
+    return String(token);
+  } catch { return ""; }
 };
 
 export default function App() {

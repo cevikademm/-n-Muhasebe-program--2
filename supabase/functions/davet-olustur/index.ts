@@ -70,17 +70,25 @@ serve(async (req) => {
       return json({ success: false, error: "Yükseltme daveti için hedef kullanıcı gerekir" }, 400);
     }
 
-    // Yeni hesap daveti gönderilen adres zaten kayıtlıysa, davet-kullan
-    // aşamasında "kullanıcı zaten var" hatasına düşerdi. Burada erken yakalanır
-    // ki admin doğru akışa (yükseltme daveti) yönlensin.
+    // Yeni hesap daveti gönderilen adres zaten kayıtlıysa, admin doğru akışa
+    // (yükseltme daveti) yönlensin diye erken yakalanır.
+    //
+    // İSTİSNA: daha önce bir davet gönderilmiş ama müşteri henüz kullanmamışsa
+    // ortada bizim açtığımız bir "ön kayıt" durur (aşağıya bakın). Bu, gerçek
+    // bir müşteri hesabı değil; aynı adrese tekrar davet göndermek engellenmemeli.
+    let onKayitVar = false;
     if (tip === "yeni") {
       const { data: mevcutId } = await admin.rpc("kullanici_id_bul", { p_email: email });
       if (mevcutId) {
-        return json({
-          success: false,
-          error: "Bu e-posta zaten kayıtlı. Mevcut kullanıcıya paket eklemek için 'Yükseltme daveti' kullanın.",
-          mevcut_user_id: mevcutId,
-        }, 409);
+        const { data: mevcut } = await admin.auth.admin.getUserById(mevcutId);
+        onKayitVar = mevcut?.user?.user_metadata?.davet_bekliyor === true;
+        if (!onKayitVar) {
+          return json({
+            success: false,
+            error: "Bu e-posta zaten kayıtlı. Mevcut kullanıcıya paket eklemek için 'Yükseltme daveti' kullanın.",
+            mevcut_user_id: mevcutId,
+          }, 409);
+        }
       }
     }
 
@@ -115,6 +123,33 @@ serve(async (req) => {
 
     if (insErr) {
       return json({ success: false, error: "Davet kaydı oluşturulamadı: " + insErr.message }, 500);
+    }
+
+    // ── Kullanıcıyı ŞİMDİDEN aç (yalnızca yeni hesap davetlerinde) ──
+    // Supabase'de "Allow new users to sign up" KAPALI (davet zorunluluğunun
+    // temeli). Bu ayar global: Google OAuth ile yeni hesap açmayı da engeller.
+    // Müşteri Google'a gidip dönünce "Signups not allowed" alırdı.
+    //
+    // Çözüm: hesabı burada, service-role ile önceden açıyoruz. Böylece Google
+    // dönüşü GoTrue için "yeni kayıt" değil, e-postası doğrulanmış mevcut
+    // kullanıcıya kimlik bağlama olur — kayıt kapalıyken de çalışır.
+    //
+    // Şifre kriptografik rastgele ve hiçbir yerde saklanmıyor: kimse bu
+    // hesaba şifreyle giremez, yalnızca davet akışı üzerinden sahiplenilir.
+    if (tip === "yeni" && !onKayitVar) {
+      const gecici = tokenUret() + tokenUret();
+      const { error: userErr } = await admin.auth.admin.createUser({
+        email,
+        password: gecici,
+        email_confirm: true,
+        user_metadata: { davet_id: davet.id, davet_bekliyor: true },
+      });
+      if (userErr) {
+        // Hesap açılamadıysa davet işe yaramaz — kaydı geri al ki admin
+        // "davet gönderildi" sanıp beklemesin.
+        await admin.from("davetler").delete().eq("id", davet.id);
+        return json({ success: false, error: "Hesap ön kaydı oluşturulamadı: " + userErr.message }, 500);
+      }
     }
 
     const link = `${SITE_URL}/app?davet=${token}`;

@@ -42,8 +42,6 @@ export const DavetEkrani: React.FC<Props> = ({ token, onAuth, onGiriseDon }) => 
   const [tip, setTip] = useState<"yeni" | "yukseltme">("yeni");
 
   // Form alanları — kayıt modalıyla aynı set
-  const [sifre, setSifre] = useState("");
-  const [sifre2, setSifre2] = useState("");
   const [sirketAdi, setSirketAdi] = useState("");
   const [vergiNo, setVergiNo] = useState("");
   const [adres, setAdres] = useState("");
@@ -91,70 +89,148 @@ export const DavetEkrani: React.FC<Props> = ({ token, onAuth, onGiriseDon }) => 
     return () => { iptal = true; };
   }, [token]);
 
+  // ── Google ile devam ───────────────────────────────────────────
+  // Müşteri davetlerinde şifre YOK: hesap Google OAuth ile açılır.
+  // Form verisi yönlendirme boyunca kaybolmasın diye sessionStorage'a
+  // yazılır; dönüşte oradan okunup davet tamamlanır.
+  const FORM_ANAHTAR = `davet_form_${token}`;
+
+  const formuTopla = () => ({
+    sirket_adi: sirketAdi.trim(),
+    tax_number: vergiNo.trim(),
+    address: adres.trim(),
+    city: sehir.trim(),
+    phone: telefon.trim(),
+    company_email: sirketEposta.trim(),
+  });
+
+  /** Oturum açıkken daveti harcar (OAuth dönüşü ya da zaten girişli kullanıcı). */
+  const googleIleTamamla = async (form: Record<string, string>) => {
+    setGonderiliyor(true);
+    setHata("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setHata(tr("Google oturumu bulunamadı. Tekrar deneyin.", "Google-Sitzung nicht gefunden."));
+        setGonderiliyor(false);
+        return;
+      }
+
+      const r = await fetch(fnUrl("davet-kullan"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Kullanıcının KENDİ token'ı — sunucu kimliği buradan çözer ve
+          // davet e-postasıyla eşleşmiyorsa reddeder.
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ ...form, token, mod: "google", sozlesmeler: true }),
+      });
+      const d = await r.json().catch(() => ({}));
+
+      if (!d?.success) {
+        setHata(d?.error || tr("İşlem tamamlanamadı.", "Vorgang fehlgeschlagen."));
+        setGonderiliyor(false);
+        // Yanlış Google hesabıyla girildiyse oturumu bırakma — kullanıcı
+        // doğru hesapla yeniden deneyebilsin.
+        try {
+          sessionStorage.removeItem(FORM_ANAHTAR);
+          sessionStorage.removeItem("davet_bekleyen");
+        } catch {}
+        return;
+      }
+
+      try {
+        sessionStorage.removeItem(FORM_ANAHTAR);
+        sessionStorage.removeItem("davet_bekleyen");
+      } catch {}
+      try { window.history.replaceState({}, "", "/app"); } catch {}
+      onAuth(session);
+    } catch (e: any) {
+      setHata(e?.message || tr("Beklenmeyen hata.", "Unerwarteter Fehler."));
+      setGonderiliyor(false);
+    }
+  };
+
+  // OAuth dönüşü: oturum var ve bekleyen form varsa daveti otomatik tamamla.
+  useEffect(() => {
+    if (durum !== "form" || tip !== "yeni") return;
+    let iptal = false;
+    (async () => {
+      let bekleyen: string | null = null;
+      try { bekleyen = sessionStorage.getItem(FORM_ANAHTAR); } catch {}
+      if (!bekleyen) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (iptal || !session) return;
+      googleIleTamamla(JSON.parse(bekleyen));
+    })();
+    return () => { iptal = true; };
+  }, [durum, tip]);
+
   // ── Gönder ─────────────────────────────────────────────────────
   const gonder = async () => {
     setHata("");
 
-    if (tip === "yeni") {
-      if (!sirketAdi.trim()) { setHata(t.companyRequired); return; }
-      if (sifre.length < 8) { setHata(tr("Şifre en az 8 karakter olmalı", "Passwort muss mindestens 8 Zeichen haben")); return; }
-      if (sifre !== sifre2) { setHata(tr("Şifreler eşleşmiyor", "Passwörter stimmen nicht überein")); return; }
-      if (!hepsiKabul) {
-        setHata(tr(
-          "Devam etmek için tüm sözleşmeleri onaylamanız gerekmektedir.",
-          "Sie müssen alle Vereinbarungen akzeptieren, um fortzufahren.",
-        ));
-        return;
+    // Yükseltme davetinde şirket formu ve Google adımı yok.
+    if (tip === "yukseltme") {
+      setGonderiliyor(true);
+      try {
+        const r = await fetch(fnUrl("davet-kullan"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({ token }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!d?.success) {
+          setHata(d?.error || tr("İşlem tamamlanamadı.", "Vorgang fehlgeschlagen."));
+          setGonderiliyor(false);
+          return;
+        }
+        setDurum("tamam");
+        setGonderiliyor(false);
+      } catch (e: any) {
+        setHata(e?.message || tr("Beklenmeyen hata.", "Unerwarteter Fehler."));
+        setGonderiliyor(false);
       }
+      return;
     }
 
-    setGonderiliyor(true);
+    if (!sirketAdi.trim()) { setHata(t.companyRequired); return; }
+    if (!hepsiKabul) {
+      setHata(tr(
+        "Devam etmek için tüm sözleşmeleri onaylamanız gerekmektedir.",
+        "Sie müssen alle Vereinbarungen akzeptieren, um fortzufahren.",
+      ));
+      return;
+    }
+
+    const form = formuTopla();
+
+    // Kullanıcı zaten doğru Google hesabıyla girişliyse yönlendirmeye gerek yok.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.email?.toLowerCase() === email.toLowerCase()) {
+      await googleIleTamamla(form);
+      return;
+    }
+
     try {
-      const r = await fetch(fnUrl("davet-kullan"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-        body: JSON.stringify(
-          tip === "yukseltme"
-            ? { token }
-            : {
-                token,
-                sifre,
-                sirket_adi: sirketAdi.trim(),
-                tax_number: vergiNo.trim(),
-                address: adres.trim(),
-                city: sehir.trim(),
-                phone: telefon.trim(),
-                company_email: sirketEposta.trim(),
-                sozlesmeler: true,
-              },
-        ),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!d?.success) {
-        setHata(d?.error || tr("İşlem tamamlanamadı.", "Vorgang fehlgeschlagen."));
-        setGonderiliyor(false);
-        return;
-      }
+      sessionStorage.setItem(FORM_ANAHTAR, JSON.stringify(form));
+      // Yönlendirme token'ı düşürürse App.tsx buradan kurtarır.
+      sessionStorage.setItem("davet_bekleyen", JSON.stringify({ token, ts: Date.now() }));
+    } catch {}
+    setGonderiliyor(true);
 
-      if (tip === "yukseltme") {
-        setDurum("tamam");
-        setGonderiliyor(false);
-        return;
-      }
-
-      // Hesap açıldı → doğrudan oturum aç.
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password: sifre });
-      if (error || !data.session) {
-        // Hesap var ama otomatik giriş olmadı — kullanıcı elle girebilir.
-        setDurum("tamam");
-        setGonderiliyor(false);
-        return;
-      }
-      // Adres çubuğundaki token'ı temizle ki yenilemede tekrar denenmesin.
-      try { window.history.replaceState({}, "", "/app"); } catch {}
-      onAuth(data.session);
-    } catch (e: any) {
-      setHata(e?.message || tr("Beklenmeyen hata.", "Unerwarteter Fehler."));
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        // Token'ı koru: dönüşte aynı davet ekranına düşmeliyiz.
+        redirectTo: `${window.location.origin}/app?davet=${encodeURIComponent(token)}`,
+        // Davet edilen adresi öner — yanlış hesapla girme ihtimalini azaltır.
+        queryParams: { login_hint: email, prompt: "select_account" },
+      },
+    });
+    if (error) {
+      setHata(error.message);
       setGonderiliyor(false);
     }
   };
@@ -345,24 +421,18 @@ export const DavetEkrani: React.FC<Props> = ({ token, onAuth, onGiriseDon }) => 
 
             {tip === "yeni" && (
               <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="c-label">{t.password}</label>
-                      <div className="glow-wrap">
-                        <input type="password" className="c-input" placeholder="••••••••"
-                          autoComplete="new-password" value={sifre} onChange={(e) => setSifre(e.target.value)} />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="c-label">{tr("Şifre Tekrar", "Passwort wiederholen")}</label>
-                      <div className="glow-wrap">
-                        <input type="password" className="c-input" placeholder="••••••••"
-                          autoComplete="new-password" value={sifre2} onChange={(e) => setSifre2(e.target.value)} />
-                      </div>
-                    </div>
-                  </div>
+                <div style={{
+                  marginBottom: 14, padding: "10px 13px", borderRadius: 10,
+                  background: "rgba(6,182,212,.08)", border: "1px solid rgba(6,182,212,.22)",
+                  color: "#67e8f9", fontSize: 12, lineHeight: 1.5,
+                }}>
+                  {tr(
+                    `Hesabınız Google ile açılır — şifre belirlemenize gerek yok. ${email} adresine bağlı Google hesabıyla giriş yapın.`,
+                    `Ihr Konto wird mit Google erstellt — kein Passwort nötig. Melden Sie sich mit dem Google-Konto von ${email} an.`,
+                  )}
+                </div>
 
+                <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "2px 0" }}>
                     <div style={{ flex: 1, height: 1, background: "#1c1f27" }} />
                     <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".15em", color: "#06b6d4" }}>
@@ -488,7 +558,7 @@ export const DavetEkrani: React.FC<Props> = ({ token, onAuth, onGiriseDon }) => 
                 : <>
                     {tip === "yukseltme"
                       ? tr("Onayla ve Aç", "Bestätigen und freischalten")
-                      : tr("Hesabımı Oluştur", "Konto erstellen")}
+                      : tr("Google ile devam et", "Mit Google fortfahren")}
                     <ArrowRight size={16} />
                   </>}
             </motion.button>
