@@ -1,16 +1,19 @@
 /**
  * Admin → Yeni Kullanıcı Oluşturma Modalı
- * Login ekranındaki kayıt formunun aynısı + "Fatura Kredisi" alanı.
+ * Login ekranındaki kayıt formunun aynısı + "Fatura Kredisi" ve paket seçimi.
  *
- * Not: Yöneticinin oturumunun bozulmaması için signUp çağrısı,
- * persistSession:false olan ayrı bir Supabase istemcisi üzerinden yapılır.
+ * Hesap açma artık `admin-kullanici-olustur` Edge Function'ında, service-role
+ * `auth.admin.createUser` ile yapılır. Eski yol (persistSession:false olan ayrı
+ * bir istemciyle `auth.signUp`) Supabase'de public signup kapatıldığı için
+ * çalışmıyor; ayrıca service-role yolu yöneticinin oturumuna hiç dokunmadığı
+ * için geçici istemci ve signOut temizliğine de gerek kalmıyor.
  */
-import React, { useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-import { Loader2, X, ArrowRight, ShieldAlert, FileText, Truck, Lock } from "lucide-react";
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../../constants";
+import React, { useState } from "react";
+import { Loader2, X, ArrowRight, ShieldAlert, FileText, Truck, Lock, Check } from "lucide-react";
+import { SUPABASE_URL } from "../../constants";
 import { supabase } from "../../services/supabaseService";
 import { useLang } from "../../LanguageContext";
+import { Modul, MODULLER, MODUL_TANIM } from "../../services/moduller";
 
 interface Props {
   onClose: () => void;
@@ -37,6 +40,10 @@ export const AdminCreateUserModal: React.FC<Props> = ({ onClose, onCreated }) =>
   // Fatura kredisi (admin tarafından atanır)
   const [invoiceCredits, setInvoiceCredits] = useState<number>(0);
 
+  // Açılacak paketler — hiçbiri seçilmezse kullanıcı boş bir panele düşer,
+  // o yüzden en azından Muhasebe varsayılan olarak işaretli gelir.
+  const [secili, setSecili] = useState<Set<Modul>>(new Set<Modul>(["muhasebe"]));
+
   // Sözleşmeler — admin oluşturduğunda varsayılan onaylı
   const [acceptPrivacy, setAcceptPrivacy] = useState(true);
   const [acceptDistanceSelling, setAcceptDistanceSelling] = useState(true);
@@ -44,14 +51,6 @@ export const AdminCreateUserModal: React.FC<Props> = ({ onClose, onCreated }) =>
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // Yöneticinin oturumunu bozmamak için ayrı client
-  const tmpClient = useMemo(
-    () => createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    }),
-    []
-  );
 
   const submit = async () => {
     setError("");
@@ -70,41 +69,30 @@ export const AdminCreateUserModal: React.FC<Props> = ({ onClose, onCreated }) =>
 
     setLoading(true);
     try {
-      // 1) Auth kullanıcısı oluştur (ayrı client → admin oturumu etkilenmez)
-      const { data, error: signErr } = await tmpClient.auth.signUp({
-        email: regEmail.trim(),
-        password: regPassword,
+      // Hesap, şirket kaydı, sözleşmeler ve paketler tek çağrıda ve
+      // service-role ile açılır — admin oturumu hiç etkilenmez.
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/admin-kullanici-olustur`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({
+          email: regEmail.trim(),
+          sifre: regPassword,
+          sirket_adi: companyName.trim(),
+          tax_number: taxNumber.trim(),
+          address: companyAddress.trim(),
+          city: companyCity.trim(),
+          phone: companyPhone.trim(),
+          company_email: companyEmail.trim(),
+          invoice_credits: invoiceCredits,
+          moduller: [...secili],
+        }),
       });
-      if (signErr) throw signErr;
-      const newUserId = data.user?.id;
-      if (!newUserId) throw new Error(tr("Kullanıcı oluşturulamadı", "Benutzer konnte nicht erstellt werden"));
-
-      // 2) companies kaydı (admin oturumu → asıl client)
-      const { error: coErr } = await supabase.from("companies").insert({
-        user_id: newUserId,
-        company_name: companyName.trim(),
-        tax_number: taxNumber.trim(),
-        address: companyAddress.trim(),
-        city: companyCity.trim(),
-        phone: companyPhone.trim(),
-        email: companyEmail.trim() || regEmail.trim(),
-        invoice_credits: invoiceCredits,
-      });
-      if (coErr) throw coErr;
-
-      // 3) Sözleşme onayları
-      try {
-        await supabase.from("user_agreements").insert([
-          { user_id: newUserId, agreement_type: "privacy_policy" },
-          { user_id: newUserId, agreement_type: "distance_selling" },
-          { user_id: newUserId, agreement_type: "delivery_return" },
-        ]);
-      } catch (e) {
-        console.warn("user_agreements skipped:", e);
-      }
-
-      // tmpClient oturumunu temizle
-      try { await tmpClient.auth.signOut(); } catch {}
+      const d = await r.json().catch(() => ({}));
+      if (!d?.success) throw new Error(d?.error || tr("Kullanıcı oluşturulamadı", "Benutzer konnte nicht erstellt werden"));
 
       onCreated?.();
       onClose();
@@ -288,6 +276,57 @@ export const AdminCreateUserModal: React.FC<Props> = ({ onClose, onCreated }) =>
               <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
                 {tr("Kullanıcının analiz edebileceği fatura adedi. Sonradan düzenlenebilir.",
                     "Anzahl der Rechnungen, die der Benutzer analysieren darf. Später anpassbar.")}
+              </p>
+            </div>
+
+            {/* Divider */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "2px 0" }}>
+              <div style={{ flex: 1, height: 1, background: "#1c1f27" }} />
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#8b5cf6" }}>
+                {tr("Paketler", "Pakete")}
+              </span>
+              <div style={{ flex: 1, height: 1, background: "#1c1f27" }} />
+            </div>
+
+            <div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {MODULLER.map((m) => {
+                  const mt = MODUL_TANIM[m];
+                  const on = secili.has(m);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSecili((s) => {
+                        const n = new Set(s);
+                        n.has(m) ? n.delete(m) : n.add(m);
+                        return n;
+                      })}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 7,
+                        padding: "9px 13px", borderRadius: 10, cursor: "pointer",
+                        fontSize: 12.5, fontWeight: 700,
+                        background: on ? `${mt.renk}1a` : "transparent",
+                        border: `1px solid ${on ? `${mt.renk}55` : "rgba(255,255,255,.1)"}`,
+                        color: on ? mt.renk : "rgba(255,255,255,.4)",
+                      }}
+                    >
+                      <span style={{
+                        width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: on ? mt.renk : "transparent",
+                        border: `1px solid ${on ? mt.renk : "rgba(255,255,255,.2)"}`,
+                      }}>
+                        {on && <Check size={10} strokeWidth={3} color="#fff" />}
+                      </span>
+                      {mt.ad[lang]}
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>
+                {tr("Kullanıcının erişebileceği alanlar. Sonradan Paketler sekmesinden değiştirilebilir.",
+                    "Zugängliche Bereiche. Später über den Reiter Pakete änderbar.")}
               </p>
             </div>
           </div>

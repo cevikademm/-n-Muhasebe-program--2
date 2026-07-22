@@ -6,16 +6,20 @@ import { SettingsCompanyTab } from "./settings/SettingsCompanyTab";
 import { SettingsMatchingTab } from "./settings/SettingsMatchingTab";
 import { SettingsSecurityTab } from "./settings/SettingsSecurityTab";
 import { SettingsTeamTab } from "./settings/SettingsTeamTab";
-import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2, Lock, Users } from "lucide-react";
+import { SettingsPaketlerTab } from "./settings/SettingsPaketlerTab";
+import { ModulDurumu } from "../services/useModuller";
+import { Building2, BookOpen, ArrowLeftRight, ExternalLink, Shield, Cloud, Crown, User, Loader2, Lock, Users, Package } from "lucide-react";
 // freePlanLimits kaldırıldı — abonelik sistemi devre dışı
 
 interface SettingsPanelProps {
   userEmail: string | undefined;
   userRole: string;
   userId: string | undefined;
+  /** App'teki useModuller sonucu — "Paketlerim" sekmesi bunu kullanır. */
+  moduller: ModulDurumu;
 }
 
-type Tab = "company" | "accounting" | "matching" | "export" | "security" | "team";
+type Tab = "company" | "accounting" | "matching" | "export" | "security" | "team" | "paketler";
 
 const ProLockedOverlay: React.FC<{
   title: string;
@@ -68,7 +72,7 @@ const ProLockedOverlay: React.FC<{
 );
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  userEmail, userRole, userId,
+  userEmail, userRole, userId, moduller,
 }) => {
   const { lang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -87,6 +91,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { key: "export",     icon: <ExternalLink size={16} />,  label: tr("Export", "Export") },
     { key: "security",   icon: <Shield size={16} />,        label: tr("Güvenlik", "Sicherheit") },
     { key: "team",       icon: <Users size={16} />,         label: tr("Alt Kullanıcılar", "Teammitglieder") },
+    { key: "paketler",   icon: <Package size={16} />,       label: tr("Paketlerim", "Meine Pakete") },
   ];
 
   return (
@@ -194,6 +199,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
           {tab === "team" && (
             <SettingsTeamTab userId={userId} flash={flash} />
+          )}
+
+          {tab === "paketler" && (
+            <SettingsPaketlerTab moduller={moduller} flash={flash} />
           )}
 
         </div>

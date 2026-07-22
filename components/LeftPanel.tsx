@@ -5,10 +5,11 @@ import {
   LogOut, LayoutDashboard, BarChart3,
   ClipboardList, Building2, Settings2, Crown,
   BookOpen, Building, ShieldCheck,
-  ChevronRight, Globe, Users, FileText, Calculator,
+  ChevronRight, Globe, Users, FileText, Calculator, Share2,
 } from "lucide-react";
 import { NotificationBell, NotificationDrawer } from "./NotificationDrawer";
 import { supabase } from "../services/supabaseService";
+import { Modul, MODULLER, MODUL_TANIM } from "../services/moduller";
 
 interface CustomerStatus {
   company_name: string;
@@ -87,6 +88,8 @@ interface LeftPanelProps {
   onLogout: () => void;
   onSelectCustomer?: (userId: string) => void;
   staffMode?: boolean;
+  /** Kullanıcının açık paketleri — kapalı platformlar menüde hiç çizilmez. */
+  acikModuller: Set<Modul>;
 }
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -104,6 +107,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 export const LeftPanel: React.FC<LeftPanelProps> = ({
   activeMenu, setActiveMenu, userEmail, userRole, onLogout, onSelectCustomer, staffMode,
+  acikModuller,
 }) => {
   const { t, lang, setLang } = useLang();
   const tr = (a: string, b: string) => lang === "tr" ? a : b;
@@ -166,14 +170,17 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     };
   }, []);
 
+  // Muhasebe modülünün alt menüsü. Ayarlar bilinçli olarak burada DEĞİL:
+  // muhasebe paketi kapalı bir kullanıcının da Ayarlar → Paketlerim ekranına
+  // ulaşabilmesi gerekiyor, o yüzden ayrı ve her zaman görünür bir bölümde.
   const userItems: { key: MenuKey; label: string; color: string }[] = [
     { key: "invoices", label: t.invoices, color: "#f97316" },
     { key: "dashboard", label: t.dashboard, color: "#06b6d4" },
     { key: "reports", label: t.reports, color: "#10b981" },
     { key: "forms", label: t.forms, color: "#f59e0b" },
     { key: "bankDocuments", label: t.bankDocuments, color: "#f43f5e" },
-    { key: "settings", label: t.settings, color: "#64748b" },
   ];
+  const ayarItem = { key: "settings" as MenuKey, label: t.settings, color: "#64748b" };
 
   const adminItems: { key: MenuKey; label: string; color: string }[] = [
     { key: "accountPlans", label: t.accountPlans, color: "#06b6d4" },
@@ -184,13 +191,34 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const visibleAdmin = (staffMode ? [] : (userRole === "admin" ? adminItems : []));
   const allVisible = [...visibleUser, ...visibleAdmin];
 
-  // ─── Üst seviye platform sekmeleri: Muhasebe (arka plandaki tüm muhasebe
-  //     platformu tek sekme) + Müşteri Bulma. Aktif platform activeMenu'den türetilir.
-  const platform: "muhasebe" | "musteri" = activeMenu === "musteriBulma" ? "musteri" : "muhasebe";
-  const PLATFORMS: { key: "muhasebe" | "musteri"; label: string; sub: string; icon: React.ReactNode; color: string }[] = [
-    { key: "muhasebe", label: tr("Muhasebe", "Buchhaltung"), sub: tr("Fatura · Banka · Rapor", "Rechnung · Bank · Report"), icon: <Calculator size={16} />, color: "#06b6d4" },
-    { key: "musteri", label: tr("Müşteri Bulma", "Kundengewinnung"), sub: tr("Lead & e-posta otomasyonu", "Lead & E-Mail-Automation"), icon: <Users size={16} />, color: "#8b5cf6" },
-  ];
+  // ─── Üst seviye platform sekmeleri ────────────────────────────
+  // Liste artık services/moduller.ts'ten türer (alt bar ve tablet rayı ile
+  // aynı kaynak) ve yalnızca AÇIK paketler çizilir — kapalı bir platform
+  // kullanıcıya hiç görünmez.
+  const PLATFORM_IKON: Record<Modul, React.ReactNode> = {
+    muhasebe: <Calculator size={16} />,
+    musteri_bulma: <Users size={16} />,
+    sosyal_medya: <Share2 size={16} />,
+  };
+  const PLATFORM_ALT: Record<Modul, string> = {
+    muhasebe: tr("Fatura · Banka · Rapor", "Rechnung · Bank · Report"),
+    musteri_bulma: tr("Lead & e-posta otomasyonu", "Lead & E-Mail-Automation"),
+    sosyal_medya: tr("Medya · Hesaplar · Takvim", "Medien · Konten · Kalender"),
+  };
+  const platform: Modul =
+    activeMenu === "musteriBulma" ? "musteri_bulma"
+    : activeMenu === "sosyalMedya" ? "sosyal_medya"
+    : "muhasebe";
+  const PLATFORMS = MODULLER
+    .filter((m) => acikModuller.has(m))
+    .map((m) => ({
+      key: m,
+      label: MODUL_TANIM[m].ad[lang],
+      sub: PLATFORM_ALT[m],
+      icon: PLATFORM_IKON[m],
+      color: MODUL_TANIM[m].renk,
+      hedef: MODUL_TANIM[m].anaMenu,
+    }));
   const initials = userEmail ? userEmail[0].toUpperCase() : "U";
 
   const timeStr = time.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -391,8 +419,10 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           <button
             key={p.key}
             onClick={() => {
-              if (p.key === "musteri") setActiveMenu("musteriBulma");
-              else if (activeMenu === "musteriBulma") setActiveMenu("dashboard");
+              // Muhasebe'de zaten bir alt ekrandaysak (rapor, banka...) sekmeye
+              // basmak o ekranı korur; başka platformdan dönerken dashboard'a
+              // düşer — yoksa muhasebe menüsü boş bir ekranla açılırdı.
+              if (p.key !== "muhasebe" || platform !== "muhasebe") setActiveMenu(p.hedef);
               onNavigate?.();
             }}
             style={{
@@ -438,7 +468,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
       <PlatformTabs onNavigate={onNavigate} />
-      {platform === "muhasebe" && (
+      {platform === "muhasebe" && acikModuller.has("muhasebe") && (
       <>
       <div style={{ margin: "6px 14px 0", height: "1px", background: "linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)" }} />
       <div style={{ padding: "10px 14px 4px" }}>
@@ -629,6 +659,12 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       )}
       </>
       )}
+
+      {/* ── Ayarlar: paketten bağımsız, her zaman erişilebilir ── */}
+      <div style={{ margin: "8px 14px", height: "1px", background: "linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)" }} />
+      <nav style={{ padding: "0 8px 6px", display: "flex", flexDirection: "column", gap: "1px" }}>
+        <NavItem item={ayarItem} onNavigate={onNavigate} />
+      </nav>
     </>
   );
 
@@ -637,7 +673,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       {/* ══ FLOATING QUICK-SWITCH (draggable, desktop only) ══ */}
       <div
         ref={containerRef}
-        className="hidden md:flex items-center"
+        className="hidden lg:flex items-center"
         style={{
           position: "fixed",
           zIndex: 200,
@@ -682,8 +718,10 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
 
       </div>
 
-      {/* ══ DESKTOP SIDEBAR ══ */}
-      <aside className="hidden md:flex flex-col h-full shrink-0" style={{
+      {/* ══ DESKTOP SIDEBAR (≥1024px) ══
+          768–1023px arası TabletRail devralır; bu genişlikte 228px'lik sidebar
+          içerik alanına yer bırakmıyordu. */}
+      <aside className="hidden lg:flex flex-col h-full shrink-0" style={{
         width: "228px", minWidth: "228px",
         background: "var(--sidebar)",
         borderRight: "1px solid rgba(255,255,255,.06)",
