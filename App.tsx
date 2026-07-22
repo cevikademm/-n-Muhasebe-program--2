@@ -3,11 +3,14 @@ import { supabase } from "./services/supabaseService";
 import { Language, AccountRow, MenuKey, Company, Invoice } from "./types";
 import { translations } from "./constants";
 import {
-  Calculator, Users,
+  Calculator, Users, Share2,
 } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
+import { DavetEkrani } from "./components/DavetEkrani";
 import { LandingPage } from "./components/LandingPage";
 import { LeftPanel } from "./components/LeftPanel";
+import { TabletRail } from "./components/TabletRail";
+import { KapaliModulPanel } from "./components/KapaliModulPanel";
 import { CenterPanel } from "./components/CenterPanel";
 import { RightPanel } from "./components/RightPanel";
 import { CompanyCenterPanel } from "./components/CompanyCenterPanel";
@@ -23,6 +26,7 @@ import { HesapPlanlari2Panel } from "./components/HesapPlanlari2Panel";
 import { InvoiceCenterPanel } from "./components/InvoiceCenterPanel";
 import { InvoiceRightPanel } from "./components/InvoiceRightPanel";
 import { MusteriBulmaPanel } from "./components/MusteriBulmaPanel";
+import { SosyalMedyaPanel } from "./components/sosyal/SosyalMedyaPanel";
 
 // New Legal Pages
 import { AboutUsPanel } from "./components/AboutUsPanel";
@@ -35,6 +39,34 @@ import { useCompanies } from "./services/useCompanies";
 import { useInvoices } from "./services/useInvoices";
 import { resolveTeamContext, autoLinkInvites, TeamContext } from "./services/authContext";
 import { runIsolationGuard } from "./services/isolationGuard";
+import { useModuller } from "./services/useModuller";
+import { MODULLER, MODUL_TANIM, MENU_MODUL, ilkAcikMenu, menuErisilebilir } from "./services/moduller";
+
+/**
+ * Davet linki: /app?davet=<token>. Mount anında bir kez okunur.
+ *
+ * Google OAuth dönüşünde adres çubuğundaki token kaybolabilir (Supabase
+ * "Redirect URLs" listesi eksikse sağlayıcı Site URL'e düşer). Bu durumda
+ * müşteri ortada kalmasın diye, OAuth'a giderken saklanan token 15 dakika
+ * boyunca yedek olarak kullanılır.
+ */
+const DAVET_BEKLEYEN = "davet_bekleyen";
+const davetTokeniOku = (): string => {
+  try {
+    const url = new URLSearchParams(window.location.search).get("davet");
+    if (url) return url;
+
+    const ham = sessionStorage.getItem(DAVET_BEKLEYEN);
+    if (!ham) return "";
+    const { token, ts } = JSON.parse(ham);
+    // Eski bir kayıt normal girişte davet ekranını açmasın.
+    if (!token || Date.now() - Number(ts || 0) > 15 * 60 * 1000) {
+      sessionStorage.removeItem(DAVET_BEKLEYEN);
+      return "";
+    }
+    return String(token);
+  } catch { return ""; }
+};
 
 export default function App() {
   const [lang, setLang] = useState<Language>("tr");
@@ -43,10 +75,12 @@ export default function App() {
   // /app doğrudan giriş ekranını açar; tanıtım/landing artık fikoai.de kök sayfasıdır.
   const [showLanding, setShowLanding] = useState(false);
   const [initialRegister, setInitialRegister] = useState(false);
+  const [davetToken, setDavetToken] = useState<string>(davetTokeniOku);
 
   // UI States
-  // İlk açılışta Müşteri Bulma ekranı gelir (staff kullanıcılar effect ile invoices'a yönlenir).
-  const [activeMenu, setActiveMenu] = useState<MenuKey>("musteriBulma");
+  // Açılış ekranı, kullanıcının açık modüllerinden türetilir (aşağıdaki effect).
+  // Buradaki başlangıç değeri yalnızca modüller yüklenene kadar geçerlidir.
+  const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
   const [userRole, setUserRole] = useState("user");
   const [teamCtx, setTeamCtx] = useState<TeamContext | null>(null);
   const [guardError, setGuardError] = useState<string | null>(null);
@@ -64,6 +98,18 @@ export default function App() {
   // VITE_SUPER_ADMIN_EMAIL env var bypass'ı kaldırıldı (YKS-03 düzeltmesi).
 
   const t = translations[lang];
+
+  // ─── Modül (paket) yetkileri ──────────────────────────────────────
+  // Arayüzü buna göre kısıtlıyoruz; asıl engel veritabanındaki RLS modül
+  // kapılarıdır (20260723_paket_yetkileri.sql).
+  const modulDurumu = useModuller(session, userRole);
+  const {
+    acik: acikModuller, talepler: modulTalepleri,
+    yukleniyor: modullerYukleniyor, talepEt,
+  } = modulDurumu;
+  // Modüller yüklenene kadar menü yönlendirmesi yapılmaz, aksi halde kullanıcı
+  // bir an "paket kapalı" ekranını görüp sonra yerine oturmuş olurdu.
+  const modullerHazir = !!session && !modullerYukleniyor;
 
   // ─── Custom Hooks ─────────────────────────────────────────────────
   const { data, dataLoading, fetchData } = useAccountPlans(session, activeMenu, userRole);
@@ -214,6 +260,33 @@ export default function App() {
     }
   }, [teamCtx?.role, activeMenu]);
 
+  // ─── Açılış ekranı: ilk açık modül ────────────────────────────────
+  // Oturum açıldığında modüller yüklenir yüklenmez kullanıcıyı sahip olduğu
+  // ilk platforma indir. Staff yönlendirmesi (yukarıda) bunun üstüne yazar.
+  const [acilisYapildi, setAcilisYapildi] = useState(false);
+  useEffect(() => {
+    if (!modullerHazir || acilisYapildi) return;
+    setAcilisYapildi(true);
+    if (teamCtx?.role === "staff") return;
+    setActiveMenu(ilkAcikMenu(acikModuller));
+  }, [modullerHazir, acilisYapildi, acikModuller, teamCtx?.role]);
+
+  // Oturum kapanınca bir sonraki giriş için açılış yönlendirmesi tekrar çalışsın.
+  useEffect(() => { if (!session) setAcilisYapildi(false); }, [session]);
+
+  // ─── Kapalı modüle gidilirse ilk açık modüle düş ──────────────────
+  // Admin hariç: admin'in RLS'te modül kapısı yok, menüsü de kısıtlanmaz.
+  useEffect(() => {
+    if (!modullerHazir || userRole === "admin" || teamCtx?.role === "staff") return;
+    if (!menuErisilebilir(activeMenu, acikModuller)) {
+      // Kapalı modülün ANA ekranındaysak KapaliModulPanel gösterilecek;
+      // sadece alt ekranlarda (örn. muhasebe → raporlar) geri düşürüyoruz.
+      const modul = MENU_MODUL[activeMenu];
+      const anaEkran = modul ? MODUL_TANIM[modul].anaMenu : null;
+      if (activeMenu !== anaEkran) setActiveMenu(ilkAcikMenu(acikModuller));
+    }
+  }, [modullerHazir, activeMenu, acikModuller, userRole, teamCtx?.role]);
+
   // ─── Logout ───────────────────────────────────────────────────────
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -243,6 +316,23 @@ export default function App() {
   const isRightPanelOpen = selectedRow || selectedCompany || selectedInvoice;
 
   const renderCenterPanel = () => {
+    // ── Modül kapısı ──
+    // Paketi kapalı bir ekran istenirse içerik yerine bilgilendirme/talep
+    // ekranı çizilir. Veri sızıntısına karşı asıl koruma RLS'te; bu yalnızca
+    // kullanıcıya ne olduğunu anlatan katman.
+    if (modullerHazir) {
+      const istenenModul = MENU_MODUL[activeMenu];
+      if (istenenModul && !acikModuller.has(istenenModul)) {
+        return (
+          <KapaliModulPanel
+            modul={istenenModul}
+            talepler={modulTalepleri}
+            onTalep={talepEt}
+          />
+        );
+      }
+    }
+
     if (activeMenu === "companies" && userRole === "admin") {
       return (
         <CompanyCenterPanel
@@ -284,6 +374,7 @@ export default function App() {
           userEmail={session?.user?.email}
           userRole={userRole}
           userId={session?.user?.id}
+          moduller={modulDurumu}
         />
       );
     }
@@ -357,6 +448,10 @@ export default function App() {
 
     if (activeMenu === "musteriBulma") {
       return <MusteriBulmaPanel ownerId={teamCtx?.effectiveOwnerId || session?.user?.id} />;
+    }
+
+    if (activeMenu === "sosyalMedya") {
+      return <SosyalMedyaPanel ownerId={teamCtx?.effectiveOwnerId || session?.user?.id} />;
     }
 
     if (activeMenu === "about") return <AboutUsPanel />;
@@ -434,7 +529,21 @@ export default function App() {
   return (
     <ToastProvider>
       <LangContext.Provider value={{ t, lang, setLang }}>
-        {!session && showLanding ? (
+        {/* Davet linki her şeyin önünde gelir: /app?davet=<token> ile gelen
+            kullanıcı giriş ekranını değil hesap kurulum ekranını görür.
+            Oturum açıkken de gösterilir — yükseltme davetlerine tıklayan
+            kullanıcı zaten giriş yapmış oluyor; ekranı kapatınca uygulamaya
+            geri döner. */}
+        {davetToken ? (
+          <DavetEkrani
+            token={davetToken}
+            onAuth={setSession}
+            onGiriseDon={() => {
+              setDavetToken("");
+              try { window.history.replaceState({}, "", "/app"); } catch {}
+            }}
+          />
+        ) : !session && showLanding ? (
           <LandingPage
             onGoToLogin={() => { setInitialRegister(false); setShowLanding(false); }}
             onGoToRegister={() => { setInitialRegister(true); setShowLanding(false); }}
@@ -452,6 +561,9 @@ export default function App() {
               fontFamily: "'Plus Jakarta Sans', sans-serif",
             }}
           >
+            {/* Sidebar ≥1024px · ikon rayı 768–1023px · üst bar + drawer <768px.
+                LeftPanel her iki uçtaki (sidebar + mobil) parçaları içerir;
+                aradaki tablet aralığını TabletRail doldurur. */}
             <LeftPanel
               activeMenu={activeMenu}
               setActiveMenu={handleMenuChange}
@@ -460,10 +572,22 @@ export default function App() {
               onLogout={handleLogout}
               onSelectCustomer={userRole === "admin" ? handleSelectCustomer : undefined}
               staffMode={teamCtx?.role === "staff"}
+              acikModuller={acikModuller}
             />
 
+            <TabletRail
+              activeMenu={activeMenu}
+              setActiveMenu={handleMenuChange}
+              userRole={userRole}
+              staffMode={teamCtx?.role === "staff"}
+              acikModuller={acikModuller}
+              onLogout={handleLogout}
+            />
+
+            {/* Sağ panel tablette de tam ekran overlay açılır: 64px ray + iki
+                panel 1024px altında okunmaz derecede sıkışıyordu. */}
             <div
-              className={`flex-1 flex flex-col overflow-hidden pb-0 pt-safe md:pt-0 ${isRightPanelOpen ? "hidden md:flex" : "flex"
+              className={`flex-1 flex flex-col overflow-hidden pb-0 pt-safe md:pt-0 ${isRightPanelOpen ? "hidden lg:flex" : "flex"
                 }`}
               style={{ minWidth: 0, minHeight: 0 }}
             >
@@ -472,16 +596,42 @@ export default function App() {
 
             <div
               className={`${isRightPanelOpen
-                ? "fixed inset-0 z-50 pt-safe md:pt-0 md:static md:w-auto md:block"
-                : "hidden md:block"
+                ? "fixed inset-0 z-50 pt-safe lg:pt-0 lg:static lg:w-auto lg:block"
+                : "hidden lg:block"
                 }`}
               style={{ background: "#111318", flexShrink: 0 }}
             >
               {renderRightPanel()}
             </div>
 
-            {/* ══ MOBILE BOTTOM NAV ══ */}
-            {!isRightPanelOpen && (
+            {/* ══ MOBILE BOTTOM NAV (<768px) ══
+                Sekmeler MODULLER'den türer ve yalnızca AÇIK paketler çizilir.
+                Tek sekme kalıyorsa bar hiç gösterilmez — seçenek sunmayan bir
+                gezinme çubuğu ekranın 56px'ini boşuna yer. */}
+            {!isRightPanelOpen && (() => {
+              const staff = teamCtx?.role === "staff";
+              const sekmeler = MODULLER
+                .filter((m) => acikModuller.has(m))
+                // Staff yalnızca Fatura Merkezi'ne erişir; diğer platformlar
+                // ona hiç gösterilmez (App'teki yönlendirmeyle aynı kural).
+                .filter((m) => !staff || m === "muhasebe")
+                .map((m) => ({
+                  modul: m,
+                  target: (staff && m === "muhasebe" ? "invoices" : MODUL_TANIM[m].anaMenu) as MenuKey,
+                  icon: m === "muhasebe" ? <Calculator size={18} />
+                      : m === "musteri_bulma" ? <Users size={18} />
+                      : <Share2 size={18} />,
+                  label: MODUL_TANIM[m].ad[lang],
+                  // Muhasebe, kendi ekranı olan platformların hiçbiri aktif
+                  // değilken seçili sayılır (dashboard/fatura/rapor/... hepsi).
+                  active: m === "muhasebe"
+                    ? MENU_MODUL[activeMenu] !== "musteri_bulma" && MENU_MODUL[activeMenu] !== "sosyal_medya"
+                    : activeMenu === MODUL_TANIM[m].anaMenu,
+                }));
+
+              if (sekmeler.length < 2) return null;
+
+              return (
               <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe flex items-stretch justify-around"
                 style={{
                   background: "rgba(7,10,16,.96)",
@@ -490,12 +640,7 @@ export default function App() {
                   padding: "0",
                   height: "56px",
                 }}>
-                {(teamCtx?.role === "staff" ? [
-                  { target: "invoices" as MenuKey, icon: <Calculator size={18} />, label: lang === "tr" ? "Muhasebe" : "Buchhaltung", active: activeMenu !== "musteriBulma" },
-                ] : [
-                  { target: "dashboard" as MenuKey, icon: <Calculator size={18} />, label: lang === "tr" ? "Muhasebe" : "Buchhaltung", active: activeMenu !== "musteriBulma" },
-                  { target: "musteriBulma" as MenuKey, icon: <Users size={18} />, label: lang === "tr" ? "Müşteri Bulma" : "Kundengewinnung", active: activeMenu === "musteriBulma" },
-                ]).map(item => {
+                {sekmeler.map(item => {
                   const isActive = item.active;
                   return (
                     <button
@@ -543,7 +688,8 @@ export default function App() {
                   );
                 })}
               </nav>
-            )}
+              );
+            })()}
           </div>
         )}
       </LangContext.Provider>

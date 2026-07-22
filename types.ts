@@ -109,7 +109,8 @@ export interface AccountRow {
 }
 
 export interface Company {
-  id: number;
+  // Canlı şemada companies.id uuid'dir — tip burada number olarak duruyordu.
+  id: string;
   user_id: string;
   company_name: string;
   tax_number: string | null;
@@ -183,7 +184,7 @@ export interface UserSettings {
   updated_at: string;
 }
 
-export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'musteriBulma' | 'settings' | 'adminView' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
+export type MenuKey = 'dashboard' | 'accountPlans' | 'hesapPlanlari2' | 'companies' | 'reports' | 'forms' | 'bankDocuments' | 'invoices' | 'musteriBulma' | 'sosyalMedya' | 'settings' | 'adminView' | 'campaigns' | 'about' | 'deliveryReturn' | 'privacy' | 'distanceSelling';
 
 export interface UserProfile {
   id: string;

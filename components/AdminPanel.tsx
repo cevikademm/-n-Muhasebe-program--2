@@ -10,6 +10,7 @@ import { supabase } from "../services/supabaseService";
 import { Company, AccountRow, Invoice, InvoiceItem } from "../types";
 import { SuSaReport } from "./SuSaReport";
 import { AdminCreateUserModal } from "./admin/AdminCreateUserModal";
+import { AdminPaketlerTab } from "./admin/AdminPaketlerTab";
 
 interface AdminPanelProps {
   accountPlans: AccountRow[];
@@ -136,6 +137,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
 
   // Yeni kullanıcı oluşturma modalı
   const [showCreateUser,   setShowCreateUser]   = useState(false);
+  // Üst seviye görünüm: mevcut 3 kolonlu şirket/fatura ekranı mı, paket &
+  // davet yönetimi mi. Panelin geri kalanı olduğu gibi korunuyor.
+  const [ustSekme, setUstSekme] = useState<"sirketler" | "paketler">("sirketler");
 
   const flash = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -504,7 +508,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          {/* Üst seviye görünüm anahtarı */}
+          <div className="flex rounded-md overflow-hidden" style={{ border:"1px solid #1c1f27" }}>
+            {([
+              { key: "sirketler" as const, label: tr("Şirketler","Firmen") },
+              { key: "paketler"  as const, label: tr("Paketler & Davetler","Pakete & Einladungen") },
+            ]).map(v => (
+              <button key={v.key} onClick={() => setUstSekme(v.key)}
+                className="px-3 py-1.5 text-xs font-semibold"
+                style={ustSekme === v.key
+                  ? { background:"rgba(6,182,212,.14)", color:"#06b6d4", border:"none", cursor:"pointer" }
+                  : { background:"transparent", color:"#64748b", border:"none", cursor:"pointer" }}>
+                {v.label}
+              </button>
+            ))}
+          </div>
           <div className="text-xs font-mono px-3 py-1.5 rounded-full"
             style={{ background:"rgba(6,182,212,.08)", color:"#06b6d4", border:"1px solid rgba(6,182,212,.15)" }}>
             {loadingCo ? "..." : `${companies.length} ${tr("şirket","Firmen")}`}
@@ -537,8 +556,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ accountPlans, onReanalyz
         />
       )}
 
+      {ustSekme === "paketler" && (
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          <AdminPaketlerTab />
+        </div>
+      )}
+
       {/* ── Body: 3 kolon */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative"
+        style={{ display: ustSekme === "sirketler" ? undefined : "none" }}>
 
         {/* ════════════ KOL 1: ŞİRKETLER ════════════ */}
         <div className={`w-full md:w-72 shrink-0 flex-col overflow-hidden ${selectedCompany ? 'hidden md:flex' : 'flex'}`}
