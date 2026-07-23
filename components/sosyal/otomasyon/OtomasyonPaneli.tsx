@@ -12,6 +12,7 @@ import type { MusteriId } from "../../../services/sosyal/types";
 import { FONT_BASLIK, FONT_METIN, SM_RENK, buton, kart, girdi } from "../ortak";
 import { useEkran } from "../ekran";
 import { EtiketGirdisi } from "./EtiketGirdisi";
+import { KotaKarti } from "./KotaKarti";
 
 interface Props {
   ownerId: string | undefined;
@@ -188,6 +189,10 @@ export const OtomasyonPaneli: React.FC<Props> = ({ ownerId, customerId, lang }) 
         flex: 1, minWidth: 0, width: ekran.dar ? "100%" : undefined,
         display: "flex", flexDirection: "column", gap: 12,
       }}>
+        {/* Kalan kullanım hakları — otomasyonu durduran kotalar en üstte,
+            çünkü kural ayarlamadan önce hakkın var mı ona bakılır. */}
+        <KotaKarti lang={lang} />
+
         {/* Ana anahtar */}
         <div style={{ ...kart, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
           {baslikSatiri(
