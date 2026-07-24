@@ -7,6 +7,7 @@ import { TubesBackground } from "./TubesBackground";
 import {
   ArrowLeft,
   ArrowRight,
+  Check,
   Loader2,
   Lock,
   X,
@@ -22,13 +23,21 @@ interface AuthScreenProps { onAuth: (session: any) => void; initialRegister?: bo
 
 type ScreenState = "auth" | "register-modal";
 
+// "Beni hatırla" — yalnızca e-posta saklanır. Şifre asla localStorage'a yazılmaz;
+// şifreyi tarayıcının parola yöneticisi (autocomplete="current-password") doldurur.
+const REMEMBER_KEY = "fikoai.rememberedEmail";
+const readRememberedEmail = (): string => {
+  try { return localStorage.getItem(REMEMBER_KEY) || ""; } catch { return ""; }
+};
+
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister, onBack }) => {
   const { t, lang, setLang } = useLang();
 
   // ─── Auth Form ────────────────────────────────────────
   const [isLogin, setIsLogin] = useState(!initialRegister);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(readRememberedEmail);
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(() => readRememberedEmail() !== "");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,6 +72,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (!error && data.session) {
+        try {
+          if (rememberMe) localStorage.setItem(REMEMBER_KEY, email.trim());
+          else localStorage.removeItem(REMEMBER_KEY);
+        } catch {}
         try { await autoLinkInvites(data.session); } catch {}
         onAuth(data.session);
         return;
@@ -223,35 +236,75 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuth, initialRegister,
 
               {error && <div className="mb-4 px-4 py-3 rounded-lg text-xs" style={{ background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.25)", color: "#f87171" }}>{error}</div>}
 
-              <div className="flex-1 space-y-4">
-                <div>
-                  <label className="c-label">{t.email}</label>
-                  <div className="glow-wrap">
-                    <input type="email" className="c-input" placeholder="name@firma.de"
-                      autoComplete="off" value={email} onChange={e => setEmail(e.target.value)} />
+              {/* Gerçek <form> + doğru autocomplete → tarayıcı parola yöneticisi
+                  bilgileri kaydedip bir sonraki girişte otomatik doldurur. */}
+              <form
+                className="flex flex-col flex-1"
+                onSubmit={e => { e.preventDefault(); if (!loading) handleLoginSubmit(); }}
+              >
+                <div className="flex-1 space-y-4">
+                  <div>
+                    <label className="c-label" htmlFor="login-email">{t.email}</label>
+                    <div className="glow-wrap">
+                      <input id="login-email" name="username" type="email" className="c-input" placeholder="name@firma.de"
+                        autoComplete="username" inputMode="email" value={email} onChange={e => setEmail(e.target.value)} />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="c-label">{t.password}</label>
-                  <div className="glow-wrap">
-                    <input type="password" className="c-input" placeholder="••••••••"
-                      autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleLoginSubmit()} />
+                  <div>
+                    <label className="c-label" htmlFor="login-password">{t.password}</label>
+                    <div className="glow-wrap">
+                      <input id="login-password" name="password" type="password" className="c-input" placeholder="••••••••"
+                        autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="mt-6 space-y-3">
-                <button onClick={handleLoginSubmit} disabled={loading}
-                  className="c-btn-primary w-full py-3 text-sm font-semibold rounded-lg flex items-center justify-center gap-2">
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 size={16} className="animate-spin" />
-                      {t.loading}
+                  {/* ── Beni hatırla ── */}
+                  <label
+                    htmlFor="remember-me"
+                    className="flex items-center gap-2.5 cursor-pointer select-none pt-1"
+                  >
+                    <span
+                      style={{
+                        position: "relative",
+                        width: "18px",
+                        height: "18px",
+                        flexShrink: 0,
+                        borderRadius: "5px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: rememberMe ? "#7c5cff" : "rgba(255,255,255,0.04)",
+                        border: rememberMe ? "1px solid #7c5cff" : "1px solid rgba(255,255,255,0.18)",
+                        transition: "background .15s, border-color .15s",
+                      }}
+                    >
+                      <input
+                        id="remember-me"
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={e => setRememberMe(e.target.checked)}
+                        style={{ position: "absolute", inset: 0, opacity: 0, margin: 0, cursor: "pointer" }}
+                      />
+                      {rememberMe && <Check size={12} strokeWidth={3} color="#fff" />}
                     </span>
-                  ) : <>{tr("Giriş Yap", "Anmelden")} <ArrowRight size={16} /></>}
-                </button>
-              </div>
+                    <span className="text-xs font-medium" style={{ color: rememberMe ? "#c7d0e8" : "#94a3b8" }}>
+                      {tr("Beni hatırla", "Angemeldet bleiben")}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  <button type="submit" disabled={loading}
+                    className="c-btn-primary w-full py-3 text-sm font-semibold rounded-lg flex items-center justify-center gap-2">
+                    {loading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 size={16} className="animate-spin" />
+                        {t.loading}
+                      </span>
+                    ) : <>{tr("Giriş Yap", "Anmelden")} <ArrowRight size={16} /></>}
+                  </button>
+                </div>
+              </form>
 
               <button
                 disabled

@@ -14,6 +14,8 @@ import { HesapListesi } from "./hesaplar/HesapListesi";
 import { YayinKuyrugu } from "./yayin/YayinKuyrugu";
 import { OnayKutusu } from "./onay/OnayKutusu";
 import { OtomasyonPaneli } from "./otomasyon/OtomasyonPaneli";
+import { TakvimPaneli } from "./takvim/TakvimPaneli";
+import { AnalizPaneli } from "./analiz/AnalizPaneli";
 
 type Sekme = "medya" | "onay" | "yayin" | "otomasyon" | "hesaplar" | "takvim" | "analiz";
 
@@ -47,8 +49,8 @@ export const SosyalMedyaPanel: React.FC<Props> = ({ ownerId }) => {
     { id: "yayin",    tr: "Yayın Kuyruğu",     de: "Queue",            kisa: "Yayın",    ikon: Send,         hazir: true },
     { id: "otomasyon", tr: "Otomasyon",        de: "Automatik",        kisa: "Otomasyon", ikon: Wand2,       hazir: true },
     { id: "hesaplar", tr: "Hesaplar",          de: "Konten",           kisa: "Hesaplar", ikon: Share2,       hazir: true },
-    { id: "takvim",   tr: "Takvim",            de: "Kalender",         kisa: "Takvim",   ikon: CalendarDays, hazir: false },
-    { id: "analiz",   tr: "Analiz",            de: "Analyse",          kisa: "Analiz",   ikon: BarChart3,    hazir: false },
+    { id: "takvim",   tr: "Takvim",            de: "Kalender",         kisa: "Takvim",   ikon: CalendarDays, hazir: true },
+    { id: "analiz",   tr: "Analiz",            de: "Analyse",          kisa: "Analiz",   ikon: BarChart3,    hazir: true },
   ];
 
   return (
@@ -135,20 +137,11 @@ export const SosyalMedyaPanel: React.FC<Props> = ({ ownerId }) => {
         {sekme === "hesaplar" && (
           <HesapListesi ownerId={ownerId} customerId={musteriId} lang={lang} />
         )}
-        {(sekme === "takvim" || sekme === "analiz") && (
-          <div style={{
-            height: "100%", display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center", gap: 6,
-            padding: 20, textAlign: "center",
-          }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-2)", fontFamily: FONT_METIN }}>
-              {tr("Sonraki fazda", "In der nächsten Phase")}
-            </span>
-            <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: FONT_BASLIK }}>
-              {tr("Zamanlanmış takvim ve analitik Faz 5'te açılacak.",
-                  "Geplanter Kalender und Analytics folgen in Phase 5.")}
-            </span>
-          </div>
+        {sekme === "takvim" && (
+          <TakvimPaneli ownerId={ownerId} customerId={musteriId} lang={lang} />
+        )}
+        {sekme === "analiz" && (
+          <AnalizPaneli ownerId={ownerId} customerId={musteriId} lang={lang} />
         )}
       </div>
     </div>

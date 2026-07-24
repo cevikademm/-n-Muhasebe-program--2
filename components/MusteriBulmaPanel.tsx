@@ -1,15 +1,43 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLang } from "../LanguageContext";
 import { supabase } from "../services/supabaseService";
 import {
   KAMPANYALAR, LANGS, ilkKampanya, kampanyaByCode, kampanyaDilleri,
-  kampanyaSablon, kampanyaEk, sunumSatiri,
+  kampanyaSablon, kampanyaEk, mesajMetni, SITE_HOST,
 } from "./musteriBulmaKampanyalar";
 import {
   Search, Users, Mail, Download, Loader2, MapPin, Phone, Globe,
   Star, X, Filter, MessageSquareText, Tag, Send, RefreshCw, ExternalLink,
   Copy, Languages, Save, Paperclip, Megaphone, Trash2,
+  Instagram, Youtube, UserCircle2, Heart, PlaySquare, StopCircle,
 } from "lucide-react";
+
+// ── Kaynaklar (platform sekmeleri) ───────────────────────────────
+// Her sekme kendi Apify aktörünü kullanır; edge fonksiyonu `kaynak`
+// parametresiyle doğru aktöre yönlendirir.
+type Kaynak = "maps" | "instagram" | "youtube";
+type Mod = "musteri" | "kendi";
+
+const KAYNAKLAR: {
+  id: Kaynak; label: string; color: string; icon: React.FC<any>;
+  // Maps'te "kendi hesabım" modu yok — yalnızca müşteri araması.
+  kendiVar: boolean;
+}[] = [
+  { id: "maps", label: "Google Maps", color: "#8b5cf6", icon: MapPin, kendiVar: false },
+  { id: "instagram", label: "Instagram", color: "#e1306c", icon: Instagram, kendiVar: true },
+  { id: "youtube", label: "YouTube", color: "#ff0000", icon: Youtube, kendiVar: true },
+];
+const kaynakMeta = (k?: Kaynak | null) => KAYNAKLAR.find((x) => x.id === (k || "maps")) || KAYNAKLAR[0];
+
+// Takipçi/abone sayısını kısaltır: 6650000 → "6,7 Mn"
+function kisaSayi(n?: number | null, lang = "tr"): string {
+  if (n == null || !isFinite(n)) return "—";
+  const m = lang === "tr" ? ["", " B", " Mn", " Mr"] : ["", "K", "M", "B"];
+  let i = 0, v = n;
+  while (v >= 1000 && i < 3) { v /= 1000; i++; }
+  const s = i === 0 ? String(Math.round(v)) : v.toFixed(v < 10 ? 1 : 0);
+  return s.replace(".", lang === "tr" ? "," : ".") + m[i];
+}
 
 // ── Types ────────────────────────────────────────────────────────
 interface Lead {
@@ -34,11 +62,18 @@ interface Lead {
   notlar: string | null;
   etiketler: string[] | null;
   created_at: string;
+  // Lead'in hangi platformdan geldiği + sosyal profil alanları
+  kaynak?: Kaynak | null;
+  kullanici_adi?: string | null;
+  takipci?: number | null;
+  profil_url?: string | null;
   // Bu lead'in geldiği arama grubu (lead_searches embed) — "aradığım grup"
   search?: {
     kategori: string | null;
     sehir: string | null;
     ulke: string | null;
+    kaynak?: Kaynak | null;
+    sorgu?: string | null;
     only_email?: boolean | null;
     only_phone?: boolean | null;
     only_website?: boolean | null;
@@ -48,6 +83,13 @@ interface Lead {
 interface LeadEmail {
   id: string; direction: string; to_email: string | null; from_email: string | null;
   subject: string | null; body: string | null; reply_category: string | null; created_at: string;
+}
+// Lead başına yazışma özeti: kaç mail attık (kaçıncı mail) + son gelen yanıt.
+interface MailStat {
+  out: number;                 // gönderilen mail sayısı → sıradaki "n+1. mail"
+  lastOut: string | null;      // son gönderim tarihi
+  inCount: number;             // gelen yanıt sayısı
+  lastIn: { subject: string | null; body: string; category: string | null; at: string } | null;
 }
 
 interface Props { ownerId?: string; }
@@ -75,17 +117,20 @@ function groupColor(key: string): string {
 interface LeadGroup { key: string; label: string; sub: string; title: string; }
 function leadGroup(l: { search?: Lead["search"] }, tr: (t: string, g: string) => string): LeadGroup | null {
   const s = l.search;
-  const kat = (s?.kategori || "").trim();
+  const src = (s?.kaynak || "maps") as Kaynak;
+  // Maps aramasını "kategori", Instagram/YouTube aramasını "sorgu" tanımlar.
+  const kat = (s?.kategori || s?.sorgu || "").trim();
   if (!kat) return null;
   const city = (s?.sehir || "").trim();
   const country = (s?.ulke || "").trim();
-  const key = `${kat}|${city}|${country}`.toLowerCase();
+  const key = `${src}|${kat}|${city}|${country}`.toLowerCase();
   const flags = [
     s?.only_email && tr("E-posta", "E-Mail"),
     s?.only_phone && tr("Telefon", "Telefon"),
     s?.only_website && "Web",
   ].filter(Boolean).join(", ");
   const title = [
+    kaynakMeta(src).label,
     kat,
     [city, country].filter(Boolean).join(", "),
     s?.min_puan ? `≥ ${s.min_puan} ★` : "",
@@ -96,15 +141,30 @@ function leadGroup(l: { search?: Lead["search"] }, tr: (t: string, g: string) =>
 
 // ── Taslak mesaj şablonları & kampanyalar musteriBulmaKampanyalar.ts'de ──
 // Lead'in ülkesinden taslak dilini tahmin eder.
+// ── Varsayılan konu + dil ────────────────────────────────────────
+// Hedef pazar Almanya: WhatsApp ve detay panelinde konu "AI Ekspertiz
+// Platformu", dil "Deutsch" olarak hazır gelir (kullanıcı değiştirebilir).
+const VARSAYILAN_KAMPANYA = "ai-ekspertiz";
+const VARSAYILAN_DIL = "de";
+const varsayilanKampanya = () => kampanyaByCode(VARSAYILAN_KAMPANYA) || ilkKampanya();
+
+// Ülke alanı kaynağa göre ISO kodu ("DE"), İngilizce ("Germany") ya da Türkçe
+// ("Almanya") gelebiliyor — üçünü de tanı. Aksanlar NFD ile sadeleştirilir.
+const ULKE_KODU_DIL: Record<string, string> = {
+  de: "de", at: "de", ch: "de", li: "de",
+  tr: "tr", fr: "fr", be: "nl", nl: "nl", it: "it", es: "es",
+  gb: "en", uk: "en", us: "en", ie: "en",
+};
 function guessMsgLang(lead: { ulke?: string | null }, fallback: string): string {
-  const u = (lead.ulke || "").toLowerCase();
-  if (/deu|german|österr|austria|schweiz|switz/.test(u)) return "de";
-  if (/türk|turk/.test(u)) return "tr";
+  const u = (lead.ulke || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+  if (u.length === 2 && ULKE_KODU_DIL[u]) return ULKE_KODU_DIL[u];
+  if (/deu|german|osterr|austria|schweiz|switz|almanya|avusturya|isvicre/.test(u)) return "de";
+  if (/turk/.test(u)) return "tr";
   if (/fran/.test(u)) return "fr";
-  if (/nether|nederl|holland|belg/.test(u)) return "nl";
+  if (/nether|nederl|holland|belg|felemenk/.test(u)) return "nl";
   if (/ital/.test(u)) return "it";
-  if (/span|españ|espan/.test(u)) return "es";
-  if (/king|britain|england|usa|united states|ireland/.test(u)) return "en";
+  if (/span|espan|ispanya/.test(u)) return "es";
+  if (/king|britain|england|usa|united states|ireland|ingiltere|amerika|irlanda/.test(u)) return "en";
   return LANGS.some((t) => t.code === fallback) ? fallback : "de";
 }
 const fillTpl = (s: string, lead: { isim?: string | null; sehir?: string | null; kategori?: string | null }) =>
@@ -113,14 +173,56 @@ const fillTpl = (s: string, lead: { isim?: string | null; sehir?: string | null;
     .replaceAll("{{sehir}}", lead.sehir || "")
     .replaceAll("{{kategori}}", lead.kategori || "");
 
+// ── Kampanya (konu) seçici — Toplu Mail, Toplu WhatsApp ve detay panelinde ortak ──
+// Son müşteriye giden (b2c) kampanyalar rozetle ayrılır: bu metinlerde marka
+// adı geçmez, imza alanı müşterinin kendi bürosuna aittir.
+const CampPicker: React.FC<{ value: string; onPick: (code: string) => void; tr: (t: string, g: string) => string }> = ({ value, onPick, tr }) => (
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    {KAMPANYALAR.map((k) => (
+      <button key={k.code} type="button" onClick={() => onPick(k.code)}
+        className={k.code === value ? "c-btn-primary" : "c-btn-ghost"}
+        title={tr(k.aciklama.tr, k.aciklama.de)}
+        style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
+        <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
+        {k.hedef === "b2c" && (
+          <span style={{ fontSize: ".6rem", fontWeight: 700, padding: "1px 5px", borderRadius: 5, background: "rgba(14,165,233,.16)", color: "#0284c7" }}>
+            {tr("SON MÜŞTERİ", "ENDKUNDE")}
+          </span>
+        )}
+      </button>
+    ))}
+  </div>
+);
+
+// Her mail/mesajın sonuna eklenen adres — kullanıcıya görünür not
+const ImzaNotu: React.FC<{ tr: (t: string, g: string) => string }> = ({ tr }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, padding: "7px 10px", borderRadius: 8, background: "rgba(6,182,212,.07)", border: "1px solid rgba(6,182,212,.22)", fontSize: ".76rem", color: "var(--text-2,#475569)" }}>
+    <Globe size={13} color="#06b6d4" />
+    {tr("Her mesajın sonuna otomatik eklenir:", "Wird automatisch an jede Nachricht angehängt:")}
+    <a href={`https://${SITE_HOST}`} target="_blank" rel="noopener noreferrer" style={{ color: "#06b6d4", fontWeight: 600, textDecoration: "none" }}>{SITE_HOST}</a>
+  </div>
+);
+
 export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
   const { lang } = useLang();
   const tr = (t: string, d: string) => (lang === "tr" ? t : d);
+
+  // Aktif platform sekmesi + mod
+  const [kaynak, setKaynak] = useState<Kaynak>("maps");
+  const [mod, setMod] = useState<Mod>("musteri");
+  const meta = kaynakMeta(kaynak);
+  // Maps'te kendi hesap modu yok → sekme değişince güvenli moda düş
+  const effMod: Mod = meta.kendiVar ? mod : "musteri";
 
   // Search form
   const [ulke, setUlke] = useState("Deutschland");
   const [sehir, setSehir] = useState("");
   const [kategori, setKategori] = useState("");
+  // Instagram/YouTube serbest sorgusu — her sekme kendi metnini korusun
+  const [sorgular, setSorgular] = useState<Record<string, string>>({});
+  const sorguKey = `${kaynak}:${effMod}`;
+  const sorgu = sorgular[sorguKey] ?? "";
+  const setSorgu = (v: string) => setSorgular((s) => ({ ...s, [sorguKey]: v }));
   const [maxResults, setMaxResults] = useState(30);
   const [minPuan, setMinPuan] = useState(0);
   const [onlyEmail, setOnlyEmail] = useState(false);
@@ -128,14 +230,20 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
   const [onlyWebsite, setOnlyWebsite] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
+  // mod="kendi" sonuçları (leads tablosuna yazılmaz, panelde gösterilir)
+  const [kendiSonuc, setKendiSonuc] = useState<any[] | null>(null);
 
   // Leads
   const [leads, setLeads] = useState<Lead[]>([]);
+  // lead_id → yazışma özeti (kaçıncı mail + son gelen yanıt)
+  const [mailStats, setMailStats] = useState<Record<string, MailStat>>({});
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filterDurum, setFilterDurum] = useState<string>("all");
+  const [filterMail, setFilterMail] = useState<string>("all");
   const [filterGroup, setFilterGroup] = useState<string>("all");
+  const [filterKaynak, setFilterKaynak] = useState<string>("all");
   const [q, setQ] = useState("");
 
   // Modals
@@ -167,7 +275,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
     setLoading(true); setLoadError(null);
     const { data, error } = await supabase
       .from("leads")
-      .select("*, search:lead_searches(kategori,sehir,ulke,only_email,only_phone,only_website,min_puan)")
+      .select("*, search:lead_searches(kategori,sehir,ulke,kaynak,sorgu,only_email,only_phone,only_website,min_puan)")
       .eq("user_id", ownerId)
       .order("created_at", { ascending: false });
     if (error) setLoadError(error.message);
@@ -184,32 +292,93 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
     setLoading(false);
   }, [ownerId]);
 
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+  // Yazışma özeti: her lead için kaç mail gitti (→ "kaçıncı mail") ve son gelen
+  // yanıtın metni. Giden maillerin gövdesi çekilmez (gereksiz yük), sadece sayılır.
+  const fetchMailStats = useCallback(async () => {
+    if (!ownerId) return;
+    const [outRes, inRes] = await Promise.all([
+      supabase.from("lead_emails").select("lead_id,created_at")
+        .eq("user_id", ownerId).eq("direction", "outbound")
+        .order("created_at", { ascending: true }).limit(10000),
+      supabase.from("lead_emails").select("lead_id,subject,body,reply_category,created_at")
+        .eq("user_id", ownerId).eq("direction", "inbound")
+        .order("created_at", { ascending: true }).limit(2000),
+    ]);
+    const map: Record<string, MailStat> = {};
+    const at = (id: string) => (map[id] ||= { out: 0, lastOut: null, inCount: 0, lastIn: null });
+    for (const r of (outRes.data as any[]) || []) {
+      if (!r.lead_id) continue;
+      const s = at(r.lead_id); s.out++; s.lastOut = r.created_at;
+    }
+    for (const r of (inRes.data as any[]) || []) {
+      if (!r.lead_id) continue;
+      const s = at(r.lead_id); s.inCount++;
+      s.lastIn = { subject: r.subject, body: r.body || "", category: r.reply_category, at: r.created_at };
+    }
+    setMailStats(map);
+  }, [ownerId]);
 
-  // Realtime
+  useEffect(() => { fetchLeads(); fetchMailStats(); }, [fetchLeads, fetchMailStats]);
+
+  // Realtime — hem lead kayıtları hem yazışmalar (gelen yanıt anında düşsün)
   useEffect(() => {
     if (!ownerId) return;
     const ch = supabase
       .channel("leads-" + ownerId)
       .on("postgres_changes", { event: "*", schema: "public", table: "leads", filter: `user_id=eq.${ownerId}` },
         () => fetchLeads())
+      .on("postgres_changes", { event: "*", schema: "public", table: "lead_emails", filter: `user_id=eq.${ownerId}` },
+        () => fetchMailStats())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [ownerId, fetchLeads]);
+  }, [ownerId, fetchLeads, fetchMailStats]);
 
   // ── Search ─────────────────────────────────────────────────────
+  // Her arama bir "run" numarası alır. Durdur'a basılınca numara artar →
+  // devam eden poll döngüsü kendini geçersiz sayıp sessizce çıkar.
+  const runIdRef = useRef(0);
+  const pollTimerRef = useRef<any>(null);
+
+  const stopSearch = () => {
+    runIdRef.current++;
+    if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
+    setSearching(false);
+    setSearchMsg(tr("Arama durduruldu. Bulunanlar listede.", "Suche gestoppt. Gefundene Einträge sind in der Liste."));
+    // Durdurana kadar eklenen leadler görünsün
+    if (effMod === "musteri") fetchLeads();
+  };
+
+  // Panel kapanırsa bekleyen poll'u temizle
+  useEffect(() => () => {
+    runIdRef.current++;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+  }, []);
+
   const runSearch = async () => {
-    if (!kategori.trim()) { setSearchMsg(tr("Kategori girin (ör. restoran, kuaför).", "Kategorie eingeben.")); return; }
-    if (!sehir.trim() && !ulke.trim()) { setSearchMsg(tr("Şehir veya ülke girin.", "Stadt oder Land eingeben.")); return; }
-    setSearching(true); setSearchMsg(tr("Arama başlatılıyor…", "Suche wird gestartet…"));
+    // Kaynağa göre zorunlu alanlar
+    if (kaynak === "maps") {
+      if (!kategori.trim()) { setSearchMsg(tr("Kategori girin (ör. restoran, kuaför).", "Kategorie eingeben.")); return; }
+      if (!sehir.trim() && !ulke.trim()) { setSearchMsg(tr("Şehir veya ülke girin.", "Stadt oder Land eingeben.")); return; }
+    } else if (!sorgu.trim()) {
+      setSearchMsg(effMod === "kendi"
+        ? tr("Hesap adınızı girin.", "Bitte Kontonamen eingeben.")
+        : tr("Arama kelimesi girin.", "Bitte Suchbegriff eingeben."));
+      return;
+    }
+    const myRun = ++runIdRef.current;
+    const iptal = () => myRun !== runIdRef.current;
+    setSearching(true); setKendiSonuc(null);
+    setSearchMsg(tr("Arama başlatılıyor…", "Suche wird gestartet…"));
     try {
       const { data, error } = await supabase.functions.invoke("find-customers", {
         body: {
-          action: "start", ulke, sehir, kategori,
+          action: "start", kaynak, mod: effMod, sorgu,
+          ulke, sehir, kategori,
           max_results: maxResults, min_puan: minPuan,
           only_email: onlyEmail, only_phone: onlyPhone, only_website: onlyWebsite, lang,
         },
       });
+      if (iptal()) return;
       if (error || !data?.success) {
         setSearchMsg(tr("Başlatılamadı: ", "Fehler: ") + (data?.error || error?.message || ""));
         setSearching(false); return;
@@ -217,24 +386,37 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
       const searchId = data.searchId;
       let tries = 0;
       const poll = async () => {
+        if (iptal()) return;
         tries++;
         const { data: p } = await supabase.functions.invoke("find-customers", { body: { action: "poll", searchId } });
+        if (iptal()) return;
         if (p?.status === "done") {
+          if (effMod === "kendi") {
+            setKendiSonuc(Array.isArray(p.sonuc) ? p.sonuc : []);
+            setSearchMsg(p.sonuc?.length
+              ? tr("✓ Hesap verisi çekildi.", "✓ Kontodaten geladen.")
+              : tr("Hesap bulunamadı.", "Konto nicht gefunden."));
+            setSearching(false); return;
+          }
           const dup = p.duplicates ? tr(` · ${p.duplicates} zaten listede`, ` · ${p.duplicates} bereits vorhanden`) : "";
-          setSearchMsg(tr(`✓ ${p.count} yeni müşteri${dup}.`, `✓ ${p.count} neue Kunden${dup}.`));
+          // Mevcut kayıtların eksik e-posta/telefonu bu aramada dolduysa bildir
+          const enr = p.enriched ? tr(` · ${p.enriched} kaydın iletişimi güncellendi`, ` · ${p.enriched} Kontakte ergänzt`) : "";
+          setSearchMsg(tr(`✓ ${p.count} yeni müşteri${dup}${enr}.`, `✓ ${p.count} neue Kunden${dup}${enr}.`));
           await fetchLeads(); setSearching(false); return;
         }
         if ((p && p.status === "error") || tries > 45) {
           setSearchMsg(p?.error || tr("Arama tamamlanamadı.", "Suche fehlgeschlagen."));
           // Poll bitmese/timeout olsa bile edge fonksiyonu leadleri arka
           // planda eklemiş olabilir → listeyi yine de tazele ki gizli kalmasın.
-          await fetchLeads(); setSearching(false); return;
+          if (effMod === "musteri") await fetchLeads();
+          setSearching(false); return;
         }
-        setSearchMsg(tr(`Google Maps taranıyor… (${tries})`, `Google Maps wird durchsucht… (${tries})`));
-        setTimeout(poll, 5000);
+        setSearchMsg(tr(`${meta.label} taranıyor… (${tries})`, `${meta.label} wird durchsucht… (${tries})`));
+        pollTimerRef.current = setTimeout(poll, 5000);
       };
-      setTimeout(poll, 4000);
+      pollTimerRef.current = setTimeout(poll, 4000);
     } catch (e: any) {
+      if (iptal()) return;
       setSearchMsg(tr("Hata: ", "Fehler: ") + (e?.message || String(e)));
       setSearching(false);
     }
@@ -316,11 +498,27 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
     const needle = q.trim().toLowerCase();
     return leads.filter((l) => {
       if (filterDurum !== "all" && l.durum !== filterDurum) return false;
+      if (filterKaynak !== "all" && (l.kaynak || "maps") !== filterKaynak) return false;
       if (filterGroup !== "all") { const g = leadGroup(l, tr); if (!g || g.key !== filterGroup) return false; }
-      if (needle && !(`${l.isim} ${l.adres || ""} ${l.kategori || ""} ${l.email || ""}`.toLowerCase().includes(needle))) return false;
+      if (filterMail !== "all") {
+        const st = mailStats[l.id];
+        const gitti = (st?.out || 0) > 0 || l.mail_durumu !== "gonderilmedi";
+        const yanit = (st?.inCount || 0) > 0 || l.mail_durumu === "yanit_geldi";
+        if (filterMail === "yanit" && !yanit) return false;                 // cevap verenler
+        if (filterMail === "bekliyor" && (!gitti || yanit)) return false;   // mail gitti, cevap yok
+        if (filterMail === "gonderilmedi" && gitti) return false;           // hiç mail gitmedi
+      }
+      if (needle && !(`${l.isim} ${l.adres || ""} ${l.kategori || ""} ${l.email || ""} ${l.kullanici_adi || ""}`.toLowerCase().includes(needle))) return false;
       return true;
     });
-  }, [leads, filterDurum, filterGroup, q, lang]);
+  }, [leads, mailStats, filterDurum, filterKaynak, filterGroup, filterMail, q, lang]);
+
+  // Kaynak filtresi yalnızca birden fazla platformdan lead varsa anlamlı
+  const kaynakSayilari = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of leads) m.set(l.kaynak || "maps", (m.get(l.kaynak || "maps") || 0) + 1);
+    return m;
+  }, [leads]);
 
   const allChecked = filtered.length > 0 && filtered.every((l) => selected.has(l.id));
   const toggleAll = () => {
@@ -348,9 +546,16 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
   const exportXlsx = async () => {
     const XLSX = await import("xlsx");
     const rows = (selected.size ? selectedLeads : filtered).map((l) => ({
+      Platform: kaynakMeta(l.kaynak).label,
       İsim: l.isim, Kategori: l.kategori, Adres: l.adres, Telefon: l.telefon,
       "E-posta": l.email, Website: l.website, Puan: l.puan, "Yorum": l.yorum_sayisi,
-      Şehir: l.sehir, Durum: l.durum, "Mail Durumu": l.mail_durumu, "Yanıt": l.yanit_kategorisi,
+      "Kullanıcı adı": l.kullanici_adi, "Takipçi": l.takipci, "Profil": l.profil_url,
+      Şehir: l.sehir, Durum: l.durum, "Mail Durumu": l.mail_durumu,
+      "Gönderilen mail": mailStats[l.id]?.out ?? 0,
+      "Son gönderim": mailStats[l.id]?.lastOut ? kisaTarih(mailStats[l.id]!.lastOut) : "",
+      "Yanıt": l.yanit_kategorisi,
+      "Yanıt tarihi": mailStats[l.id]?.lastIn ? kisaTarih(mailStats[l.id]!.lastIn!.at) : "",
+      "Gelen mesaj": mailStats[l.id]?.lastIn?.body || "",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -361,9 +566,9 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
   const stats = useMemo(() => ({
     total: leads.length,
     withEmail: leads.filter((l) => l.email).length,
-    contacted: leads.filter((l) => l.mail_durumu !== "gonderilmedi").length,
-    replied: leads.filter((l) => l.mail_durumu === "yanit_geldi").length,
-  }), [leads]);
+    contacted: leads.filter((l) => (mailStats[l.id]?.out || 0) > 0 || l.mail_durumu !== "gonderilmedi").length,
+    replied: leads.filter((l) => (mailStats[l.id]?.inCount || 0) > 0 || l.mail_durumu === "yanit_geldi").length,
+  }), [leads, mailStats]);
 
   // ── UI ─────────────────────────────────────────────────────────
   return (
@@ -376,7 +581,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         <div style={{ minWidth: 0 }}>
           <h1 style={{ fontSize: isMobile ? "1.15rem" : "1.35rem", fontWeight: 700, margin: 0 }}>{tr("Müşteri Bulma", "Kundengewinnung")}</h1>
           <p style={{ margin: 0, fontSize: isMobile ? ".78rem" : ".85rem", color: "var(--text-3,#64748b)" }}>
-            {tr("Google Maps’ten hedef şehir & kategoride işletme bul, pipeline’a ekle, toplu mail at.", "Unternehmen aus Google Maps finden und kontaktieren.")}
+            {tr("Google Maps, Instagram ve YouTube’dan müşteri bul, pipeline’a ekle, toplu mail at.", "Kunden aus Google Maps, Instagram und YouTube finden und kontaktieren.")}
           </p>
         </div>
       </div>
@@ -396,44 +601,171 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         ))}
       </div>
 
+      {/* ── Platform sekmeleri ───────────────────────────────────── */}
+      <div style={{ display: "flex", gap: isMobile ? 6 : 8, marginBottom: -1, flexWrap: "wrap" }}>
+        {KAYNAKLAR.map((k) => {
+          const Ico = k.icon;
+          const on = kaynak === k.id;
+          return (
+            <button key={k.id} onClick={() => { setKaynak(k.id); setKendiSonuc(null); setSearchMsg(null); }}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer",
+                padding: isMobile ? "9px 12px" : "10px 16px",
+                fontSize: isMobile ? ".82rem" : ".88rem", fontWeight: on ? 700 : 600,
+                borderRadius: "11px 11px 0 0",
+                border: "1px solid var(--line,#e2e8f0)", borderBottom: on ? "1px solid transparent" : undefined,
+                background: on ? "var(--card,#fff)" : "transparent",
+                color: on ? k.color : "var(--text-3,#64748b)",
+                position: "relative", zIndex: on ? 2 : 1,
+              }}>
+              <Ico size={15} /> {k.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Search form */}
-      <div className="c-card" style={{ padding: isMobile ? 14 : 18, marginBottom: isMobile ? 14 : 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, fontWeight: 600 }}>
-          <Search size={16} color="#8b5cf6" /> {tr("Yeni Arama", "Neue Suche")}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
-          <Field label={tr("Kategori / sektör *", "Kategorie *")}>
-            <input className="c-input" placeholder={tr("restoran, kuaför, avukat…", "Restaurant, Friseur…")} value={kategori} onChange={(e) => setKategori(e.target.value)} />
-          </Field>
-          <Field label={tr("Şehir", "Stadt")}>
-            <input className="c-input" placeholder="Köln" value={sehir} onChange={(e) => setSehir(e.target.value)} />
-          </Field>
-          <Field label={tr("Ülke", "Land")}>
-            <input className="c-input" placeholder="Deutschland" value={ulke} onChange={(e) => setUlke(e.target.value)} />
-          </Field>
-          <Field label={tr("Maks. sonuç", "Max. Ergebnisse")}>
-            <input className="c-input" type="number" min={1} max={120} value={maxResults} onChange={(e) => setMaxResults(Math.min(120, Math.max(1, +e.target.value || 1)))} />
-          </Field>
-          <Field label={tr("Min. puan", "Min. Bewertung")}>
-            <select className="c-input" value={minPuan} onChange={(e) => setMinPuan(+e.target.value)}>
-              {[0, 3, 3.5, 4, 4.5].map((v) => <option key={v} value={v}>{v === 0 ? tr("Hepsi", "Alle") : `≥ ${v} ★`}</option>)}
-            </select>
-          </Field>
-          <Field label={tr("Filtreler", "Filter")}>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", height: 38 }}>
-              <Check label={tr("E-posta", "E-Mail")} checked={onlyEmail} onChange={setOnlyEmail} />
-              <Check label={tr("Telefon", "Telefon")} checked={onlyPhone} onChange={setOnlyPhone} />
-              <Check label="Web" checked={onlyWebsite} onChange={setOnlyWebsite} />
-            </div>
-          </Field>
-        </div>
+      <div className="c-card" style={{ padding: isMobile ? 14 : 18, marginBottom: isMobile ? 14 : 18, borderTopLeftRadius: 0 }}>
+        {/* Mod seçici — yalnızca Instagram/YouTube'da iki mod var */}
+        {meta.kendiVar ? (
+          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+            {([
+              { id: "musteri" as Mod, label: tr("Müşteri bul", "Kunden finden"), icon: Users },
+              { id: "kendi" as Mod, label: tr("Kendi hesabım", "Mein Konto"), icon: UserCircle2 },
+            ]).map((m) => {
+              const Ico = m.icon;
+              const on = effMod === m.id;
+              return (
+                <button key={m.id} onClick={() => { setMod(m.id); setKendiSonuc(null); setSearchMsg(null); }}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer",
+                    padding: "7px 13px", fontSize: ".82rem", fontWeight: 600, borderRadius: 9,
+                    border: `1px solid ${on ? meta.color : "var(--line,#e2e8f0)"}`,
+                    background: on ? `${meta.color}14` : "transparent",
+                    color: on ? meta.color : "var(--text-3,#64748b)",
+                  }}>
+                  <Ico size={14} /> {m.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, fontWeight: 600 }}>
+            <Search size={16} color={meta.color} /> {tr("Yeni Arama", "Neue Suche")}
+          </div>
+        )}
+
+        {/* ── Kaynağa özel form ─────────────────────────────────── */}
+        {kaynak === "maps" ? (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
+            <Field label={tr("Kategori / sektör *", "Kategorie *")}>
+              <input className="c-input" placeholder={tr("restoran, kuaför, avukat…", "Restaurant, Friseur…")} value={kategori} onChange={(e) => setKategori(e.target.value)} />
+            </Field>
+            <Field label={tr("Şehir", "Stadt")}>
+              <input className="c-input" placeholder="Köln" value={sehir} onChange={(e) => setSehir(e.target.value)} />
+            </Field>
+            <Field label={tr("Ülke", "Land")}>
+              <input className="c-input" placeholder="Deutschland" value={ulke} onChange={(e) => setUlke(e.target.value)} />
+            </Field>
+            <Field label={tr("Maks. sonuç", "Max. Ergebnisse")}>
+              <input className="c-input" type="number" min={1} max={120} value={maxResults} onChange={(e) => setMaxResults(Math.min(120, Math.max(1, +e.target.value || 1)))} />
+            </Field>
+            <Field label={tr("Min. puan", "Min. Bewertung")}>
+              <select className="c-input" value={minPuan} onChange={(e) => setMinPuan(+e.target.value)}>
+                {[0, 3, 3.5, 4, 4.5].map((v) => <option key={v} value={v}>{v === 0 ? tr("Hepsi", "Alle") : `≥ ${v} ★`}</option>)}
+              </select>
+            </Field>
+            <Field label={tr("Filtreler", "Filter")}>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", height: 38 }}>
+                <Check label={tr("E-posta", "E-Mail")} checked={onlyEmail} onChange={setOnlyEmail} />
+                <Check label={tr("Telefon", "Telefon")} checked={onlyPhone} onChange={setOnlyPhone} />
+                <Check label="Web" checked={onlyWebsite} onChange={setOnlyWebsite} />
+              </div>
+            </Field>
+          </div>
+        ) : effMod === "kendi" ? (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 12 }}>
+            <Field label={kaynak === "instagram"
+              ? tr("Instagram hesabınız *", "Ihr Instagram-Konto *")
+              : tr("YouTube kanalınız *", "Ihr YouTube-Kanal *")}>
+              <input className="c-input" value={sorgu} onChange={(e) => setSorgu(e.target.value)}
+                placeholder={kaynak === "instagram" ? "@fikoai" : "@fikoai"} />
+            </Field>
+            {kaynak === "instagram" && (
+              <Field label={tr("Son gönderi sayısı", "Letzte Beiträge")}>
+                <input className="c-input" type="number" min={1} max={120} value={maxResults}
+                  onChange={(e) => setMaxResults(Math.min(120, Math.max(1, +e.target.value || 1)))} />
+              </Field>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 1fr", gap: 12 }}>
+            <Field label={kaynak === "instagram"
+              ? tr("Arama kelimesi *", "Suchbegriff *")
+              : tr("Niş / anahtar kelime *", "Nische / Keyword *")}>
+              <input className="c-input" value={sorgu} onChange={(e) => setSorgu(e.target.value)}
+                placeholder={kaynak === "instagram"
+                  ? tr("steuerberater köln, kfz gutachter…", "Steuerberater Köln, Kfz-Gutachter…")
+                  : tr("steuerberater, buchhaltung…", "Steuerberater, Buchhaltung…")} />
+            </Field>
+            <Field label={tr("Maks. sonuç", "Max. Ergebnisse")}>
+              <input className="c-input" type="number" min={1} max={120} value={maxResults}
+                onChange={(e) => setMaxResults(Math.min(120, Math.max(1, +e.target.value || 1)))} />
+            </Field>
+            <Field label={tr("Filtreler", "Filter")}>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", height: 38 }}>
+                <Check label={tr("E-posta", "E-Mail")} checked={onlyEmail} onChange={setOnlyEmail} />
+                <Check label="Web" checked={onlyWebsite} onChange={setOnlyWebsite} />
+              </div>
+            </Field>
+          </div>
+        )}
+
+        {/* Kaynağa özel ipucu */}
+        <p style={{ margin: "12px 0 0", fontSize: ".76rem", color: "var(--text-3,#94a3b8)", lineHeight: 1.5 }}>
+          {kaynak === "maps"
+            ? tr("İşletmenin web sitesi de taranır; e-posta ve telefon oradan çıkarılır.",
+                 "Die Website des Unternehmens wird mitgescannt — E-Mail und Telefon werden daraus extrahiert.")
+            : kaynak === "instagram"
+            ? effMod === "kendi"
+              ? tr("Profil bilgileriniz ve son gönderileriniz çekilir; müşteri listesine eklenmez.",
+                   "Ihr Profil und Ihre letzten Beiträge werden geladen — nicht zur Kundenliste hinzugefügt.")
+              : tr("Instagram profil e-postasını API vermez; e-posta bio metninden çıkarılır. Web sitesi çoğu profilde bulunur.",
+                   "Instagram gibt die Profil-E-Mail nicht über die API zurück — sie wird aus der Bio extrahiert.")
+            : effMod === "kendi"
+            ? tr("Kanal istatistikleriniz (abone, video, görüntülenme) çekilir; müşteri listesine eklenmez.",
+                 "Ihre Kanalstatistiken werden geladen — nicht zur Kundenliste hinzugefügt.")
+            : tr("Anahtar kelimeyle kanal keşfedilir; kanal hakkında bölümü ve bağlı web sitesi/Linktree taranarak e-posta bulunur.",
+                 "Kanäle werden per Keyword gefunden; About-Seite und verlinkte Website/Linktree werden nach E-Mails durchsucht.")}
+        </p>
+
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
           <button className="c-btn-primary" onClick={runSearch} disabled={searching} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, width: isMobile ? "100%" : undefined }}>
             {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
-            {searching ? tr("Aranıyor…", "Suche läuft…") : tr("Müşteri Ara", "Kunden suchen")}
+            {searching
+              ? tr("Aranıyor…", "Suche läuft…")
+              : effMod === "kendi"
+              ? tr("Hesabımı Çek", "Konto laden")
+              : tr("Müşteri Ara", "Kunden suchen")}
           </button>
-          {searchMsg && <span style={{ fontSize: ".85rem", color: searching ? "#8b5cf6" : "var(--text-2,#475569)" }}>{searchMsg}</span>}
+          {searching && (
+            <button onClick={stopSearch} title={tr("Aramayı durdur", "Suche stoppen")}
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                width: isMobile ? "100%" : undefined, cursor: "pointer",
+                padding: "0 16px", height: 38, borderRadius: 10, fontSize: ".86rem", fontWeight: 600,
+                border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626",
+              }}>
+              <StopCircle size={16} /> {tr("Durdur", "Stoppen")}
+            </button>
+          )}
+          {searchMsg && <span style={{ fontSize: ".85rem", color: searching ? meta.color : "var(--text-2,#475569)" }}>{searchMsg}</span>}
         </div>
+
+        {/* mod=kendi sonucu */}
+        {kendiSonuc && kendiSonuc.length > 0 && (
+          <KendiHesapKarti kaynak={kaynak} items={kendiSonuc} tr={tr} lang={lang} isMobile={isMobile} />
+        )}
       </div>
 
       {/* Leads toolbar */}
@@ -445,6 +777,29 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
             {DURUMS.map((d) => <option key={d} value={d}>{durumLabel(d, tr)}</option>)}
           </select>
         </div>
+        {/* Mail/yanıt süzgeci — "kim cevap verdi, kim vermedi" hızlı bakışı */}
+        <div style={{ position: "relative" }}>
+          <Mail size={14} style={{ position: "absolute", left: 10, top: 11, color: "#94a3b8" }} />
+          <select className="c-input" style={{ paddingLeft: 30, height: 36 }} value={filterMail} onChange={(e) => setFilterMail(e.target.value)}
+            title={tr("Mail ve yanıt durumuna göre süz", "Nach Mail-/Antwortstatus filtern")}>
+            <option value="all">{tr("Tüm mailler", "Alle Mails")}</option>
+            <option value="yanit">{tr(`Cevap verenler (${stats.replied})`, `Geantwortet (${stats.replied})`)}</option>
+            <option value="bekliyor">{tr(`Cevap bekleyenler (${stats.contacted - stats.replied})`, `Wartet auf Antwort (${stats.contacted - stats.replied})`)}</option>
+            <option value="gonderilmedi">{tr(`Mail gitmemiş (${stats.total - stats.contacted})`, `Nicht kontaktiert (${stats.total - stats.contacted})`)}</option>
+          </select>
+        </div>
+        {kaynakSayilari.size > 1 && (
+          <div style={{ position: "relative" }}>
+            <Filter size={14} style={{ position: "absolute", left: 10, top: 11, color: "#94a3b8" }} />
+            <select className="c-input" style={{ paddingLeft: 30, height: 36 }} value={filterKaynak} onChange={(e) => setFilterKaynak(e.target.value)}
+              title={tr("Platforma göre süz", "Nach Plattform filtern")}>
+              <option value="all">{tr("Tüm platformlar", "Alle Plattformen")}</option>
+              {KAYNAKLAR.filter((k) => kaynakSayilari.get(k.id)).map((k) => (
+                <option key={k.id} value={k.id}>{k.label} ({kaynakSayilari.get(k.id)})</option>
+              ))}
+            </select>
+          </div>
+        )}
         {groups.length > 0 && (
           <div style={{ position: "relative" }}>
             <Tag size={14} style={{ position: "absolute", left: 10, top: 11, color: "#94a3b8" }} />
@@ -459,7 +814,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
           <input className="c-input" style={{ paddingLeft: 30, height: 36, width: "100%" }} placeholder={tr("Ara: isim, adres, e-posta…", "Suchen…")} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         {!isMobile && <div style={{ flex: 1 }} />}
-        <button className="c-btn-ghost" onClick={() => fetchLeads()} title={tr("Yenile", "Aktualisieren")} style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <button className="c-btn-ghost" onClick={() => { fetchLeads(); fetchMailStats(); }} title={tr("Yenile", "Aktualisieren")} style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6 }}>
           <RefreshCw size={14} />
         </button>
         <button className="c-btn-ghost" onClick={exportXlsx} disabled={!filtered.length} style={{ height: 36, display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -511,16 +866,24 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
                       <input type="checkbox" checked={isSel} onChange={() => toggle(l.id)} style={{ marginTop: 3, flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <KaynakChip k={l.kaynak} />
                           {g && <GroupChip g={g} max={200} />}
                           <div style={{ fontWeight: 600, fontSize: ".92rem", lineHeight: 1.25 }}>{l.isim}</div>
                         </div>
-                        <div style={{ fontSize: ".75rem", color: "var(--text-3,#64748b)", marginTop: 1 }}>{l.kategori}{l.adres ? ` · ${l.adres}` : ""}</div>
+                        <div style={{ fontSize: ".75rem", color: "var(--text-3,#64748b)", marginTop: 1 }}>
+                          {[l.kullanici_adi ? `@${String(l.kullanici_adi).replace(/^@/, "")}` : l.kategori, l.adres]
+                            .filter(Boolean).join(" · ")}
+                        </div>
                       </div>
-                      {l.puan != null && (
+                      {l.puan != null ? (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: ".8rem", fontWeight: 600, flexShrink: 0 }}>
                           <Star size={13} color="#f59e0b" fill="#f59e0b" />{l.puan}
                         </span>
-                      )}
+                      ) : l.takipci != null ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: ".8rem", fontWeight: 600, flexShrink: 0, color: "var(--text-3,#64748b)" }}>
+                          <Users size={13} />{kisaSayi(l.takipci, lang)}
+                        </span>
+                      ) : null}
                     </div>
                     {(l.telefon || l.email || l.website) && (
                       <div style={{ paddingLeft: 26 }}>
@@ -532,13 +895,21 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
                         style={{ fontSize: ".76rem", fontWeight: 600, border: "none", borderRadius: 7, padding: "5px 8px", cursor: "pointer", color: "#fff", background: DURUM_COLOR[l.durum] || "#64748b" }}>
                         {DURUMS.map((d) => <option key={d} value={d} style={{ color: "#0f172a", background: "#fff" }}>{durumLabel(d, tr)}</option>)}
                       </select>
-                      {mailBadge(l.mail_durumu, tr)}
+                      {mailBadge(l.mail_durumu, tr, mailStats[l.id])}
                       {waBadge(l.whatsapp_durumu)}
-                      {l.yanit_kategorisi && <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: YANIT_COLOR[l.yanit_kategorisi] || "#94a3b8" }}>{yanitLabel(l.yanit_kategorisi, tr)}</span>}
                       <div style={{ flex: 1 }} />
                       <button onClick={() => setDetail(l)} className="c-btn-ghost" style={{ padding: 7, height: 32 }} title={tr("Detay", "Details")}><ExternalLink size={14} /></button>
                       <button onClick={() => deleteLead(l)} className="c-btn-ghost" style={{ padding: 7, height: 32, color: "#f43f5e" }} title={tr("Sil", "Löschen")}><Trash2 size={14} /></button>
                     </div>
+                    {/* Gelen yanıt — kim cevap verdi, ne yazdı */}
+                    {(l.yanit_kategorisi || mailStats[l.id]?.lastIn) && (
+                      <div style={{ marginLeft: 26, padding: "7px 10px", borderLeft: "3px solid #10b981", background: "var(--panel-2,#f8fafc)", borderRadius: 8 }}>
+                        <div style={{ fontSize: ".68rem", fontWeight: 700, color: "#10b981", marginBottom: 2 }}>
+                          ↩ {tr("Gelen yanıt", "Antwort")}{mailStats[l.id]?.lastIn ? ` · ${kisaTarih(mailStats[l.id]!.lastIn!.at)}` : ""}
+                        </div>
+                        <YanitCell lead={l} st={mailStats[l.id]} tr={tr} onOpen={() => setDetail(l)} compact />
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -547,7 +918,7 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         </div>
       ) : (
       <div className="c-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 76px", gap: 0, padding: "10px 14px", borderBottom: "1px solid var(--line,#e2e8f0)", fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3,#64748b)", alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "34px 1.45fr 1.05fr 124px 78px 104px 1.25fr 72px", gap: 0, padding: "10px 14px", borderBottom: "1px solid var(--line,#e2e8f0)", fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3,#64748b)", alignItems: "center" }}>
           <input type="checkbox" checked={allChecked} onChange={toggleAll} />
           <div>{tr("İşletme", "Unternehmen")}</div>
           <div>{tr("İletişim", "Kontakt")}</div>
@@ -570,15 +941,17 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
         ) : filtered.map((l) => {
           const g = leadGroup(l, tr);
           return (
-          <div key={l.id} style={{ display: "grid", gridTemplateColumns: "34px 1.6fr 1.2fr 130px 90px 120px 130px 76px", gap: 0, padding: "11px 14px", borderBottom: "1px solid var(--line,#f1f5f9)", fontSize: ".85rem", alignItems: "center" }}>
+          <div key={l.id} style={{ display: "grid", gridTemplateColumns: "34px 1.45fr 1.05fr 124px 78px 104px 1.25fr 72px", gap: 0, padding: "11px 14px", borderBottom: "1px solid var(--line,#f1f5f9)", fontSize: ".85rem", alignItems: "center" }}>
             <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <KaynakChip k={l.kaynak} />
                 {g && <GroupChip g={g} />}
                 <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.isim}</div>
               </div>
               <div style={{ fontSize: ".76rem", color: "var(--text-3,#64748b)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {l.kategori}{l.adres ? ` · ${l.adres}` : ""}
+                {[l.kullanici_adi ? `@${String(l.kullanici_adi).replace(/^@/, "")}` : l.kategori, l.adres]
+                  .filter(Boolean).join(" · ")}
               </div>
             </div>
             <div style={{ minWidth: 0 }}>
@@ -590,9 +963,16 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
                 {DURUMS.map((d) => <option key={d} value={d} style={{ color: "#0f172a", background: "#fff" }}>{durumLabel(d, tr)}</option>)}
               </select>
             </div>
-            <div>{l.puan != null ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Star size={12} color="#f59e0b" fill="#f59e0b" />{l.puan}</span> : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>{mailBadge(l.mail_durumu, tr)}{waBadge(l.whatsapp_durumu)}</div>
-            <div>{l.yanit_kategorisi ? <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: YANIT_COLOR[l.yanit_kategorisi] || "#94a3b8" }}>{yanitLabel(l.yanit_kategorisi, tr)}</span> : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
+            {/* Maps → yıldız puanı, sosyal kaynaklar → takipçi/abone */}
+            <div>{l.puan != null ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Star size={12} color="#f59e0b" fill="#f59e0b" />{l.puan}</span>
+            ) : l.takipci != null ? (
+              <span title={tr("Takipçi / abone", "Follower / Abonnenten")} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "var(--text-2,#475569)" }}>
+                <Users size={12} />{kisaSayi(l.takipci, lang)}
+              </span>
+            ) : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>{mailBadge(l.mail_durumu, tr, mailStats[l.id])}{waBadge(l.whatsapp_durumu)}</div>
+            <YanitCell lead={l} st={mailStats[l.id]} tr={tr} onOpen={() => setDetail(l)} />
             <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
               <button onClick={() => setDetail(l)} className="c-btn-ghost" style={{ padding: 6, height: 30 }} title={tr("Detay", "Details")}><ExternalLink size={13} /></button>
               <button onClick={() => deleteLead(l)} className="c-btn-ghost" style={{ padding: 6, height: 30, color: "#f43f5e" }} title={tr("Sil", "Löschen")}><Trash2 size={13} /></button>
@@ -603,9 +983,9 @@ export const MusteriBulmaPanel: React.FC<Props> = ({ ownerId }) => {
       </div>
       )}
 
-      {mailOpen && <MailModal leads={selectedWithEmail} onClose={() => setMailOpen(false)} onSent={() => { setMailOpen(false); setSelected(new Set()); fetchLeads(); }} tr={tr} />}
+      {mailOpen && <MailModal leads={selectedWithEmail} stats={mailStats} onClose={() => setMailOpen(false)} onSent={() => { setMailOpen(false); setSelected(new Set()); fetchLeads(); fetchMailStats(); }} tr={tr} />}
       {waOpen && <WhatsAppModal leads={selectedWithWhatsapp} onClose={() => setWaOpen(false)} onSent={(ids) => { setWaOpen(false); markWhatsappSent(ids); }} tr={tr} />}
-      {detail && <DetailModal lead={detail} onClose={() => setDetail(null)} onSaveNotes={saveNotes} onSetDurum={setDurum} onDelete={deleteLead} onChanged={fetchLeads} tr={tr} />}
+      {detail && <DetailModal lead={detail} onClose={() => setDetail(null)} onSaveNotes={saveNotes} onSetDurum={setDurum} onDelete={deleteLead} onChanged={() => { fetchLeads(); fetchMailStats(); }} tr={tr} />}
       {confirmState && (
         <ConfirmDialog
           title={confirmState.title}
@@ -695,6 +1075,108 @@ const ConfirmDialog: React.FC<{
 };
 
 // İşletmenin solunda görünen "aradığım grup" etiketi
+// ── Kaynak rozeti (lead hangi platformdan geldi) ─────────────────
+const KaynakChip: React.FC<{ k?: Kaynak | null }> = ({ k }) => {
+  const m = kaynakMeta(k);
+  const Ico = m.icon;
+  return (
+    <span title={m.label}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        width: 20, height: 20, borderRadius: 6,
+        color: m.color, background: `${m.color}1a`, border: `1px solid ${m.color}33`,
+      }}>
+      <Ico size={12} />
+    </span>
+  );
+};
+
+// ── "Kendi hesabım" sonuç kartı ──────────────────────────────────
+// Bu sonuçlar leads tablosuna yazılmaz; yalnızca panelde gösterilir.
+const KendiHesapKarti: React.FC<{
+  kaynak: Kaynak; items: any[]; tr: (t: string, g: string) => string; lang: string; isMobile: boolean;
+}> = ({ kaynak, items, tr, lang, isMobile }) => {
+  const m = kaynakMeta(kaynak);
+  const it = items[0] || {};
+  const ig = kaynak === "instagram";
+
+  const stats = ig
+    ? [
+        { l: tr("Takipçi", "Follower"), v: kisaSayi(it.followersCount, lang) },
+        { l: tr("Takip", "Folgt"), v: kisaSayi(it.followsCount, lang) },
+        { l: tr("Gönderi", "Beiträge"), v: kisaSayi(it.postsCount, lang) },
+      ]
+    : [
+        { l: tr("Abone", "Abonnenten"), v: String(it.subscriber_count ?? "—") },
+        { l: tr("Video", "Videos"), v: String(it.video_count ?? "—") },
+        { l: tr("Görüntülenme", "Aufrufe"), v: String(it.total_views ?? "—") },
+      ];
+
+  const baslik = ig ? (it.fullName || it.username) : (it.channel_name || it.channel_handle);
+  const alt = ig ? (it.username ? `@${it.username}` : "") : (it.channel_handle || "");
+  const bio = ig ? it.biography : it.description;
+  const link = ig ? it.url : it.channel_url;
+  const posts: any[] = ig && Array.isArray(it.latestPosts) ? it.latestPosts.slice(0, 6) : [];
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line,#e2e8f0)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <KaynakChip k={kaynak} />
+            <span style={{ fontWeight: 700, fontSize: ".98rem" }}>{baslik || "—"}</span>
+            {it.verified && <span style={{ fontSize: ".68rem", fontWeight: 700, color: "#3b82f6" }}>✓</span>}
+          </div>
+          {alt && <div style={{ fontSize: ".8rem", color: m.color, fontWeight: 600 }}>{alt}</div>}
+          {bio && (
+            <p style={{ margin: "6px 0 0", fontSize: ".8rem", color: "var(--text-2,#475569)", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
+              {String(bio).slice(0, 300)}
+            </p>
+          )}
+        </div>
+        {link && (
+          <a href={link} target="_blank" rel="noopener noreferrer" className="c-btn-ghost"
+            style={{ height: 32, display: "inline-flex", alignItems: "center", gap: 6, fontSize: ".8rem", textDecoration: "none" }}>
+            <ExternalLink size={13} /> {tr("Aç", "Öffnen")}
+          </a>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: isMobile ? 8 : 12, marginTop: 14 }}>
+        {stats.map((s, i) => (
+          <div key={i} style={{ padding: "10px 12px", borderRadius: 10, background: `${m.color}0d`, border: `1px solid ${m.color}26` }}>
+            <div style={{ fontSize: isMobile ? "1rem" : "1.15rem", fontWeight: 700, color: m.color, lineHeight: 1.15 }}>{s.v}</div>
+            <div style={{ fontSize: ".72rem", color: "var(--text-3,#64748b)" }}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {posts.length > 0 && (
+        <>
+          <div style={{ margin: "16px 0 8px", fontSize: ".78rem", fontWeight: 700, color: "var(--text-2,#475569)" }}>
+            {tr("Son gönderiler", "Letzte Beiträge")}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)", gap: 10 }}>
+            {posts.map((p, i) => (
+              <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
+                style={{ display: "block", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line,#e2e8f0)", textDecoration: "none", color: "inherit", minWidth: 0 }}>
+                <div style={{ fontSize: ".76rem", color: "var(--text-2,#475569)", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {p.caption || tr("(açıklama yok)", "(keine Bildunterschrift)")}
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 7, fontSize: ".74rem", color: "var(--text-3,#94a3b8)" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Heart size={11} />{kisaSayi(p.likesCount, lang)}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><MessageSquareText size={11} />{kisaSayi(p.commentsCount, lang)}</span>
+                  {p.videoViewCount ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><PlaySquare size={11} />{kisaSayi(p.videoViewCount, lang)}</span> : null}
+                </div>
+              </a>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const GroupChip: React.FC<{ g: LeadGroup; max?: number }> = ({ g, max = 150 }) => {
   const c = groupColor(g.key);
   return (
@@ -764,10 +1246,12 @@ const PhoneLinks: React.FC<{ phone: string; tr: (t: string, g: string) => string
 const ContactActions: React.FC<{ lead: Lead; tr: (t: string, g: string) => string; showNumber?: boolean }> = ({ lead, tr, showNumber = true }) => {
   const wa = lead.telefon ? isWhatsappNumber(lead.telefon) : false;
   const intl = lead.telefon ? toIntlNumber(lead.telefon) : "";
-  const waDil = guessMsgLang(lead, tr("tr", "de"));
-  const waK = ilkKampanya();
+  // WhatsApp ikonu: konu her zaman AI Ekspertiz Platformu, dil varsayılan Deutsch
+  // (lead açıkça başka bir ülkedeyse o dile düşer).
+  const waDil = guessMsgLang(lead, VARSAYILAN_DIL);
+  const waK = varsayilanKampanya();
   const waEk = kampanyaEk(waK, waDil);
-  const waHref = `https://wa.me/${intl}?text=${encodeURIComponent(fillTpl(kampanyaSablon(waK, waDil).body, lead) + sunumSatiri(waEk, waDil))}`;
+  const waHref = `https://wa.me/${intl}?text=${encodeURIComponent(mesajMetni(fillTpl(kampanyaSablon(waK, waDil).body, lead), waEk, waDil))}`;
   const chip = (bg: string, color: string): React.CSSProperties => ({
     width: 30, height: 30, borderRadius: 8, background: bg, color,
     display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, textDecoration: "none",
@@ -820,15 +1304,63 @@ function yanitLabel(y: string, tr: (t: string, g: string) => string) {
   };
   return tr(m[y]?.[0] || y, m[y]?.[1] || y);
 }
-function mailBadge(s: string, tr: (t: string, g: string) => string) {
-  const m: Record<string, [string, string, string]> = {
-    gonderilmedi: ["—", "—", "#cbd5e1"], gonderildi: [tr("Gönderildi", "Gesendet"), "", "#06b6d4"],
-    yanit_geldi: [tr("Yanıt", "Antwort"), "", "#10b981"], hata: [tr("Hata", "Fehler"), "", "#f43f5e"],
-  };
-  const [txt, , c] = m[s] || m.gonderilmedi;
-  if (s === "gonderilmedi") return <span style={{ color: "#cbd5e1" }}>—</span>;
-  return <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: c }}>{txt}</span>;
+// Kısa tarih (gg.aa.yyyy ss:dd) — rozet tooltip'lerinde kullanılır.
+const kisaTarih = (iso?: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+
+// Mail rozeti — "kaçıncı mail" gönderildiğini gösterir (1. mail, 2. mail…).
+// `st` yoksa (eski kayıtlar) yalın "Gönderildi"ye düşer.
+function mailBadge(s: string, tr: (t: string, g: string) => string, st?: MailStat) {
+  const n = st?.out || 0;
+  if (s === "gonderilmedi" && !n) return <span style={{ color: "#cbd5e1" }}>—</span>;
+  const hata = s === "hata";
+  const txt = hata ? tr("Hata", "Fehler") : n > 0 ? tr(`${n}. mail`, `${n}. Mail`) : tr("Gönderildi", "Gesendet");
+  const c = hata ? "#f43f5e" : "#06b6d4";
+  const title = hata
+    ? tr("Gönderim hatası", "Sendefehler")
+    : [n > 0 ? tr(`${n} mail gönderildi`, `${n} Mails gesendet`) : "", st?.lastOut ? tr(`Son: ${kisaTarih(st.lastOut)}`, `Zuletzt: ${kisaTarih(st.lastOut)}`) : ""].filter(Boolean).join(" · ");
+  return <span title={title} style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: c, whiteSpace: "nowrap" }}>{txt}</span>;
 }
+
+// Gelen yanıt metnini tek satırlık okunur özete indirger: alıntı satırlarını
+// (">" ve "… schrieb/wrote:") ve imza/boşlukları atar.
+function replySnippet(body?: string | null, max = 110): string {
+  const t = String(body || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((ln) => !/^\s*>/.test(ln) && !/(schrieb|wrote|yazdı)\s*:\s*$/i.test(ln))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return t.length > max ? t.slice(0, max).trimEnd() + "…" : t;
+}
+
+// Yanıt hücresi — kategori rozeti + gelen mesajın ilk satırları.
+// Tıklayınca lead detayında tam yazışma açılır.
+const YanitCell: React.FC<{
+  lead: Lead; st?: MailStat; tr: (t: string, g: string) => string; onOpen: () => void; compact?: boolean;
+}> = ({ lead, st, tr, onOpen, compact }) => {
+  const cat = lead.yanit_kategorisi || st?.lastIn?.category || null;
+  const last = st?.lastIn;
+  if (!cat && !last) return <span style={{ color: "#cbd5e1" }}>—</span>;
+  const snippet = replySnippet(last?.body) || (last?.subject ? String(last.subject) : "");
+  const full = [last?.subject, last?.body].filter(Boolean).join("\n\n");
+  return (
+    <div onClick={onOpen} title={full ? `${kisaTarih(last?.at)}\n\n${full}` : undefined}
+      style={{ minWidth: 0, cursor: "pointer", display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+        {cat && <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: YANIT_COLOR[cat] || "#94a3b8", whiteSpace: "nowrap" }}>{yanitLabel(cat, tr)}</span>}
+        {(st?.inCount || 0) > 1 && <span title={tr("Gelen mesaj sayısı", "Eingegangene Nachrichten")} style={{ fontSize: ".68rem", fontWeight: 700, color: "#10b981" }}>×{st!.inCount}</span>}
+      </div>
+      {snippet && (
+        <div style={{
+          fontSize: ".72rem", lineHeight: 1.35, color: "var(--text-3,#64748b)",
+          display: "-webkit-box", WebkitLineClamp: compact ? 3 : 2, WebkitBoxOrient: "vertical",
+          overflow: "hidden", wordBreak: "break-word",
+        }}>“{snippet}”</div>
+      )}
+    </div>
+  );
+};
 // WhatsApp gönderim rozeti — sadece gönderildiyse yeşil WhatsApp işareti
 function waBadge(s: string | undefined) {
   if (s !== "gonderildi") return null;
@@ -840,7 +1372,7 @@ function waBadge(s: string | undefined) {
 }
 
 // ── Mail modal ───────────────────────────────────────────────────
-const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => void; tr: (t: string, g: string) => string }> = ({ leads, onClose, onSent, tr }) => {
+const MailModal: React.FC<{ leads: Lead[]; stats: Record<string, MailStat>; onClose: () => void; onSent: () => void; tr: (t: string, g: string) => string }> = ({ leads, stats, onClose, onSent, tr }) => {
   // Seçilen leadlerde en yaygın dili varsayılan al
   const defLang = useMemo(() => {
     const c: Record<string, number> = {};
@@ -851,6 +1383,22 @@ const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => vo
   const [campCode, setCampCode] = useState<string>("");   // zorunlu — boşken gönderilemez
   const [langCode, setLangCode] = useState<string>(defLang);
   const [attachOn, setAttachOn] = useState(true);
+  // Daha önce mail atılanlar sunucuda varsayılan olarak atlanır (çift gönderim
+  // koruması). Bilinçli takip maili için kullanıcı açıkça işaretler.
+  const [resendSent, setResendSent] = useState(false);
+  const zatenGonderilen = useMemo(() => leads.filter((l) => l.mail_durumu === "gonderildi").length, [leads]);
+  // Bu gönderimde kime kaçıncı mail gidecek? (mevcut gönderim sayısı + 1)
+  // "Tekrar gönder" işaretli değilse sunucu daha önce mail gidenleri atlar —
+  // dağılıma da sadece gerçekten gidecek olanlar girer.
+  const siraDagilimi = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const l of leads) {
+      if (!resendSent && l.mail_durumu === "gonderildi") continue;
+      const n = (stats[l.id]?.out || 0) + 1;
+      m.set(n, (m.get(n) || 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => a[0] - b[0]);
+  }, [leads, stats, resendSent]);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -878,8 +1426,10 @@ const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => vo
     setSending(true); setResult(null);
     try {
       const attachments = attachOn && ek ? [{ filename: ek.name, path: ek.url }] : undefined;
+      // İmza (www.fikoai.de) her mailin sonuna eklenir; sunum linki mailde ek
+      // olarak gittiği için metne ayrıca yazılmaz.
       const { data, error } = await supabase.functions.invoke("send-lead-emails", {
-        body: { lead_ids: leads.map((l) => l.id), subject, body, attachments },
+        body: { lead_ids: leads.map((l) => l.id), subject, body: mesajMetni(body, ek, langCode, false), attachments, resend_to_sent: resendSent },
       });
       if (error || !data?.success) { setResult(tr("Hata: ", "Fehler: ") + (data?.error || error?.message || "")); setSending(false); return; }
       setResult(tr(`✓ ${data.sent} gönderildi, ${data.failed} hata, ${data.skipped} atlandı.`, `✓ ${data.sent} gesendet.`));
@@ -895,18 +1445,26 @@ const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => vo
         <button onClick={onClose} className="c-btn-ghost" style={{ padding: 6 }}><X size={16} /></button>
       </div>
 
+      {/* Kaçıncı mail? — seçilenlerin her birine bu gönderim kaçıncı mail olacak */}
+      {leads.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12, padding: "8px 11px", borderRadius: 9, background: "var(--panel-2,#f8fafc)", border: "1px solid var(--line,#e2e8f0)", fontSize: ".78rem", color: "var(--text-2,#475569)" }}>
+          <Send size={13} color="#8b5cf6" />
+          <span>{tr("Bu gönderim:", "Dieser Versand:")}</span>
+          {siraDagilimi.length === 0 && <span style={{ color: "#f43f5e", fontWeight: 600 }}>{tr("kimseye gitmeyecek", "kein Empfänger")}</span>}
+          {siraDagilimi.map(([n, c]) => (
+            <span key={n} style={{ fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: n === 1 ? "#06b6d4" : "#f59e0b", whiteSpace: "nowrap" }}>
+              {tr(`${c} kişiye ${n}. mail`, `${c}× ${n}. Mail`)}
+            </span>
+          ))}
+          {!resendSent && zatenGonderilen > 0 && (
+            <span style={{ color: "#94a3b8" }}>· {tr(`${zatenGonderilen} kişi atlanacak (daha önce gönderildi)`, `${zatenGonderilen} übersprungen (bereits gesendet)`)}</span>
+          )}
+        </div>
+      )}
+
       {/* Konu (kampanya) seçimi — zorunlu */}
       <Field label={tr("Konu / kampanya *", "Thema / Kampagne *")}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {KAMPANYALAR.map((k) => (
-            <button key={k.code} type="button" onClick={() => pickCamp(k.code)}
-              className={k.code === campCode ? "c-btn-primary" : "c-btn-ghost"}
-              title={tr(k.aciklama.tr, k.aciklama.de)}
-              style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
-              <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
-            </button>
-          ))}
-        </div>
+        <CampPicker value={campCode} onPick={pickCamp} tr={tr} />
         {!campCode && <div style={{ fontSize: ".75rem", color: "#f43f5e", marginTop: 6 }}>{tr("Devam etmek için bir konu seçin.", "Zum Fortfahren ein Thema wählen.")}</div>}
       </Field>
 
@@ -948,7 +1506,22 @@ const MailModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: () => vo
               <a href={ek.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "#06b6d4", textDecoration: "none" }}>{ek.name}</a>
             </label>
           )}
+
+          <ImzaNotu tr={tr} />
         </>
+      )}
+
+      {/* Çift gönderim koruması — seçimde daha önce mail atılmış kayıt varsa */}
+      {zatenGonderilen > 0 && (
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, padding: "9px 11px", borderRadius: 9, background: "rgba(245,158,11,.09)", border: "1px solid rgba(245,158,11,.3)", fontSize: ".8rem", color: "var(--text-2,#475569)", cursor: "pointer" }}>
+          <input type="checkbox" checked={resendSent} onChange={(e) => setResendSent(e.target.checked)} style={{ marginTop: 2 }} />
+          <span>
+            {tr(`Seçilenlerden ${zatenGonderilen} tanesine daha önce mail atılmış — varsayılan olarak atlanacak.`,
+                `${zatenGonderilen} der Ausgewählten haben bereits eine Mail erhalten — werden standardmäßig übersprungen.`)}
+            <br />
+            <strong>{tr("Yine de tekrar gönder (takip maili).", "Trotzdem erneut senden (Follow-up).")}</strong>
+          </span>
+        </label>
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
@@ -969,7 +1542,8 @@ const WhatsAppModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: (ids
     return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "de";
   }, [leads]);
 
-  const [campCode, setCampCode] = useState<string>("");
+  // Toplu WhatsApp da AI Ekspertiz Platformu / Deutsch ile hazır açılır
+  const [campCode, setCampCode] = useState<string>(VARSAYILAN_KAMPANYA);
   const [langCode, setLangCode] = useState<string>(defLang);
   const [attachOn, setAttachOn] = useState(true);
   const [body, setBody] = useState("");
@@ -992,7 +1566,7 @@ const WhatsAppModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: (ids
   };
 
   const waHrefFor = (l: Lead) => {
-    const text = fillTpl(body, l) + (attachOn ? sunumSatiri(ek, langCode) : "");
+    const text = mesajMetni(fillTpl(body, l), ek, langCode, attachOn);
     return `https://wa.me/${toIntlNumber(l.telefon)}?text=${encodeURIComponent(text)}`;
   };
 
@@ -1020,16 +1594,7 @@ const WhatsAppModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: (ids
 
       {/* Konu (kampanya) seçimi — zorunlu */}
       <Field label={tr("Konu / kampanya *", "Thema / Kampagne *")}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {KAMPANYALAR.map((k) => (
-            <button key={k.code} type="button" onClick={() => pickCamp(k.code)}
-              className={k.code === campCode ? "c-btn-primary" : "c-btn-ghost"}
-              title={tr(k.aciklama.tr, k.aciklama.de)}
-              style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
-              <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
-            </button>
-          ))}
-        </div>
+        <CampPicker value={campCode} onPick={pickCamp} tr={tr} />
         {!campCode && <div style={{ fontSize: ".75rem", color: "#f43f5e", marginTop: 6 }}>{tr("Devam etmek için bir konu seçin.", "Zum Fortfahren ein Thema wählen.")}</div>}
       </Field>
 
@@ -1064,6 +1629,8 @@ const WhatsAppModal: React.FC<{ leads: Lead[]; onClose: () => void; onSent: (ids
               {tr("Sunum linkini ekle", "Präsentationslink anhängen")}
             </label>
           )}
+
+          <ImzaNotu tr={tr} />
 
           {/* Sırayla gönderim akışı */}
           <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(37,211,102,.06)", border: "1px solid rgba(37,211,102,.2)" }}>
@@ -1107,9 +1674,10 @@ const DetailModal: React.FC<{
   const [reply, setReply] = useState("");
   const [classifying, setClassifying] = useState(false);
 
-  // Kampanya (konu) + çok dilli taslak mesaj — konu seçilmeden gönderilemez
-  const [campCode, setCampCode] = useState<string>("");
-  const [msgCode, setMsgCode] = useState<string>(() => guessMsgLang(lead, tr("tr", "de")));
+  // Kampanya (konu) + çok dilli taslak mesaj — AI Ekspertiz Platformu / Deutsch
+  // hazır seçili gelir, kullanıcı isterse değiştirir.
+  const [campCode, setCampCode] = useState<string>(VARSAYILAN_KAMPANYA);
+  const [msgCode, setMsgCode] = useState<string>(() => guessMsgLang(lead, VARSAYILAN_DIL));
   const [attachOn, setAttachOn] = useState(true);
   const [subject, setSubject] = useState("");
   const [mbody, setMbody] = useState("");
@@ -1119,13 +1687,14 @@ const DetailModal: React.FC<{
   const camp = kampanyaByCode(campCode);
   const ek = camp ? kampanyaEk(camp, msgCode) : null;
   const waIntl = lead.telefon ? toIntlNumber(lead.telefon) : "";
-  const waText = mbody + (attachOn ? sunumSatiri(ek, msgCode) : "");
-  const waHref = camp && waIntl ? `https://wa.me/${waIntl}?text=${encodeURIComponent(waText)}` : undefined;
+  // WhatsApp, kopyala ve mailto aynı metni kullanır (sunum linki + imza dahil)
+  const gonderimMetni = mesajMetni(mbody, ek, msgCode, attachOn);
+  const waHref = camp && waIntl ? `https://wa.me/${waIntl}?text=${encodeURIComponent(gonderimMetni)}` : undefined;
 
   const pickCamp = (code: string) => {
     setCampCode(code);
     const k = kampanyaByCode(code);
-    if (k) { const langs = kampanyaDilleri(k); if (!langs.includes(msgCode)) { const g = guessMsgLang(lead, tr("tr", "de")); setMsgCode(langs.includes(g) ? g : langs[0]); } }
+    if (k) { const langs = kampanyaDilleri(k); if (!langs.includes(msgCode)) { const g = guessMsgLang(lead, VARSAYILAN_DIL); setMsgCode(langs.includes(g) ? g : langs[0]); } }
   };
 
   // Manuel e-posta (web sitesinden ekleme)
@@ -1150,6 +1719,11 @@ const DetailModal: React.FC<{
   }, [lead.id]);
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
+  // Geçmişteki giden/gelen sayıları — başlıktaki "kaçıncı mail" rozetleri için
+  const gidenSayisi = useMemo(() => history.filter((h) => h.direction !== "inbound").length, [history]);
+  const gelenSayisi = history.length - gidenSayisi;
+  let sira = 0; // render sırasında giden mailleri numaralar (1. mail, 2. mail…)
+
   // Konu/dil değişince şablonu şirket adıyla otomatik doldur (konu yoksa boş)
   useEffect(() => {
     const k = kampanyaByCode(campCode);
@@ -1173,8 +1747,9 @@ const DetailModal: React.FC<{
         setSavedEmail(em); onChanged();
       }
       const attachments = attachOn && ek ? [{ filename: ek.name, path: ek.url }] : undefined;
+      // Mailde sunum dosya olarak eklendiği için metne link yazılmaz; imza eklenir.
       const { data, error } = await supabase.functions.invoke("send-lead-emails", {
-        body: { lead_ids: [lead.id], subject, body: mbody, attachments },
+        body: { lead_ids: [lead.id], subject, body: mesajMetni(mbody, ek, msgCode, false), attachments },
       });
       if (error || !data?.success) { setSendResult(tr("Hata: ", "Fehler: ") + (data?.error || error?.message || "")); }
       else if (data.sent) { setSendResult(tr("✓ Gönderildi.", "✓ Gesendet.")); await loadHistory(); onChanged(); }
@@ -1185,13 +1760,13 @@ const DetailModal: React.FC<{
 
   const copyDraft = async () => {
     try {
-      await navigator.clipboard.writeText(`${subject}\n\n${mbody}${attachOn ? sunumSatiri(ek, msgCode) : ""}`);
+      await navigator.clipboard.writeText(`${subject}\n\n${gonderimMetni}`);
       setSendResult(tr("Panoya kopyalandı.", "In Zwischenablage kopiert."));
     } catch { setSendResult(tr("Kopyalanamadı.", "Kopieren fehlgeschlagen.")); }
   };
 
   const mailtoHref = email.trim()
-    ? `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mbody + (attachOn ? sunumSatiri(ek, msgCode) : ""))}`
+    ? `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(gonderimMetni)}`
     : undefined;
 
   const classifyReply = async () => {
@@ -1264,15 +1839,8 @@ const DetailModal: React.FC<{
         <div style={{ fontSize: ".8rem", fontWeight: 700, color: "var(--text-2,#475569)", display: "flex", alignItems: "center", gap: 6 }}>
           <Megaphone size={14} /> {tr("Konu / kampanya", "Thema / Kampagne")} <span style={{ color: "#f43f5e" }}>*</span>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 4px" }}>
-          {KAMPANYALAR.map((k) => (
-            <button key={k.code} type="button" onClick={() => pickCamp(k.code)}
-              className={k.code === campCode ? "c-btn-primary" : "c-btn-ghost"}
-              title={tr(k.aciklama.tr, k.aciklama.de)}
-              style={{ padding: "6px 12px", height: 34, fontSize: ".82rem", display: "inline-flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${k.renk}` }}>
-              <Megaphone size={13} /> {tr(k.label.tr, k.label.de)}
-            </button>
-          ))}
+        <div style={{ margin: "10px 0 4px" }}>
+          <CampPicker value={campCode} onPick={pickCamp} tr={tr} />
         </div>
 
         {!camp ? (
@@ -1313,8 +1881,14 @@ const DetailModal: React.FC<{
               </label>
             )}
 
+            <ImzaNotu tr={tr} />
+
             <div style={{ fontSize: ".72rem", color: "#94a3b8", marginTop: 8 }}>
-              {tr("Şirket adı otomatik eklenir. WhatsApp'ta sunum linki eklenir.", "Firmenname wird automatisch eingefügt. Bei WhatsApp wird der Präsentationslink angehängt.")}
+              {camp.hedef === "b2c"
+                ? tr("Bu metin son müşteriye gider; marka adı geçmez, imza alanına büro bilgilerinizi yazın.",
+                     "Dieser Text geht an den Endkunden; ohne Markenname – tragen Sie im Signaturfeld Ihre Bürodaten ein.")
+                : tr("Şirket adı otomatik eklenir. WhatsApp'ta sunum linki eklenir.",
+                     "Firmenname wird automatisch eingefügt. Bei WhatsApp wird der Präsentationslink angehängt.")}
               {!email.trim() && <span style={{ color: "#f43f5e" }}> · {tr("E-posta ile göndermek için yukarıya e-posta ekleyin.", "Zum Senden per E-Mail oben E-Mail hinzufügen.")}</span>}
             </div>
 
@@ -1342,22 +1916,40 @@ const DetailModal: React.FC<{
         )}
       </div>
 
-      {/* Email history */}
-      <div style={{ marginTop: 16, fontSize: ".8rem", fontWeight: 700, color: "var(--text-2,#475569)", display: "flex", alignItems: "center", gap: 6 }}>
+      {/* Email history — giden mailler "n. mail" olarak numaralanır */}
+      <div style={{ marginTop: 16, fontSize: ".8rem", fontWeight: 700, color: "var(--text-2,#475569)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         <MessageSquareText size={14} /> {tr("Yazışma geçmişi", "Verlauf")}
+        {gidenSayisi > 0 && (
+          <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: "#06b6d4" }}>
+            {tr(`${gidenSayisi} mail gönderildi`, `${gidenSayisi} Mails gesendet`)}
+          </span>
+        )}
+        {gelenSayisi > 0 && (
+          <span style={{ fontSize: ".72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: "#fff", background: "#10b981" }}>
+            {tr(`${gelenSayisi} yanıt`, `${gelenSayisi} Antworten`)}
+          </span>
+        )}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "10px 0", maxHeight: 180, overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "10px 0", maxHeight: 260, overflowY: "auto" }}>
         {history.length === 0 && <div style={{ fontSize: ".8rem", color: "#94a3b8" }}>{tr("Henüz yazışma yok.", "Noch kein Verlauf.")}</div>}
-        {history.map((h) => (
-          <div key={h.id} style={{ borderLeft: `3px solid ${h.direction === "inbound" ? "#10b981" : "#8b5cf6"}`, padding: "6px 10px", background: "var(--panel-2,#f8fafc)", borderRadius: 8 }}>
-            <div style={{ fontSize: ".72rem", color: "var(--text-3,#64748b)", display: "flex", justifyContent: "space-between" }}>
-              <span>{h.direction === "inbound" ? tr("↩ Gelen", "↩ Eingang") : tr("↪ Giden", "↪ Ausgang")}{h.reply_category ? ` · ${yanitLabel(h.reply_category, tr)}` : ""}</span>
-              <span>{new Date(h.created_at).toLocaleDateString()}</span>
+        {history.map((h) => {
+          const gelen = h.direction === "inbound";
+          if (!gelen) sira++;
+          const no = sira;
+          return (
+          <div key={h.id} style={{ borderLeft: `3px solid ${gelen ? "#10b981" : "#8b5cf6"}`, padding: "6px 10px", background: gelen ? "rgba(16,185,129,.07)" : "var(--panel-2,#f8fafc)", borderRadius: 8 }}>
+            <div style={{ fontSize: ".72rem", color: "var(--text-3,#64748b)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontWeight: 600, color: gelen ? "#10b981" : "var(--text-3,#64748b)" }}>
+                {gelen ? tr("↩ Gelen yanıt", "↩ Antwort") : tr(`↪ ${no}. mail`, `↪ ${no}. Mail`)}
+                {h.reply_category ? ` · ${yanitLabel(h.reply_category, tr)}` : ""}
+              </span>
+              <span style={{ whiteSpace: "nowrap" }}>{kisaTarih(h.created_at)}</span>
             </div>
             {h.subject && <div style={{ fontSize: ".8rem", fontWeight: 600 }}>{h.subject}</div>}
-            {h.body && <div style={{ fontSize: ".78rem", color: "var(--text-2,#475569)", whiteSpace: "pre-wrap", maxHeight: 60, overflow: "hidden" }}>{h.body}</div>}
+            {h.body && <div style={{ fontSize: ".78rem", color: "var(--text-2,#475569)", whiteSpace: "pre-wrap", maxHeight: gelen ? 220 : 60, overflow: "auto" }}>{h.body}</div>}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Manual classify reply */}

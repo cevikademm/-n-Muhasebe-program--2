@@ -2,17 +2,22 @@
 // ──────────────────────────────────────────────────────────────────
 // find-customers  (JWT required — logged-in app users)
 // ──────────────────────────────────────────────────────────────────
-// Müşteri Bulma modülü. Apify "compass~crawler-google-places" aktörü ile
-// Google Maps'ten işletme arar, normalize eder, filtreler ve `leads`
+// Müşteri Bulma modülü. Üç kaynaktan (Google Maps / Instagram / YouTube)
+// Apify aktörleriyle veri çeker, normalize eder, filtreler ve `leads`
 // tablosuna (owner bazlı) upsert eder.
 //
+// İki boyut:
+//   kaynak: "maps" | "instagram" | "youtube"
+//   mod:    "musteri" (lead üretimi → leads tablosu)
+//         | "kendi"   (kendi hesap analizi → lead_searches.sonuc)
+//
 // İki aşamalı (timeout'a takılmamak için):
-//   POST { action:"start", ulke, sehir, kategori, yaricap_km?, max_results?,
-//          min_puan?, only_email?, only_phone?, only_website?, lang? }
+//   POST { action:"start", kaynak, mod, ... }
 //        → { success, searchId, runId, status:"running" }
 //   POST { action:"poll", searchId }
 //        → { success, status:"running" }  (henüz bitmedi)
-//        → { success, status:"done", count, leads:[...] }
+//        → { success, status:"done", count, leads:[...] }        (mod=musteri)
+//        → { success, status:"done", mod:"kendi", sonuc:[...] }  (mod=kendi)
 //        → { success:false, status:"error", error }
 //
 // Env: APIFY_TOKEN, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
@@ -39,8 +44,63 @@ function cors(req: Request) {
   };
 }
 
-const ACTOR = "compass~crawler-google-places";
 const APIFY = "https://api.apify.com/v2";
+
+// Kaynak → Apify aktörü
+//   maps      : Google Maps Scraper'ın "Email Extractor" varyantı — aynı input
+//               şeması, ek olarak işletme sitesini gezip e-posta/telefon çıkarır.
+//   instagram : resmi Apify Instagram Scraper.
+//   youtube   : anahtar kelimeden kanal keşfi + kanal e-posta/telefon çıkarımı.
+const ACTORS: Record<string, string> = {
+  maps: "lukaskrivka~google-maps-with-contact-details",
+  instagram: "apify~instagram-scraper",
+  youtube: "khadinakbar~youtube-channel-email-extractor",
+};
+
+const KAYNAKLAR = ["maps", "instagram", "youtube"];
+const MODLAR = ["musteri", "kendi"];
+
+// ── Yardımcılar ───────────────────────────────────────────────────
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+// Bio/açıklama metninden ilk e-postayı çıkarır (Instagram profil e-postasını
+// API vermiyor; işletmeler bio'ya yazıyor).
+function emailFromText(...parts: any[]): string | null {
+  for (const p of parts) {
+    const m = String(p ?? "").match(EMAIL_RE);
+    if (m) return m[0].toLowerCase();
+  }
+  return null;
+}
+
+// "6.65M subscribers" / "1.2K" / "12,345" → sayı
+function parseCount(v: any): number | null {
+  if (typeof v === "number") return Math.round(v);
+  const s = String(v ?? "").replace(/,/g, "").trim();
+  const m = s.match(/([\d.]+)\s*([KMB])?/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!isFinite(n)) return null;
+  const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || "").toLowerCase()] ?? 1;
+  return Math.round(n * mult);
+}
+
+// Instagram kullanıcı adını serbest girdiden ayıklar (@ad, tam URL, düz ad)
+function igHandle(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+    .replace(/^@/, "")
+    .split(/[/?#]/)[0]
+    .trim();
+}
+
+// YouTube kanal URL'ini serbest girdiden üretir (@handle, tam URL, kanal adı)
+function ytChannelUrl(raw: string): string {
+  const s = String(raw || "").trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  const handle = s.replace(/^@/, "");
+  return `https://www.youtube.com/@${handle}`;
+}
 
 serve(async (req) => {
   const corsHeaders = cors(req);
@@ -90,9 +150,15 @@ serve(async (req) => {
 
     // ================= START =================
     if (action === "start") {
+      const kaynak = KAYNAKLAR.includes(String(body?.kaynak)) ? String(body.kaynak) : "maps";
+      const mod = MODLAR.includes(String(body?.mod)) ? String(body.mod) : "musteri";
+      // Maps'te "kendi hesabım" modu yok — sessizce müşteri moduna düşer.
+      const effMod = kaynak === "maps" ? "musteri" : mod;
+
       const ulke = String(body?.ulke || "").trim();
       const sehir = String(body?.sehir || "").trim();
       const kategori = String(body?.kategori || "").trim();
+      const sorgu = String(body?.sorgu || "").trim();
       const yaricap_km = body?.yaricap_km != null ? Number(body.yaricap_km) : null;
       const max_results = Math.min(Math.max(parseInt(body?.max_results ?? 50, 10) || 50, 1), 120);
       const min_puan = body?.min_puan != null ? Number(body.min_puan) : 0;
@@ -101,8 +167,22 @@ serve(async (req) => {
       const only_website = !!body?.only_website;
       const lang = String(body?.lang || "de") === "tr" ? "tr" : "de";
 
-      if (!kategori) return json({ success: false, error: "Kategori zorunludur." }, 400);
-      if (!sehir && !ulke) return json({ success: false, error: "Şehir veya ülke girin." }, 400);
+      // Kaynağa göre zorunlu alan doğrulaması
+      if (kaynak === "maps") {
+        if (!kategori) return json({ success: false, error: "Kategori zorunludur." }, 400);
+        if (!sehir && !ulke) return json({ success: false, error: "Şehir veya ülke girin." }, 400);
+      } else if (!sorgu) {
+        return json(
+          {
+            success: false,
+            error:
+              effMod === "kendi"
+                ? "Hesap adı zorunludur."
+                : "Arama kelimesi zorunludur.",
+          },
+          400,
+        );
+      }
 
       // Arama kaydı
       const { data: search, error: sErr } = await admin
@@ -110,7 +190,8 @@ serve(async (req) => {
         .insert({
           user_id: ownerId,
           created_by: caller.id,
-          ulke, sehir, kategori, yaricap_km,
+          kaynak, mod: effMod, sorgu: sorgu || null,
+          ulke, sehir, kategori: kategori || null, yaricap_km,
           max_results, min_puan, only_email, only_phone, only_website,
           status: "running",
         })
@@ -118,16 +199,63 @@ serve(async (req) => {
         .single();
       if (sErr || !search) return json({ success: false, error: "Arama kaydı oluşturulamadı: " + (sErr?.message || "") }, 500);
 
+      // ── Apify input'unu kaynağa göre kur ────────────────────────
+      let input: any;
+      if (kaynak === "maps") {
+        const locationQuery = [sehir, ulke].filter(Boolean).join(", ");
+        input = {
+          searchStringsArray: [kategori],
+          locationQuery,
+          maxCrawledPlacesPerSearch: max_results,
+          language: lang,
+          skipClosedPlaces: true,
+          // Sosyal medya profili / lead enrichment add-on'ları ücretli;
+          // aktörün varsayılanı zaten kapalı, bilinçli olarak açmıyoruz.
+        };
+      } else if (kaynak === "instagram") {
+        // DİKKAT: directUrls'in varsayılanı ["…/humansofny/"] — arama modunda
+        // açıkça [] geçmezsek sonuçlara o profil de karışır.
+        input =
+          effMod === "kendi"
+            ? {
+                directUrls: [`https://www.instagram.com/${igHandle(sorgu)}/`],
+                search: "",
+                resultsType: "details",
+                resultsLimit: max_results,
+              }
+            : {
+                directUrls: [],
+                search: sorgu,
+                searchType: "user",
+                resultsType: "details",
+                searchLimit: max_results,
+                resultsLimit: max_results,
+              };
+      } else {
+        // DİKKAT: bu aktörün hem channelUrls hem searchQueries alanının
+        // dolu bir varsayılanı var (@aliabdaal, @mkbhd … / "fitness youtube
+        // channels" …). Kullanmadığımız alanı açıkça [] geçmezsek Apify
+        // varsayılanı uygular ve sonuçlara alakasız kanallar karışır.
+        input =
+          effMod === "kendi"
+            ? {
+                channelUrls: [ytChannelUrl(sorgu)],
+                searchQueries: [],
+                maxResults: 1,
+                scrapeWebsite: false,
+                followLinkAggregators: false,
+              }
+            : {
+                channelUrls: [],
+                searchQueries: [sorgu],
+                maxResults: max_results,
+                scrapeWebsite: true,
+                followLinkAggregators: true,
+              };
+      }
+
       // Apify aktörünü async başlat
-      const locationQuery = [sehir, ulke].filter(Boolean).join(", ");
-      const input: any = {
-        searchStringsArray: [kategori],
-        locationQuery,
-        maxCrawledPlacesPerSearch: max_results,
-        language: lang,
-        skipClosedPlaces: true,
-      };
-      const runRes = await fetch(`${APIFY}/acts/${ACTOR}/runs?token=${APIFY_TOKEN}`, {
+      const runRes = await fetch(`${APIFY}/acts/${ACTORS[kaynak]}/runs?token=${APIFY_TOKEN}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
@@ -135,14 +263,14 @@ serve(async (req) => {
       if (!runRes.ok) {
         const detail = await runRes.text().catch(() => "");
         await admin.from("lead_searches").update({ status: "error", error: `Apify başlatılamadı (${runRes.status})` }).eq("id", search.id);
-        console.error("Apify start failed", runRes.status, detail);
+        console.error("Apify start failed", kaynak, runRes.status, detail);
         return json({ success: false, status: "error", error: "Arama başlatılamadı." }, 502);
       }
       const runData = await runRes.json();
       const runId = runData?.data?.id;
       await admin.from("lead_searches").update({ apify_run_id: runId }).eq("id", search.id);
 
-      return json({ success: true, searchId: search.id, runId, status: "running" });
+      return json({ success: true, searchId: search.id, runId, kaynak, mod: effMod, status: "running" });
     }
 
     // ================= POLL =================
@@ -156,9 +284,16 @@ serve(async (req) => {
       if (search.user_id !== ownerId && search.created_by !== caller.id) {
         return json({ success: false, error: "Bu aramaya erişiminiz yok" }, 403);
       }
+
+      const kaynak = String(search.kaynak || "maps");
+      const mod = String(search.mod || "musteri");
+
       if (search.status === "done") {
+        if (mod === "kendi") {
+          return json({ success: true, status: "done", mod, kaynak, sonuc: search.sonuc || [] });
+        }
         const { data: existing } = await admin.from("leads").select("*").eq("search_id", searchId).order("puan", { ascending: false });
-        return json({ success: true, status: "done", count: existing?.length || 0, leads: existing || [] });
+        return json({ success: true, status: "done", mod, kaynak, count: existing?.length || 0, leads: existing || [] });
       }
       if (!search.apify_run_id) return json({ success: true, status: "running" });
 
@@ -180,19 +315,35 @@ serve(async (req) => {
       // Dataset'i çek
       const itemsRes = await fetch(`${APIFY}/datasets/${datasetId}/items?token=${APIFY_TOKEN}&clean=true`);
       const items = (await itemsRes.json().catch(() => [])) as any[];
+      const list = Array.isArray(items) ? items : [];
 
+      // ── mod=kendi: leads'e yazma, ham sonucu aramaya iliştir ────
+      if (mod === "kendi") {
+        await admin
+          .from("lead_searches")
+          .update({ status: "done", result_count: list.length, sonuc: list })
+          .eq("id", searchId);
+        return json({ success: true, status: "done", mod, kaynak, count: list.length, sonuc: list });
+      }
+
+      // ── mod=musteri: kaynağa göre normalize et ──────────────────
       const minPuan = Number(search.min_puan || 0);
-      const normalize = (it: any) => {
+
+      const normalizeMaps = (it: any) => {
         const loc = it.location || {};
-        const email = it.email || (Array.isArray(it.emails) && it.emails[0]) || null;
+        const email =
+          it.email ||
+          (Array.isArray(it.emails) && it.emails[0]) ||
+          null;
         return {
           user_id: ownerId,
           search_id: searchId,
+          kaynak: "maps",
           place_id: it.placeId || it.fid || it.cid || null,
           isim: it.title || it.name || "İsimsiz",
           kategori: it.categoryName || (Array.isArray(it.categories) ? it.categories[0] : null) || null,
           adres: it.address || it.street || null,
-          telefon: it.phone || it.phoneUnformatted || null,
+          telefon: it.phone || it.phoneUnformatted || (Array.isArray(it.phones) && it.phones[0]) || null,
           email,
           website: it.website || null,
           puan: typeof it.totalScore === "number" ? it.totalScore : null,
@@ -205,10 +356,60 @@ serve(async (req) => {
         };
       };
 
-      let rows = (Array.isArray(items) ? items : []).map(normalize);
-      // Filtreler
+      const normalizeInstagram = (it: any) => ({
+        user_id: ownerId,
+        search_id: searchId,
+        kaynak: "instagram",
+        place_id: it.id ? `ig:${it.id}` : it.username ? `ig:${it.username}` : null,
+        isim: it.fullName || it.username || "İsimsiz",
+        kategori: it.businessCategoryName || null,
+        adres: null,
+        // Instagram profil e-postasını API dönmüyor → bio'dan çıkarıyoruz.
+        telefon: null,
+        email: emailFromText(it.biography),
+        website: it.externalUrl || null,
+        kullanici_adi: it.username || null,
+        takipci: parseCount(it.followersCount),
+        profil_url: it.url || (it.username ? `https://www.instagram.com/${it.username}` : null),
+        puan: null,
+        yorum_sayisi: null,
+        sehir: search.sehir || null,
+        ulke: search.ulke || null,
+        raw: it,
+      });
+
+      const normalizeYoutube = (it: any) => ({
+        user_id: ownerId,
+        search_id: searchId,
+        kaynak: "youtube",
+        place_id: it.channel_handle
+          ? `yt:${it.channel_handle}`
+          : it.channel_url
+          ? `yt:${it.channel_url}`
+          : null,
+        isim: it.channel_name || it.channel_handle || "İsimsiz",
+        kategori: null,
+        adres: null,
+        telefon: it.phone || null,
+        email: it.email || (Array.isArray(it.all_emails) && it.all_emails[0]) || emailFromText(it.description),
+        website: it.website || null,
+        kullanici_adi: it.channel_handle || null,
+        takipci: parseCount(it.subscriber_count),
+        profil_url: it.channel_url || null,
+        puan: null,
+        yorum_sayisi: parseCount(it.video_count),
+        sehir: search.sehir || null,
+        ulke: it.country || search.ulke || null,
+        raw: it,
+      });
+
+      const normalize =
+        kaynak === "instagram" ? normalizeInstagram : kaynak === "youtube" ? normalizeYoutube : normalizeMaps;
+
+      let rows = list.map(normalize);
+      // Filtreler (min. puan yalnızca Maps'te anlamlı)
       rows = rows.filter((r) => {
-        if (minPuan > 0 && !(Number(r.puan) >= minPuan)) return false;
+        if (kaynak === "maps" && minPuan > 0 && !(Number(r.puan) >= minPuan)) return false;
         if (search.only_email && !r.email) return false;
         if (search.only_phone && !r.telefon) return false;
         if (search.only_website && !r.website) return false;
@@ -239,15 +440,36 @@ serve(async (req) => {
       // 2) Owner'ın MEVCUT tüm leadlerine karşı tekilleştirme (önceki
       //    aramalarda bulunmuş müşteriyi tekrar ekleme/listeleme)
       const { data: existingLeads } = await admin
-        .from("leads").select("place_id,isim,adres").eq("user_id", ownerId);
-      const exPid = new Set<string>();
-      const exKey = new Set<string>();
+        .from("leads").select("id,place_id,isim,adres,email,telefon,website").eq("user_id", ownerId);
+      const exPid = new Map<string, any>();
+      const exKey = new Map<string, any>();
       for (const e of existingLeads || []) {
-        if (e.place_id) exPid.add(String(e.place_id));
-        exKey.add(nameKey(e));
+        if (e.place_id) exPid.set(String(e.place_id), e);
+        exKey.set(nameKey(e), e);
       }
-      const fresh = rows.filter((r) => !((r.place_id && exPid.has(String(r.place_id))) || exKey.has(nameKey(r))));
+      const eslesen = (r: any) =>
+        (r.place_id && exPid.get(String(r.place_id))) || exKey.get(nameKey(r)) || null;
+
+      const fresh = rows.filter((r) => !eslesen(r));
       const duplicates = rows.length - fresh.length;
+
+      // 2b) İLETİŞİM ZENGİNLEŞTİRME — mükerrer sayılan kayıtlar boşuna
+      //     atılmasın. Eski aramalar (e-posta döndürmeyen aktör) ile gelmiş
+      //     bir lead'in şimdi e-postası/telefonu bulunduysa mevcut satırı
+      //     güncelle. Sadece BOŞ alanlar doldurulur — elle girilen veri ezilmez.
+      let enriched = 0;
+      for (const r of rows) {
+        const e = eslesen(r);
+        if (!e) continue;
+        const patch: any = {};
+        if (!e.email && r.email) patch.email = r.email;
+        if (!e.telefon && r.telefon) patch.telefon = r.telefon;
+        if (!e.website && r.website) patch.website = r.website;
+        if (!Object.keys(patch).length) continue;
+        const { error: uErr } = await admin.from("leads").update(patch).eq("id", e.id);
+        if (uErr) console.error("lead enrich error", uErr.message);
+        else enriched++;
+      }
 
       // 3) Yalnızca yeni olanları ekle. onConflict DO NOTHING (ignoreDuplicates)
       //    → yarış durumunda bile mükerrer oluşmaz ve mevcut satır (elle
@@ -263,7 +485,7 @@ serve(async (req) => {
       }
 
       await admin.from("lead_searches").update({ status: "done", result_count: saved.length }).eq("id", searchId);
-      return json({ success: true, status: "done", count: saved.length, duplicates, leads: saved });
+      return json({ success: true, status: "done", mod, kaynak, count: saved.length, duplicates, enriched, leads: saved });
     }
 
     return json({ success: false, error: "Geçersiz action" }, 400);

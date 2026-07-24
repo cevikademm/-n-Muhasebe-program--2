@@ -203,6 +203,14 @@ export interface MetinGirdisi {
   handle?: string | null;
   /** Platformun caption üst sınırı. */
   captionSiniri?: number;
+  /**
+   * SEO ajanının bu gönderi için ürettiği hazır etiketler (sm_seo_oneriler).
+   * Doluysa havuzdan seçim YAPILMAZ — yerleştirme kuralı (yorum mu, metin
+   * altı mı) yine `kural`dan gelir.
+   */
+  hazirHashtagler?: string[] | null;
+  /** Ajanın ürettiği hazır ilk yorum. Doluysa şablon döngüsü atlanır. */
+  hazirYorum?: string | null;
 }
 
 export interface MetinSonucu {
@@ -221,6 +229,8 @@ export interface MetinSonucu {
  *
  * Kurallar:
  *  · Kural kapalıysa hiçbir şey eklenmez — kullanıcı metni aynen gider.
+ *    (İSTİSNA: ajan hazır metin ürettiyse yerleştirme yine yapılır; kullanıcı
+ *    "gönderi modu"nu açıkça seçmiş demektir.)
  *  · Hikâyede (story) ne yorum ne etiket kutusu var → otomasyon atlanır.
  *  · Platform yorum kabul etmiyorsa "ilk yorum" tercihi metnin altına düşer;
  *    aksi halde etiketler hiç yayınlanmamış olurdu.
@@ -230,17 +240,27 @@ export function metinKur(g: MetinGirdisi): MetinSonucu {
   const ham = String(g.caption ?? "").trim();
   const kapali: MetinSonucu = { caption: ham, yorum: null, hashtagler: [], yer: "yok" };
 
+  const hazirEtiketler = tekille(
+    (g.hazirHashtagler ?? []).map(hashtagNormalize).filter(Boolean),
+  );
+  const hazirYorum = String(g.hazirYorum ?? "").trim();
+  const ajanUretti = !!hazirEtiketler.length || !!hazirYorum;
+
   const k = g.kural;
-  if (!k || !k.aktif) return kapali;
+  if ((!k || !k.aktif) && !ajanUretti) return kapali;
   if (g.format === "story") return kapali;
 
   const yorumMumkun = YORUM_DESTEKLI.includes(g.platform);
-  let yer: SmHashtagYeri = k.hashtag_yeri ?? "yorum";
+  let yer: SmHashtagYeri = k?.hashtag_yeri ?? "yorum";
   if (yer === "yorum" && !yorumMumkun) yer = "caption";
 
   const mevcut = metindekiHashtagler(ham);
   const kalanKota = Math.max(0, HASHTAG_SINIRI - mevcut.length);
-  const secilen = yer === "yok" ? [] : hashtagSec(k, g.tohum, mevcut).slice(0, kalanKota);
+  const havuzdan = k ? hashtagSec(k, g.tohum, mevcut) : [];
+  const aday = hazirEtiketler.length
+    ? hazirEtiketler.filter((t) => !mevcut.some((m) => anahtar(m) === anahtar(t)))
+    : havuzdan;
+  const secilen = yer === "yok" ? [] : aday.slice(0, kalanKota);
   const etiketMetni = secilen.join(" ");
 
   let caption = ham;
@@ -251,8 +271,10 @@ export function metinKur(g: MetinGirdisi): MetinSonucu {
   if (caption.length > sinir) caption = caption.slice(0, sinir).trimEnd();
 
   let yorum: string | null = null;
-  if (yorumMumkun && (k.yorum_aktif || yer === "yorum")) {
-    const sablon = k.yorum_aktif ? sablonSec(k.yorum_sablonlari, g.tohum) : "";
+  if (yorumMumkun && (hazirYorum || k?.yorum_aktif || yer === "yorum")) {
+    // Ajanın yorumu şablonun yerine geçer; yer tutucuları yine çözülür ki
+    // {handle}/{hashtag} yazan bir öneri de doğru gitsin.
+    const sablon = hazirYorum || (k?.yorum_aktif ? sablonSec(k.yorum_sablonlari, g.tohum) : "");
     const etiketSablonda = /\{hashtag\}/i.test(sablon);
     let govde = sablonDoldur(sablon, {
       baslik: String(g.baslik ?? "").trim(),

@@ -10,6 +10,9 @@
 
 // Tanıtım PDF'leri public/sunum altında; fikoai.de kökünden servis edilir.
 export const SITE = "https://fikoai.de";
+// Her mail/mesajın sonuna eklenen adres (imza satırı)
+export const SITE_URL = "https://www.fikoai.de";
+export const SITE_HOST = "www.fikoai.de";
 
 export interface KampanyaEk { name: string; url: string; }
 export interface KampanyaSablon { subject: string; body: string; }
@@ -18,6 +21,8 @@ export interface Kampanya {
   renk: string;
   label: { tr: string; de: string };
   aciklama: { tr: string; de: string };
+  // Hedef kitle: b2b = işletmeye tanıtım, b2c = işletmenin son müşterisine bilgilendirme
+  hedef?: "b2b" | "b2c";
   // dil kodu → şablon
   templates: Record<string, KampanyaSablon>;
   // dil kodu → ek dosya. "*" = varsayılan (dile özel yoksa bu kullanılır).
@@ -92,7 +97,165 @@ export const KAMPANYALAR: Kampanya[] = [
     },
   },
 
-  // ── 2) fikoai Muhasebe (genel — ek yok) ─────────────────────────
+  // ── 2) Ekspertiz — SON MÜŞTERİ bilgilendirme (marka ismi geçmez) ─
+  // Bu metin ekspertiz bürosunun KENDİ müşterisine gönderdiği bilgilendirme
+  // mailidir; gövdede hiçbir marka/yazılım adı geçmez, imza alanı bürodadır.
+  // Hukuki not: "0 €" ifadesi yalnızca KUSURSUZ (unverschuldet) kaza için
+  // geçerlidir — her dilde bu şart açıkça yazılıdır.
+  {
+    code: "musteri-bilgilendirme",
+    renk: "#0ea5e9",
+    hedef: "b2c",
+    label: { tr: "Müşteri Bilgilendirme", de: "Kunden-Info" },
+    aciklama: {
+      tr: "Ekspertiz bürosunun son müşterisine dijital portal bilgilendirmesi (marka ismi geçmez)",
+      de: "Kunden-Information des Sachverständigenbüros zum digitalen Portal (ohne Markenname)",
+    },
+    templates: {
+      de: {
+        subject: "Ihr Unfallschaden – jetzt digital, schneller und ohne Kosten für Sie",
+        body:
+          "Sehr geehrte Damen und Herren,\n\n" +
+          "ein Verkehrsunfall kostet Sie Zeit, Nerven – und oft bares Geld, wenn Ansprüche übersehen werden. Genau das ändern wir für Sie: Als unabhängiges Kfz-Sachverständigenbüro bieten wir Ihnen ab sofort ein digitales Kundenportal, über das Ihr gesamter Schadenfall bequem vom Handy aus läuft.\n\n" +
+          "Was Sie damit können:\n" +
+          "• Ihren Fall rund um die Uhr verfolgen – Gutachten, Fotos, Rechnungen und alle Dokumente an einem Ort, kein Hinterhertelefonieren mehr.\n" +
+          "• Termine online buchen – Besichtigungstermin in wenigen Klicks, die Erinnerung kommt automatisch per WhatsApp.\n" +
+          "• Dokumente einfach hochladen – Fahrzeugschein fotografieren, die Daten werden automatisch erkannt und übernommen.\n" +
+          "• HU/TÜV-Erinnerung – wir erinnern Sie rechtzeitig an Ihre Hauptuntersuchung, bevor Fristen ablaufen.\n" +
+          "• Alles aus einer Hand – auf Wunsch koordinieren wir direkt Werkstatt, Rechtsanwalt und Versicherung.\n\n" +
+          "Was das für Ihren Geldbeutel bedeutet:\n" +
+          "1) 0 € Kosten bei unverschuldetem Unfall – die Kosten des unabhängigen Gutachtens trägt die gegnerische Versicherung, nicht Sie.\n" +
+          "2) Volle Entschädigung statt Kürzung – ein unabhängiges Gutachten erfasst auch Positionen, die gern „vergessen“ werden: Wertminderung, Nutzungsausfall, Abschlepp- und Mietwagenkosten. Das macht häufig mehrere hundert bis tausend Euro Unterschied.\n" +
+          "3) Schnellere Auszahlung – digitale Abwicklung heißt: Gutachten und Unterlagen erreichen die Versicherung ohne Verzögerung.\n" +
+          "4) Keine verpassten Fristen – automatische HU/TÜV-Erinnerungen schützen Sie vor Bußgeldern und teuren Nachprüfungen.\n" +
+          "5) Zeit ist Geld – kein Papierkram, keine unnötigen Fahrten; alles läuft digital über Ihr Portal.\n\n" +
+          "Bei Fragen erreichen Sie uns jederzeit per Telefon oder WhatsApp. Wir freuen uns, Sie auch digital begleiten zu dürfen.\n\n" +
+          "Mit freundlichen Grüßen\n(Name / Unterschrift / Kontaktdaten)",
+      },
+      tr: {
+        subject: "Kaza dosyanız artık dijital – daha hızlı, daha şeffaf ve size maliyeti sıfır",
+        body:
+          "Değerli Müşterimiz,\n\n" +
+          "Bir trafik kazası size zaman, moral ve çoğu zaman fark etmeden para kaybettirir; çünkü hak ettiğiniz birçok kalem tazminat gözden kaçar. Bağımsız oto ekspertiz büromuz olarak bunu değiştiriyoruz: Artık tüm hasar dosyanızı telefonunuzdan yönetebileceğiniz dijital bir müşteri portalı hizmetinizde.\n\n" +
+          "Portal ile neler yapabilirsiniz?\n" +
+          "• Dosyanızı 7/24 takip edin – ekspertiz raporu, fotoğraflar, faturalar ve tüm belgeler tek ekranda, telefon trafiğine son.\n" +
+          "• Online randevu alın – araç inceleme randevunuzu birkaç tıkla oluşturun, hatırlatma WhatsApp'tan otomatik gelsin.\n" +
+          "• Belgelerinizi kolayca yükleyin – ruhsatınızın fotoğrafını çekmeniz yeterli, bilgiler otomatik okunur ve dosyanıza işlenir.\n" +
+          "• TÜV (muayene) hatırlatması – muayene tarihiniz yaklaşınca sizi zamanında uyarırız, süre kaçırmazsınız.\n" +
+          "• Her şey tek elden – dilerseniz kaporta atölyesi, avukat ve sigorta yazışmalarını sizin adınıza biz koordine ederiz.\n\n" +
+          "Cebinize somut faydası ne?\n" +
+          "1) Kusursuz olduğunuz kazada size maliyet sıfır – bağımsız ekspertiz raporunun ücretini siz değil, karşı tarafın sigortası öder.\n" +
+          "2) Eksiksiz tazminat – bağımsız rapor, sigortaların „unutmayı“ sevdiği kalemleri de kapsar: değer kaybı (Wertminderung), kullanım kaybı (Nutzungsausfall), çekici ve kiralık araç masrafları. Bu çoğu zaman yüzlerce, hatta binlerce Euro fark demektir.\n" +
+          "3) Paranız daha hızlı hesabınızda – dijital süreç sayesinde rapor ve belgeler sigortaya gecikmeden ulaşır.\n" +
+          "4) Ceza ve ek masraf yok – otomatik TÜV hatırlatmaları sayesinde muayene süresini kaçırma riskiniz olmaz.\n" +
+          "5) Zamandan tasarruf = paradan tasarruf – evrak işi yok, ofis ofis dolaşmak yok; her adım portalınız üzerinden dijital ilerler.\n\n" +
+          "Sorularınız için bize telefon veya WhatsApp üzerinden her zaman ulaşabilirsiniz. Sizi dijital olarak da yanımızda görmekten mutluluk duyarız.\n\n" +
+          "Saygılarımızla\n(İsim / İmza / İletişim bilgileri)",
+      },
+      en: {
+        subject: "Your accident claim – now digital, faster and at no cost to you",
+        body:
+          "Dear Sir or Madam,\n\n" +
+          "A road accident costs you time, nerves – and often real money, because entitlements are easily overlooked. That is exactly what we are changing for you: as an independent vehicle appraisal office we now offer you a digital customer portal that runs your entire claim conveniently from your phone.\n\n" +
+          "What you can do with it:\n" +
+          "• Track your case around the clock – appraisal report, photos, invoices and all documents in one place, no more chasing phone calls.\n" +
+          "• Book appointments online – arrange the inspection in a few clicks, the reminder arrives automatically via WhatsApp.\n" +
+          "• Upload documents easily – just photograph your vehicle registration; the data is recognised and filed automatically.\n" +
+          "• Roadworthiness (HU/TÜV) reminder – we remind you in good time before deadlines expire.\n" +
+          "• Everything from one source – on request we coordinate the body shop, lawyer and insurer directly.\n\n" +
+          "What this means for your wallet:\n" +
+          "1) €0 cost if the accident was not your fault – the cost of the independent appraisal is borne by the other party's insurer, not by you.\n" +
+          "2) Full compensation instead of cuts – an independent report also covers the items insurers like to \"forget\": diminished value, loss-of-use compensation, towing and rental car costs. That often means a difference of several hundred to several thousand euros.\n" +
+          "3) Faster payout – digital handling means the report and documents reach the insurer without delay.\n" +
+          "4) No missed deadlines – automatic inspection reminders protect you from fines and expensive re-tests.\n" +
+          "5) Time is money – no paperwork, no unnecessary trips; every step runs digitally through your portal.\n\n" +
+          "If you have any questions, you can reach us at any time by phone or WhatsApp. We look forward to supporting you digitally as well.\n\n" +
+          "Kind regards\n(Name / Signature / Contact details)",
+      },
+      fr: {
+        subject: "Votre sinistre auto – désormais numérique, plus rapide et sans frais pour vous",
+        body:
+          "Madame, Monsieur,\n\n" +
+          "Un accident de la route vous coûte du temps, des nerfs – et souvent de l'argent, car de nombreux droits à indemnisation passent inaperçus. C'est précisément ce que nous changeons pour vous : en tant que bureau d'expertise automobile indépendant, nous vous proposons désormais un portail client numérique qui gère l'ensemble de votre dossier depuis votre téléphone.\n\n" +
+          "Ce que vous pouvez y faire :\n" +
+          "• Suivre votre dossier 24h/24 – rapport d'expertise, photos, factures et tous les documents au même endroit, fini les relances téléphoniques.\n" +
+          "• Prendre rendez-vous en ligne – l'expertise du véhicule en quelques clics, le rappel arrive automatiquement par WhatsApp.\n" +
+          "• Téléverser vos documents facilement – photographiez votre carte grise, les données sont reconnues et intégrées automatiquement.\n" +
+          "• Rappel du contrôle technique – nous vous prévenons à temps, avant l'expiration des délais.\n" +
+          "• Tout en une seule main – sur demande, nous coordonnons directement le carrossier, l'avocat et l'assurance.\n\n" +
+          "Ce que cela signifie pour votre portefeuille :\n" +
+          "1) 0 € de frais en cas d'accident non responsable – le coût de l'expertise indépendante est pris en charge par l'assurance adverse, pas par vous.\n" +
+          "2) Une indemnisation complète plutôt que réduite – un rapport indépendant couvre aussi les postes que l'on « oublie » volontiers : dépréciation du véhicule, privation de jouissance, frais de remorquage et de véhicule de remplacement. Cela représente souvent plusieurs centaines, voire milliers d'euros.\n" +
+          "3) Un versement plus rapide – le traitement numérique permet au rapport et aux pièces d'arriver sans délai chez l'assureur.\n" +
+          "4) Aucun délai manqué – les rappels automatiques du contrôle technique vous évitent amendes et contre-visites coûteuses.\n" +
+          "5) Le temps, c'est de l'argent – plus de paperasse, plus de déplacements inutiles : tout passe par votre portail.\n\n" +
+          "Pour toute question, nous restons joignables par téléphone ou WhatsApp. Nous serons heureux de vous accompagner également en version numérique.\n\n" +
+          "Cordialement\n(Nom / Signature / Coordonnées)",
+      },
+      nl: {
+        subject: "Uw schadedossier – nu digitaal, sneller en zonder kosten voor u",
+        body:
+          "Geachte heer, mevrouw,\n\n" +
+          "Een verkeersongeval kost u tijd, energie – en vaak ook geld, omdat aanspraken makkelijk over het hoofd worden gezien. Precies dat veranderen wij voor u: als onafhankelijk auto-expertisebureau bieden wij u vanaf nu een digitaal klantenportaal waarmee uw hele schadedossier gewoon via uw telefoon loopt.\n\n" +
+          "Wat u ermee kunt:\n" +
+          "• Uw dossier 24/7 volgen – expertiserapport, foto's, facturen en alle documenten op één plek, geen achterafbellen meer.\n" +
+          "• Online afspraken maken – de schouwing in een paar klikken, de herinnering komt automatisch via WhatsApp.\n" +
+          "• Documenten eenvoudig uploaden – fotografeer uw kentekenbewijs; de gegevens worden automatisch herkend en verwerkt.\n" +
+          "• APK/TÜV-herinnering – wij herinneren u op tijd, voordat de termijn verloopt.\n" +
+          "• Alles uit één hand – op verzoek stemmen wij schadeherstelbedrijf, advocaat en verzekeraar rechtstreeks af.\n\n" +
+          "Wat dat voor uw portemonnee betekent:\n" +
+          "1) € 0 kosten bij een ongeval buiten uw schuld – de kosten van het onafhankelijke rapport draagt de verzekeraar van de tegenpartij, niet u.\n" +
+          "2) Volledige vergoeding in plaats van korting – een onafhankelijk rapport dekt ook posten die men graag „vergeet”: waardevermindering, gebruiksderving, sleep- en huurautokosten. Dat scheelt vaak enkele honderden tot duizenden euro's.\n" +
+          "3) Sneller uitbetaald – digitale afhandeling betekent dat rapport en stukken zonder vertraging bij de verzekeraar aankomen.\n" +
+          "4) Geen gemiste termijnen – automatische keuringsherinneringen beschermen u tegen boetes en dure herkeuringen.\n" +
+          "5) Tijd is geld – geen papierwerk, geen onnodige ritten; elke stap loopt digitaal via uw portaal.\n\n" +
+          "Bij vragen bereikt u ons altijd per telefoon of WhatsApp. Wij begeleiden u graag ook digitaal.\n\n" +
+          "Met vriendelijke groet\n(Naam / Handtekening / Contactgegevens)",
+      },
+      it: {
+        subject: "Il suo sinistro – ora digitale, più veloce e senza costi per lei",
+        body:
+          "Gentile Cliente,\n\n" +
+          "Un incidente stradale le costa tempo, nervi – e spesso denaro, perché molte voci di risarcimento sfuggono facilmente. È proprio questo che vogliamo cambiare: come studio peritale auto indipendente le mettiamo a disposizione un portale clienti digitale con cui gestire l'intera pratica comodamente dal telefono.\n\n" +
+          "Cosa può fare con il portale:\n" +
+          "• Seguire la pratica 24 ore su 24 – perizia, foto, fatture e tutti i documenti in un unico posto, senza più rincorrere telefonate.\n" +
+          "• Prenotare appuntamenti online – la visione del veicolo in pochi clic, il promemoria arriva automaticamente via WhatsApp.\n" +
+          "• Caricare i documenti facilmente – basta fotografare il libretto di circolazione: i dati vengono riconosciuti e inseriti automaticamente.\n" +
+          "• Promemoria della revisione – la avvisiamo per tempo, prima della scadenza.\n" +
+          "• Tutto da un unico interlocutore – su richiesta coordiniamo direttamente carrozzeria, avvocato e assicurazione.\n\n" +
+          "Cosa significa per il suo portafoglio:\n" +
+          "1) 0 € di costi in caso di incidente non per sua colpa – la perizia indipendente è a carico dell'assicurazione della controparte, non sua.\n" +
+          "2) Risarcimento pieno anziché ridotto – una perizia indipendente comprende anche le voci che si tende a „dimenticare“: deprezzamento del veicolo, mancato utilizzo, costi di traino e auto sostitutiva. Spesso si tratta di centinaia o migliaia di euro di differenza.\n" +
+          "3) Liquidazione più rapida – la gestione digitale fa arrivare perizia e documenti all'assicurazione senza ritardi.\n" +
+          "4) Nessuna scadenza dimenticata – i promemoria automatici della revisione la proteggono da multe e controlli ripetuti costosi.\n" +
+          "5) Il tempo è denaro – niente burocrazia, niente spostamenti inutili: ogni passaggio avviene digitalmente nel suo portale.\n\n" +
+          "Per qualsiasi domanda siamo sempre raggiungibili per telefono o WhatsApp. Saremo lieti di assisterla anche in forma digitale.\n\n" +
+          "Cordiali saluti\n(Nome / Firma / Contatti)",
+      },
+      es: {
+        subject: "Su siniestro – ahora digital, más rápido y sin coste para usted",
+        body:
+          "Estimado cliente:\n\n" +
+          "Un accidente de tráfico le cuesta tiempo, nervios – y a menudo dinero, porque muchas partidas de indemnización pasan desapercibidas. Eso es justo lo que cambiamos para usted: como gabinete pericial de automoción independiente, le ofrecemos ahora un portal de cliente digital con el que gestionar todo su expediente cómodamente desde el móvil.\n\n" +
+          "Qué puede hacer con él:\n" +
+          "• Seguir su expediente las 24 horas – informe pericial, fotos, facturas y todos los documentos en un solo lugar, sin perseguir llamadas.\n" +
+          "• Reservar citas online – la inspección del vehículo en pocos clics, el recordatorio llega automáticamente por WhatsApp.\n" +
+          "• Subir documentos fácilmente – basta con fotografiar el permiso de circulación: los datos se reconocen y se incorporan solos.\n" +
+          "• Recordatorio de la ITV – le avisamos a tiempo, antes de que venzan los plazos.\n" +
+          "• Todo de la mano de un único interlocutor – si lo desea, coordinamos directamente taller, abogado y aseguradora.\n\n" +
+          "Qué significa esto para su bolsillo:\n" +
+          "1) 0 € de coste si el accidente no fue culpa suya – el informe pericial independiente lo paga la aseguradora contraria, no usted.\n" +
+          "2) Indemnización completa en lugar de recortada – un informe independiente recoge también las partidas que suelen „olvidarse“: depreciación del vehículo, lucro cesante por privación de uso, grúa y vehículo de sustitución. Eso supone con frecuencia cientos o miles de euros de diferencia.\n" +
+          "3) Cobro más rápido – la tramitación digital hace que informe y documentos lleguen a la aseguradora sin demora.\n" +
+          "4) Sin plazos perdidos – los recordatorios automáticos de la ITV le protegen de multas y revisiones repetidas caras.\n" +
+          "5) El tiempo es dinero – sin papeleo ni desplazamientos innecesarios: cada paso avanza digitalmente en su portal.\n\n" +
+          "Para cualquier duda puede contactarnos en todo momento por teléfono o WhatsApp. Estaremos encantados de acompañarle también de forma digital.\n\n" +
+          "Atentamente\n(Nombre / Firma / Datos de contacto)",
+      },
+    },
+  },
+
+  // ── 3) fikoai Muhasebe (genel — ek yok) ─────────────────────────
   {
     code: "fikoai-muhasebe",
     renk: "#8b5cf6",
@@ -133,7 +296,7 @@ export const KAMPANYALAR: Kampanya[] = [
     },
   },
 
-  // ── 3) Gastronomi — QR menü & sipariş (Restoran, kafe, imbiss) ───
+  // ── 4) Gastronomi — QR menü & sipariş (Restoran, kafe, imbiss) ───
   {
     code: "gastronomi",
     renk: "#f59e0b",
@@ -182,7 +345,7 @@ export const KAMPANYALAR: Kampanya[] = [
     },
   },
 
-  // ── 4) Web sitesi & dijital vitrin (her sektör) ─────────────────
+  // ── 5) Web sitesi & dijital vitrin (her sektör) ─────────────────
   {
     code: "web-vitrin",
     renk: "#06b6d4",
@@ -231,7 +394,7 @@ export const KAMPANYALAR: Kampanya[] = [
     },
   },
 
-  // ── 5) Online randevu (Kuaför, güzellik, sağlık, danışmanlık) ────
+  // ── 6) Online randevu (Kuaför, güzellik, sağlık, danışmanlık) ────
   {
     code: "randevu",
     renk: "#10b981",
@@ -280,7 +443,7 @@ export const KAMPANYALAR: Kampanya[] = [
     },
   },
 
-  // ── 6) Personel & vardiya yönetimi (çok personelli/şubeli) ──────
+  // ── 7) Personel & vardiya yönetimi (çok personelli/şubeli) ──────
   {
     code: "isletme-yonetim",
     renk: "#6366f1",
@@ -329,7 +492,7 @@ export const KAMPANYALAR: Kampanya[] = [
     },
   },
 
-  // ── 7) Perakende & mağaza — dijital vitrin & online sipariş ─────
+  // ── 8) Perakende & mağaza — dijital vitrin & online sipariş ─────
   {
     code: "perakende",
     renk: "#ec4899",
@@ -407,4 +570,31 @@ export function sunumSatiri(ek: KampanyaEk | null, lang: string): string {
   if (!ek) return "";
   const label = lang === "tr" ? "Tanıtım sunumu" : lang === "de" ? "Präsentation" : "Presentation";
   return `\n\n📎 ${label}: ${ek.url}`;
+}
+
+// ── İmza (her mail/mesajın sonuna) ────────────────────────────────
+// Kanal fark etmeksizin (mail, WhatsApp, kopyala, mailto) gönderilen her
+// metnin sonuna site adresi eklenir. İki kez eklenmesin diye `imzaEkle`
+// metinde adres zaten geçiyorsa dokunmaz.
+const IMZA_LABEL: Record<string, string> = {
+  tr: "Detaylı bilgi", de: "Mehr erfahren", en: "Learn more",
+  fr: "En savoir plus", nl: "Meer informatie", it: "Maggiori informazioni",
+  es: "Más información",
+};
+
+export function imzaSatiri(lang: string): string {
+  return `\n\n🌐 ${IMZA_LABEL[lang] || IMZA_LABEL.de}: ${SITE_HOST}`;
+}
+
+// Metnin sonuna imza satırını ekler (zaten varsa metni değiştirmez)
+export function imzaEkle(text: string, lang: string): string {
+  const t = String(text ?? "");
+  if (new RegExp(SITE_HOST.replace(/\./g, "\\."), "i").test(t)) return t;
+  return t.trimEnd() + imzaSatiri(lang);
+}
+
+// Gönderilecek nihai metin: gövde + (isteğe bağlı) sunum linki + imza.
+// Mail, WhatsApp, kopyala ve mailto aynı fonksiyondan geçer.
+export function mesajMetni(body: string, ek: KampanyaEk | null, lang: string, sunumEkle = true): string {
+  return imzaEkle(String(body ?? "").trimEnd() + (sunumEkle ? sunumSatiri(ek, lang) : ""), lang);
 }

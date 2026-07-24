@@ -42,6 +42,31 @@ const fill = (tpl: string, lead: any) =>
     .replaceAll("{{kategori}}", lead.kategori || "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ── İmza + link ───────────────────────────────────────────────────
+// Her mailin sonunda site adresi bulunur. İstemci metne zaten eklemiş
+// olabilir; yoksa burada eklenir (tek kaynak: her mail imzalı çıkar).
+const SITE_HOST = "www.fikoai.de";
+const SITE_URL = `https://${SITE_HOST}`;
+
+// esc() sonrası düz metindeki adresleri tıklanabilir yapar.
+const linkify = (s: string) =>
+  s.replace(/(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/gi, (m) => {
+    const tail = m.match(/[.,;:!?)]+$/)?.[0] || "";
+    const url = m.slice(0, m.length - tail.length);
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return `<a href="${href}" target="_blank" rel="noopener" style="color:#0ea5e9;text-decoration:none">${url}</a>${tail}`;
+  });
+
+function buildHtml(text: string): string {
+  const govde = linkify(esc(text));
+  const imzali = text.toLowerCase().includes(SITE_HOST)
+    ? ""
+    : `<div style="margin-top:18px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b">` +
+      `🌐 <a href="${SITE_URL}" target="_blank" rel="noopener" style="color:#0ea5e9;text-decoration:none">${SITE_HOST}</a></div>`;
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0f172a">` +
+    `<div style="white-space:pre-wrap">${govde}</div>${imzali}</div>`;
+}
+
 serve(async (req) => {
   const corsHeaders = cors(req);
   const json = (b: any, s = 200) =>
@@ -79,7 +104,16 @@ serve(async (req) => {
     const leadIds: string[] = Array.isArray(body?.lead_ids) ? body.lead_ids.slice(0, 100) : [];
     const subject = String(body?.subject || "").trim();
     const bodyTpl = String(body?.body || "").trim();
-    const reply_to = String(body?.reply_to || Deno.env.get("LEADS_REPLY_TO") || caller.email || "").trim();
+    // Yanıt adresi: müşterinin cevabını hangi lead'e ait olduğunu kesin bilerek
+    // yakalayabilmek için her lead'e artı-etiketli adres verilir
+    // (lead+<lead_id>@fikoai.de). Bu adrese gelen posta lead-inbound'a düşer,
+    // oradan hem panele yazılır hem Gmail'e iletilir.
+    // LEADS_INBOUND_DOMAIN boşsa eski davranış (sabit reply_to) sürer.
+    const inboundDomain = String(Deno.env.get("LEADS_INBOUND_DOMAIN") || "").trim().toLowerCase();
+    const inboundLocal = String(Deno.env.get("LEADS_INBOUND_LOCAL") || "lead").trim().toLowerCase();
+    const fallbackReplyTo = String(body?.reply_to || Deno.env.get("LEADS_REPLY_TO") || caller.email || "").trim();
+    const replyToFor = (leadId: string) =>
+      inboundDomain ? `${inboundLocal}+${leadId}@${inboundDomain}` : fallbackReplyTo;
 
     // Ekler (tanıtım PDF'i): yalnızca https + fikoai.de altındaki dosyalara izin
     // ver (SSRF/kötüye kullanım koruması). Resend "path" ile uzak dosyayı çeker.
@@ -93,9 +127,15 @@ serve(async (req) => {
     if (!leadIds.length) return json({ success: false, error: "En az bir müşteri seçin." }, 400);
     if (!subject || !bodyTpl) return json({ success: false, error: "Konu ve mesaj zorunludur." }, 400);
 
+    // Daha önce mail atılmış lead'lere tekrar gönderilsin mi? Varsayılan HAYIR.
+    // Gönderim yarıda kesilirse (timeout) aynı seçimle tekrar denendiğinde
+    // ilk gruba İKİNCİ bir mail gitmesini engeller. Bilinçli takip maili için
+    // istemci `resend_to_sent: true` gönderir.
+    const resendToSent = body?.resend_to_sent === true;
+
     // Sadece owner'a ait, e-postası olan lead'ler
     const { data: leads } = await admin
-      .from("leads").select("id,isim,email,sehir,kategori,user_id")
+      .from("leads").select("id,isim,email,sehir,kategori,user_id,mail_durumu")
       .in("id", leadIds).eq("user_id", ownerId);
 
     let sent = 0, failed = 0, skipped = 0;
@@ -103,7 +143,12 @@ serve(async (req) => {
 
     for (const lead of leads || []) {
       if (!lead.email) { skipped++; results.push({ lead_id: lead.id, status: "skipped", error: "e-posta yok" }); continue; }
-      const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0f172a;white-space:pre-wrap">${esc(fill(bodyTpl, lead))}</div>`;
+      if (!resendToSent && lead.mail_durumu === "gonderildi") {
+        skipped++;
+        results.push({ lead_id: lead.id, status: "skipped", error: "zaten gönderildi" });
+        continue;
+      }
+      const html = buildHtml(fill(bodyTpl, lead));
       try {
         const r = await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -111,7 +156,7 @@ serve(async (req) => {
           body: JSON.stringify({
             from: FROM,
             to: [lead.email],
-            reply_to,
+            reply_to: replyToFor(lead.id),
             subject: fill(subject, lead),
             html,
             ...(attachments.length ? { attachments } : {}),

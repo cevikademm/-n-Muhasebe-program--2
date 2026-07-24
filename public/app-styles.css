@@ -25,9 +25,17 @@
       --text-dim: #94a3b8;
     }
 
+    /* ── Uygulama kabuğu: native (APK) gibi sabit ──
+       Sayfa hiçbir zaman sağa/sola kaymaz; tüm kaydırma iç panellerde olur. */
     html,
     body {
       height: 100%;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      /* çift dokunuşla zoom kapalı, pan serbest (yatay tab şeritleri çalışmaya devam eder) */
+      touch-action: manipulation;
     }
 
     body {
@@ -35,9 +43,35 @@
       background: var(--bg);
       color: var(--text-1);
       font-family: 'Plus Jakarta Sans', sans-serif;
-      overscroll-behavior-y: none;
+      position: fixed;
+      inset: 0;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+    }
+
+    #root {
+      height: 100%;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    /* Mobil tarayıcı adres çubuğu 100vh'yi taşırır → dinamik viewport birimi kullan */
+    @supports (height: 100dvh) {
+
+      html,
+      body,
+      #root {
+        height: 100dvh;
+      }
+
+      .h-screen {
+        height: 100dvh;
+      }
+
+      .min-h-screen {
+        min-height: 100dvh;
+      }
     }
 
     /* ── Scrollbar ── */
@@ -800,3 +834,9 @@
     html.auth-dark .c-btn-primary:hover {
       box-shadow: 0 12px 34px -8px rgba(124, 92, 255, .7), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
     }
+
+    /* ── Dönen yükleme ikonu ─────────────────────────────────────────
+       `className="spin"` kodda zaten kullanılıyordu ama kural hiçbir yerde
+       tanımlı değildi; ikonlar sessizce sabit duruyordu. Tek yerde tanımlandı. */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; transform-origin: 50% 50%; }

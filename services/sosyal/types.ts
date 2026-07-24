@@ -237,6 +237,81 @@ export interface SmUretimIsi {
   updated_at: string;
 }
 
+// ── Takvim ──────────────────────────────────────────────────────────
+
+/** Takvim öğesinin geldiği tablo — ekran yalnızca rozet/renk düzeyinde ayırır. */
+export type SmTakvimKaynak = "post" | "uretim" | "yayin";
+
+/**
+ * Üç kuyruğun (içerik / üretim / yayın) ortak takvim gösterimi.
+ * Takvim yeni tablo açmaz; var olan tarihli satırları normalize eder.
+ */
+export interface SmTakvimOgesi {
+  /** "yayin:<uuid>" — kaynaklar arası çakışmayan birleşik anahtar. */
+  id: string;
+  kaynak: SmTakvimKaynak;
+  tarih: string;
+  baslik: string;
+  /** Çipin rengini taşıyan tek platform; çoklu ise `platformlar` dolu gelir. */
+  platform: SmPlatform | null;
+  platformlar?: SmPlatform[];
+  /** Kaynağın kendi durum değeri (yayinlandi / bekliyor / hazir …). */
+  durum: string;
+  renk: string;
+  url: string | null;
+  /** Plan mı, olan biten mi — geçmiş öğeler soluk gösterilir. */
+  gerceklesti: boolean;
+}
+
+// ── Analiz ──────────────────────────────────────────────────────────
+
+/** sm_metrics: günlük HESAP snapshot'ı ("büyüyor muyuz?"). */
+export interface SmMetrikGun {
+  tarih: string;
+  platform: SmPlatform;
+  takipci: number | null;
+  takipci_artis: number | null;
+  erisim: number | null;
+  gosterim: number | null;
+  etkilesim: number | null;
+  profil_ziyaret: number | null;
+}
+
+/** sm_post_ranking: gönderi başına son ölçüm + karar etiketi. */
+export interface SmGonderiSirasi {
+  medya_id: string;
+  permalink: string | null;
+  caption: string | null;
+  medya_tipi: string | null;
+  urun_tipi: string | null;
+  yayin_tarihi: string | null;
+  erisim: number | null;
+  begeni: number | null;
+  yorum: number | null;
+  kaydetme: number | null;
+  paylasim: number | null;
+  /** 100 × (kaydetme + paylaşım) / erişim — sıralamanın omurgası. */
+  yayilma_skoru: number | null;
+  etkilesim_orani: number | null;
+  kaydetme_orani: number | null;
+  medyan_yayilma: number | null;
+  /** erişim ≥ 50 — altındakiler yüksek oran üretip listeyi kirletir. */
+  yeterli_veri: boolean;
+  karar: "çoğalt" | "koru" | "izle" | "bırak" | "veri-az" | string;
+  yas_gun: number | null;
+}
+
+/** Metrik tabloları boşken bile dolu olan tek özet — yayın kuyruğundan türer. */
+export interface SmYayinOzeti {
+  toplam: number;
+  yayinlandi: number;
+  hata: number;
+  bekleyen: number;
+  yorumYazildi: number;
+  sonYayin: string | null;
+  platformDagilimi: Record<SmPlatform, number>;
+}
+
 // ── Otomasyon (sm_otomasyon) ────────────────────────────────────────
 
 export type { SmHashtagYeri } from "./otomasyonMetin";
@@ -269,3 +344,74 @@ export type SmOtomasyonGirdi = Partial<
     | "hashtag_yeri" | "yorum_aktif" | "yorum_sablonlari"
   >
 >;
+
+// ── SEO ajanı ──────────────────────────────────────────────────────
+
+/**
+ * SEO ajanının marka bağlamı (sm_seo_profil).
+ *
+ * `hashtag_modu` sistemin davranışını belirler:
+ *   'havuz'   → ajan sm_otomasyon havuzunu doldurur, gönderi anındaki seçim
+ *               eskisi gibi hashtagSec() ile deterministik kalır.
+ *   'gonderi' → ajan her içerik için özel metin üretir, sm_seo_oneriler'e
+ *               yazar; hem önizleme hem yayın o satırı okur.
+ */
+export interface SmSeoProfil {
+  id?: string;
+  user_id?: string;
+  customer_id?: MusteriId;
+  sektor: string | null;
+  hedef_kitle: string | null;
+  bolge: string;
+  diller: string[];
+  marka_sesi: string | null;
+  cekirdek_kelimeler: string[];
+  yasakli_kelimeler: string[];
+  rakip_hesaplar: string[];
+  cta_havuzu: string[];
+  hashtag_modu: "havuz" | "gonderi";
+  baslik_uret: boolean;
+  otomatik_uret: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type SmSeoProfilGirdi = Partial<Omit<SmSeoProfil, "id" | "user_id" | "customer_id" | "created_at" | "updated_at">>;
+
+/** Trend taramasının çıktısı (sm_seo_anahtarlar). */
+export interface SmSeoAnahtar {
+  id: string;
+  kelime: string;
+  tur: "anahtar" | "hashtag";
+  platform: "*" | SmPlatform;
+  dil: string;
+  skor: number | null;
+  hacim_notu: string | null;
+  kaynak: string | null;
+  gecerlilik: string | null;
+  son_tarama: string;
+}
+
+/**
+ * Üretilmiş metin önerisi (sm_seo_oneriler).
+ * Önizleme ve yayın AYNI satırı okur — gördüğünden başkası paylaşılmaz.
+ */
+export interface SmSeoOneri {
+  id: string;
+  media_id: string | null;
+  post_id: string | null;
+  platform: SmPlatform;
+  format: string | null;
+  dil: string;
+  baslik: string | null;
+  caption: string | null;
+  hashtagler: string[];
+  ilk_yorum: string | null;
+  gerekce: { metin?: string | null; anahtar_kelimeler?: string[]; aramalar?: string[] };
+  model: string | null;
+  girdi_token: number | null;
+  cikti_token: number | null;
+  durum: "taslak" | "onayli" | "kullanildi";
+  created_at: string;
+  updated_at: string;
+}

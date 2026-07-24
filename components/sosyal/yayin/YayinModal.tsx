@@ -6,6 +6,7 @@ import {
 import { useSmAccounts } from "../../../services/sosyal/useSmAccounts";
 import { useSmYayin } from "../../../services/sosyal/useSmYayin";
 import { useSmOtomasyon } from "../../../services/sosyal/useSmOtomasyon";
+import { useSmSeo, useSmSeoOneri } from "../../../services/sosyal/useSmSeo";
 import { metinKur, ONERILEN_KURAL } from "../../../services/sosyal/otomasyonMetin";
 import type {
   SmMedya, MusteriId, SmYayinFormat, SmYayinHedefi,
@@ -141,16 +142,76 @@ export const YayinModal: React.FC<Props> = ({
   const onizlemeHesabi =
     secilebilirler.find((h) => durumAl(h.id, h.platform).secili) ?? secilebilirler[0] ?? null;
 
+  /**
+   * SEO ajanı: her hedef için başlık + açıklama + hashtag'i AI üretir.
+   *
+   * İki tetikleme var:
+   *   · Otomatik → profil "gonderi" + otomatik üretim açıksa modal açılınca.
+   *   · Elle     → "AI ile üret" düğmesi (moddan bağımsız çalışır).
+   *
+   * Kritik: sm-publish AYNI satırı okuyor. Bu yüzden aşağıda görülen metin,
+   * yayınlanacak metnin ta kendisidir.
+   */
+  const { profil: seoProfil } = useSmSeo(ownerId, customerId);
+  const seoOto = seoProfil.hashtag_modu === "gonderi"
+    && seoProfil.otomatik_uret
+    && otomasyonAcik;
+  const { oneriBul, yukleniyor: seoYukleniyor, uret: seoUret, hata: seoHata } = useSmSeoOneri(
+    ownerId, customerId, medya.id,
+    {
+      oto: seoOto,
+      platformlar: [...new Set(secilebilirler.map((h) => h.platform))],
+      format: onizlemeHesabi
+        ? durumAl(onizlemeHesabi.id, onizlemeHesabi.platform).format
+        : null,
+    },
+  );
+
+  const oneri = onizlemeHesabi && otomasyonAcik
+    ? oneriBul(onizlemeHesabi.platform, durumAl(onizlemeHesabi.id, onizlemeHesabi.platform).format)
+    : null;
+
+  /**
+   * "AI ile üret" — moddan bağımsız. Ürettikten sonra her seçili hedefin
+   * caption'ını kendi platformunun AI metniyle DOLDURUR: kullanıcı gördüğünü
+   * düzenleyebilsin ve yayınlanan metin gördüğüyle birebir olsun. Başlık ve
+   * hashtag'ler öneri satırından yayına gider (sm-publish onları okur).
+   */
+  const aiUret = async () => {
+    setYerelHata(null);
+    try {
+      const satirlar = await seoUret(true);
+      if (!satirlar.length) return;
+      setSecimler((önce) => {
+        const yeni = { ...önce };
+        for (const h of secilebilirler) {
+          const d = durumAl(h.id, h.platform);
+          const r = satirlar.find((x) => x.platform === h.platform && x.format === d.format)
+                 ?? satirlar.find((x) => x.platform === h.platform);
+          if (r?.caption) yeni[h.id] = { ...d, ozelCaption: r.caption };
+        }
+        return yeni;
+      });
+    } catch {
+      // hata seoHata'da; ayrıca yerelHata gösterimi için sm-seo mesajı kullanılır.
+    }
+  };
+
   const otomasyon = onizlemeHesabi
     ? metinKur({
         kural: kuralAl(onizlemeHesabi.platform),
-        caption: durumAl(onizlemeHesabi.id, onizlemeHesabi.platform).ozelCaption ?? ortakCaption,
+        // Kullanıcı bir şey yazdıysa o kazanır; yazmadıysa ajanın metni taban.
+        // sm-publish'teki hamCaption seçimiyle BİREBİR aynı kural.
+        caption: durumAl(onizlemeHesabi.id, onizlemeHesabi.platform).ozelCaption
+          ?? (ortakCaption.trim() || oneri?.caption || ortakCaption),
         platform: onizlemeHesabi.platform,
         format: durumAl(onizlemeHesabi.id, onizlemeHesabi.platform).format,
         tohum: medya.id,
-        baslik: medya.baslik,
+        baslik: oneri?.baslik ?? medya.baslik,
         handle: onizlemeHesabi.handle,
         captionSiniri: CAPTION_SINIRI[onizlemeHesabi.platform] ?? 2200,
+        hazirHashtagler: oneri?.hashtagler ?? null,
+        hazirYorum: oneri?.ilk_yorum ?? null,
       })
     : null;
 
@@ -310,8 +371,70 @@ export const YayinModal: React.FC<Props> = ({
                   />
                 </label>
 
+                {/* AI ile üret — moddan bağımsız tek tuş. Her hedefin başlık,
+                    açıklama ve etiketini kendi platformuna göre AI yazar. */}
+                {onizlemeHesabi && otomasyonAcik && (
+                  <button
+                    type="button"
+                    onClick={aiUret}
+                    disabled={seoYukleniyor}
+                    style={{
+                      ...buton(SM_RENK, !oneri),
+                      alignSelf: "flex-start",
+                      cursor: seoYukleniyor ? "not-allowed" : "pointer",
+                      opacity: seoYukleniyor ? 0.6 : 1,
+                    }}
+                  >
+                    {seoYukleniyor ? <Loader2 size={12} className="spin" /> : <Wand2 size={12} />}
+                    {seoYukleniyor
+                      ? tr("AI yazıyor…", "KI schreibt…")
+                      : oneri
+                        ? tr("AI ile yeniden üret", "Mit KI neu erstellen")
+                        : tr("AI ile başlık, açıklama ve etiket üret",
+                             "Titel, Text & Hashtags mit KI erstellen")}
+                  </button>
+                )}
+
+                {/* SEO ajanı hatası — üretim başarısızsa görünür (yayın durmaz) */}
+                {seoHata && (
+                  <div style={{
+                    display: "flex", alignItems: "flex-start", gap: 7,
+                    padding: "9px 12px", borderRadius: 12,
+                    background: "#f59e0b14", border: "1px solid #f59e0b33",
+                  }}>
+                    <AlertTriangle size={13} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 1 }} />
+                    <span style={{
+                      fontSize: 11, lineHeight: 1.45, color: "var(--text-2)", fontFamily: FONT_METIN,
+                    }}>
+                      {seoHata}
+                    </span>
+                  </div>
+                )}
+
+                {/* Ajanın önerdiği başlık — YouTube'da yayına giden başlık budur */}
+                {oneri?.baslik && (
+                  <div style={{
+                    display: "flex", flexDirection: "column", gap: 3,
+                    padding: "9px 12px", borderRadius: 12,
+                    background: "var(--panel-2)", border: "1px solid var(--border)",
+                  }}>
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em",
+                      color: "var(--text-3)", fontFamily: FONT_BASLIK,
+                    }}>
+                      {tr("AJANIN BAŞLIĞI", "TITEL DES AGENTEN")}
+                    </span>
+                    <span style={{
+                      fontSize: 12, lineHeight: 1.5, color: "var(--text-1)",
+                      fontFamily: FONT_METIN, wordBreak: "break-word",
+                    }}>
+                      {oneri.baslik}
+                    </span>
+                  </div>
+                )}
+
                 {/* Kural yok/kapalı → sessiz gizleme yerine tek tıklık kurulum */}
-                {kuralYok && (
+                {kuralYok && !seoYukleniyor && (
                   <div style={{
                     display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
                     padding: "9px 12px", borderRadius: 12,
@@ -357,9 +480,11 @@ export const YayinModal: React.FC<Props> = ({
                         flex: 1, minWidth: 120, fontSize: 10, fontWeight: 800, letterSpacing: ".04em",
                         color: "var(--text-3)", fontFamily: FONT_BASLIK,
                       }}>
-                        {otomasyonAcik
-                          ? tr("OTOMATİK EKLENECEK", "WIRD AUTOMATISCH ERGÄNZT")
-                          : tr("OTOMASYON KAPALI", "AUTOMATIK AUS")}
+                        {!otomasyonAcik
+                          ? tr("OTOMASYON KAPALI", "AUTOMATIK AUS")
+                          : oneri
+                            ? tr("SEO AJANI YAZDI", "VOM SEO-AGENTEN")
+                            : tr("OTOMATİK EKLENECEK", "WIRD AUTOMATISCH ERGÄNZT")}
                       </span>
                       <button
                         type="button"
@@ -411,7 +536,8 @@ export const YayinModal: React.FC<Props> = ({
                         : tr("Etiketler gönderi metninin sonuna eklenir.",
                              "Die Hashtags werden an den Beitragstext angehängt.")}
                       {" · "}
-                      {tr("Otomasyon sekmesinden değiştirilir.", "Änderbar im Tab „Automatik“.")}
+                      {oneri?.gerekce?.metin
+                        || tr("Otomasyon sekmesinden değiştirilir.", "Änderbar im Tab „Automatik“.")}
                     </span>
                   </div>
                 )}

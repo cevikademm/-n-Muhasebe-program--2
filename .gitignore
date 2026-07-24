@@ -38,6 +38,7 @@ hata çıktısı/
 !public/sunum/*.pdf
 FIBU_SUNUM.*
 .claude/
+.mcp.json
 
 # Agent skills / temp
 .agent/

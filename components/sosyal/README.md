@@ -7,7 +7,8 @@ uygulaması kurulmaz, auth/müşteri/RLS/storage yeniden yazılmaz.
 
 **Hazır:** Medya Kütüphanesi (Faz 2), Sosyal Hesaplar (Faz 3),
 Yayınlama + Yayın Kuyruğu (Faz 4), **AI üretim kuyruğu + Onay kutusu (Faz 5)**.
-**Sonraki faz:** uygulama içi takvim düzenleme & analitik.
+Takvim ve Analiz sekmeleri **açıldı** (aşağıda).
+**Sonraki faz:** takvimden sürükle-bırak planlama, zamanlanmış yayın tetikleyicisi.
 
 ---
 
@@ -132,6 +133,78 @@ yaz + `registry.ts`'e satır + bu diziye ekle.
 
 ---
 
+## Takvim
+
+Takvim **yeni tablo açmaz**. Üç yerde zaten tarihli satır var ve kullanıcı
+için hepsi aynı soruya cevap veriyor — "bu gün ne oluyor?":
+
+| Kaynak | Tarih alanı | Anlamı |
+|---|---|---|
+| `sm_posts` | `planlanan_tarih` | ne yazılacak (içerik planı) |
+| `sm_uretim_isleri` | `planlanan` → `created_at` | ne üretilecek |
+| `sm_yayinlar` | `planlanan` → `bitis` → `created_at` | ne yayınlandı |
+
+Üçü `SmTakvimOgesi`'ne normalize edilir; ekran kaynak ayrımını yalnızca
+renk/rozet düzeyinde görür. Aralık sorgusu **iki düz sorgu + id birleştirme**
+ile kurulur: `planlanan` doluysa o, değilse `created_at` geçerli tarihtir ve
+bunu tek bir PostgREST `or()` ifadesine sıkıştırmak okunaksız ve kırılgandı.
+
+Üç kaynak `Promise.allSettled` ile çekilir — biri patlarsa takvim boş
+düşmez, eksik kaynak `uyarilar` şeridinde adıyla yazılır.
+
+Dar ekranda ızgara yerine **ajanda** gösterilir: 7 sütunlu ızgara telefonda
+hücre başına tek harf bile sığdıramıyor. Izgara 6 hafta × 7 gün **sabittir**
+(satır sayısı aya göre değişse ekran her ay geçişinde zıplardı).
+
+---
+
+## Analiz
+
+İki ayrı soru, iki ayrı kaynak — aynı ekranda ama **aynı grafikte değil**:
+
+| Soru | Kaynak | Gösterim |
+|---|---|---|
+| Büyüyor muyuz? | `sm_metrics` (günlük hesap snapshot'ı) | takipçi çizgisi |
+| Hangi içerik büyütüyor? | `sm_post_ranking` (view) | gönderi sıralaması |
+
+Üstteki özet kartları `sm_yayinlar`'dan türer: metrik tabloları henüz boşken
+bile ekran boş kalmaz. Üç sorgu `Promise.allSettled` ile gider ve **yalnızca
+hepsi patlarsa** sekme hataya düşer.
+
+### Sıralama ölçütü beğeni değil
+
+`yayilma_skoru = 100 × (kaydetme + paylaşım) / erişim`. Instagram dağıtımı
+"kaydettim / arkadaşıma yolladım" sinyaline tepki veriyor; beğeniye göre
+sıralamak yanlış içeriği çoğaltmaya yol açar. Skor ve `karar` etiketi
+(`çoğalt · koru · izle · bırak · veri-az`) **view'de** hesaplanır — eşikler
+iki yerde yaşamasın. `yeterli_veri` (erişim ≥ 50) olmayan satırlar listede
+kalır ama soluk gösterilir: 5 erişim / 1 kaydetme = %20'dir ve hiçbir şey
+ifade etmez.
+
+### Grafik kararları
+
+- **Tek seri.** Platformlar aynı eksene çizilmez (bir kanalın 200 abonesiyle
+  bir hesabın 5.000 takipçisi aynı ölçekte anlamsız görünür) ve iki y ekseni
+  kullanmak grafik hatalarının bir numarasıdır. Platform seçilir, her biri
+  kendi ölçeğinde okunur.
+- **Kütüphane yok.** Proje inline-style ve bağımlılıksız ilerliyor; tek bir
+  çizgi için 100 KB'lık grafik paketi eklemek orantısızdı. SVG `viewBox` ile
+  ölçeklenir, `vectorEffect="non-scaling-stroke"` çizgi kalınlığını korur.
+- **Renk anlamı tek başına taşımaz.** Durum ve karar rozetleri her zaman
+  ikon + yazı ile gelir; takvimin renk göstergesinde adlar yazılıdır.
+- **Fare hedefi işaretten büyüktür**: 3px'lik noktayı avlamak yerine tam
+  yükseklikte şeritler kullanılır, klavyeyle de gezilir.
+
+### Metrikler nereden geliyor
+
+`ig-metrics-sync` (JWT'li) Composio üzerinden Instagram gönderilerini okur ve
+`sm_post_metrics`'e **günlük snapshot** yazar. Analiz sekmesindeki "Metrikleri
+çek" düğmesi bunu tetikler. Birden çok doğrulanmış Instagram hesabı varsa
+fonksiyon hangisini ölçtüğünü `uyarilar` ile bildirir — ölçülen hesap belirsiz
+kalmaz.
+
+---
+
 ## Otomasyon — otomatik hashtag + ilk yorum
 
 Amaç: kullanıcı videoyu yükleyip **Yayınla**'ya bassın; etiketler ve
@@ -233,6 +306,8 @@ components/sosyal/
   medya/                    MedyaKutuphanesi · Yukleyici · Karti · DetayCekmecesi · Filtreler
   hesaplar/                 HesapListesi · HesapKarti · HesapBaglaModal
   yayin/                    YayinModal · HedefKarti · YayinOnizleme · YayinSatiri · YayinKuyrugu
+  takvim/                   TakvimPaneli · AyIzgarasi · GunListesi
+  analiz/                   AnalizPaneli · OzetKartlari · TakipciGrafigi · EnIyiGonderiler
   onay/                     OnayKutusu · OnayKarti · hedefler.ts (takvim → yayın hedefi türetme)
   otomasyon/                OtomasyonPaneli · EtiketGirdisi (hashtag + ilk yorum kuralı)
 
@@ -246,6 +321,10 @@ services/sosyal/
   useSmMedia.ts             kütüphane state'i
   useSmAccounts.ts          hesap state'i + useSmMusteriler
   useSmYayin.ts             yayın kuyruğu state'i + otomatik ilerletme döngüsü
+  smTakvimService.ts        üç kuyruğu tek takvim akışına normalize eder
+  useSmTakvim.ts            ay bazlı takvim state'i + gün kovaları
+  smAnalizService.ts        sm_metrics · sm_post_ranking + ig-metrics-sync köprüsü
+  useSmAnaliz.ts            analiz state'i (kısmi hataya dayanıklı)
   smOtomasyonService.ts     sm_otomasyon repository (upsert değil: oku-sonra-yaz)
   useSmOtomasyon.ts         kural state'i + kuralAl(platform)
   smUretimService.ts        sm_uretim_isleri + sm_posts okuma + sm-uretim köprüsü

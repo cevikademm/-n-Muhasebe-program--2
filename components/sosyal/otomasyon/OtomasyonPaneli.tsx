@@ -13,6 +13,7 @@ import { FONT_BASLIK, FONT_METIN, SM_RENK, buton, kart, girdi } from "../ortak";
 import { useEkran } from "../ekran";
 import { EtiketGirdisi } from "./EtiketGirdisi";
 import { KotaKarti } from "./KotaKarti";
+import { SeoPaneli } from "./SeoPaneli";
 
 interface Props {
   ownerId: string | undefined;
@@ -182,6 +183,9 @@ export const OtomasyonPaneli: React.FC<Props> = ({ ownerId, customerId, lang }) 
       height: "100%", overflowY: "auto",
       padding: ekran.mobil ? 12 : 16,
       display: "flex", flexDirection: ekran.dar ? "column" : "row",
+      // SEO bölümü flexBasis:100% ile alt satıra iner — geniş ekranda üstteki
+      // iki sütunun altında tam genişlik açılsın diye sarma açık.
+      flexWrap: "wrap",
       gap: 14, alignItems: "flex-start",
     }}>
       {/* ── Sol: kurallar ─────────────────────────────────────────── */}
@@ -493,6 +497,28 @@ export const OtomasyonPaneli: React.FC<Props> = ({ ownerId, customerId, lang }) 
                 `${onizleme.hashtagler.length} Hashtags ergänzt. Jedes Video nutzt einen anderen Teil des Pools.`)}
           </span>
         </div>
+      </div>
+
+      {/* ── SEO ajanı ────────────────────────────────────────────────
+          Havuzun İÇERİĞİNİ kimin belirlediği sorusu buraya ait: yukarıdaki
+          kart etiketlerin NEREYE konacağını, bu bölüm NELER olacağını
+          yönetir. Bu yüzden ayrı bir sekme değil, aynı sayfanın devamı. */}
+      <div style={{
+        flexBasis: "100%", width: "100%", minWidth: 0,
+        display: "flex", flexDirection: "column", gap: 10,
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          paddingTop: 4, borderTop: "1px solid var(--border)",
+        }}>
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: ".05em",
+            color: "var(--text-3)", fontFamily: FONT_BASLIK, paddingTop: 10,
+          }}>
+            {tr("BULUNABİLİRLİK", "AUFFINDBARKEIT")}
+          </span>
+        </div>
+        <SeoPaneli ownerId={ownerId} customerId={customerId} lang={lang} />
       </div>
     </div>
   );
