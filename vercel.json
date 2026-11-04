@@ -1,7 +1,8 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
+  "buildCommand": "echo 'fikoai-spiele: hazir derlenmis dosyalar (site-dist) yayinlaniyor'",
+  "installCommand": "echo skip",
+  "outputDirectory": "site-dist",
+  "framework": null,
   "rewrites": [
     { "source": "/app", "destination": "/muhasebe-app.html" },
     { "source": "/giris", "destination": "/muhasebe-app.html" },
