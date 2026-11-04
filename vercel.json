@@ -4,9 +4,40 @@
   "outputDirectory": "site-dist",
   "framework": null,
   "rewrites": [
-    { "source": "/app", "destination": "/muhasebe-app.html" },
-    { "source": "/giris", "destination": "/muhasebe-app.html" },
-    { "source": "/login", "destination": "/muhasebe-app.html" },
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/oyunlar",
+      "destination": "/oyunlar.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/muhasebe-app.html"
+    },
+    {
+      "source": "/giris",
+      "destination": "/muhasebe-app.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/muhasebe-app.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/oyunlar(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        }
+      ]
+    }
   ]
 }

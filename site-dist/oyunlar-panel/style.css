@@ -1,0 +1,116 @@
+/* Oyun portalı — ortak stil (neon gece teması) */
+:root {
+  color-scheme: dark;
+  --bg: #070b14;
+  --bg-2: #0a1020;
+  --panel: #0e1526;
+  --panel-2: #121a2e;
+  --line: rgba(148,163,216,.16);
+  --text: #e8ecf8;
+  --muted: #9aa5c4;
+  --dim: #6b7694;
+  --pink: #7c5cff;
+  --cyan: #4cc9f0;
+  --lime: #7ee2a8;
+  --amber: #ffc56b;
+  --red: #ff6b7d;
+  --radius: 14px;
+  --shadow: 0 10px 40px rgba(0, 0, 0, .45);
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+img { max-width: 100%; display: block; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.wrap { width: min(1180px, 100% - 32px); margin-inline: auto; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+
+/* Butonlar */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 20px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel-2); cursor: pointer; text-decoration: none;
+  font-weight: 700; letter-spacing: .01em; transition: transform .15s, background .15s, border-color .15s, opacity .15s;
+}
+.btn:hover { transform: translateY(-1px); border-color: #4a4268; }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.btn.primary { background: linear-gradient(100deg,#7c5cff 0%,#5e7bff 55%,#4cc9f0 100%); border-color: transparent; color: #fff; box-shadow: 0 8px 28px -8px rgba(124,92,255,.55); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.cyan { background: transparent; border-color: var(--cyan); color: var(--cyan); }
+.btn.danger { background: transparent; border-color: var(--red); color: var(--red); }
+.btn.danger.solid { background: var(--red); color: #fff; }
+.btn.ok { background: transparent; border-color: var(--lime); color: var(--lime); }
+.btn.sm { padding: 6px 12px; font-size: 13px; }
+.btn.ghost { background: transparent; }
+
+/* Rozetler */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+.badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.badge.live { color: var(--lime); border-color: rgba(182, 255, 59, .35); }
+.badge.off { color: var(--red); border-color: rgba(255, 77, 94, .35); }
+.badge.wait { color: var(--amber); border-color: rgba(255, 181, 71, .35); }
+.badge.info { color: var(--cyan); border-color: rgba(46, 230, 255, .35); }
+.badge.plain::before { display: none; }
+
+/* Form */
+label.field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.input, textarea.input, select.input {
+  width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg-2); color: var(--text); outline: none; transition: border-color .15s;
+}
+.input:focus { border-color: var(--cyan); }
+textarea.input { min-height: 90px; resize: vertical; }
+
+/* Anahtar (toggle) */
+.switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch .track {
+  width: 46px; height: 26px; border-radius: 999px; background: #3a3354; position: relative; transition: background .2s; flex: none;
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; transition: transform .2s;
+}
+.switch input:checked + .track { background: var(--lime); }
+.switch input:checked + .track::after { transform: translateX(20px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* Bildirim */
+.toast-host { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 100; }
+.toast {
+  background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--cyan);
+  padding: 12px 16px; border-radius: 10px; box-shadow: var(--shadow); max-width: 360px; animation: pop .2s ease-out;
+}
+.toast.err { border-left-color: var(--red); }
+.toast.ok { border-left-color: var(--lime); }
+@keyframes pop { from { transform: translateY(8px); opacity: 0; } }
+
+/* Modal */
+.modal-back {
+  position: fixed; inset: 0; background: rgba(5, 4, 10, .72); backdrop-filter: blur(6px);
+  display: grid; place-items: center; padding: 16px; z-index: 50;
+}
+.modal {
+  width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+}
+.modal header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.modal header h3 { margin: 0; font: 600 18px var(--font-display); }
+.modal .body { padding: 22px; display: grid; gap: 16px; }
+.modal footer { padding: 16px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.icon-btn { background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; padding: 4px; }
+.icon-btn:hover { color: var(--text); }

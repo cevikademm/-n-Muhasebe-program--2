@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Oyunlar · fikoai.de</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/oyunlar-panel/style.css">
+  <style>
+    /* Giriş */
+    .login { min-height: 100vh; display: grid; place-items: center; padding: 16px;
+      background: radial-gradient(600px 400px at 20% 20%, rgba(124, 92, 255, .18), transparent 70%), radial-gradient(500px 400px at 85% 80%, rgba(46, 230, 255, .12), transparent 70%), var(--bg); }
+    .login-box { width: min(400px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 32px; box-shadow: var(--shadow); display: grid; gap: 16px; }
+    .login-box h1 { font: 700 22px var(--font-display); margin: 0; }
+    .login-box .lock { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line); font-size: 22px; }
+    .login-err { color: var(--red); font-size: 14px; min-height: 20px; margin: 0; }
+
+    /* Panel iskeleti */
+    .app { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
+    .app > div { min-width: 0; }
+    .side { background: var(--bg-2); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; }
+    .side .logo { font: 700 15px var(--font-display); display: flex; gap: 10px; align-items: center; padding: 4px 10px 18px; }
+    .side .logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 12px var(--pink); }
+    .tab { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--muted); font-weight: 700; cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
+    .tab:hover { background: var(--panel); color: var(--text); }
+    .tab.active { background: var(--panel-2); color: var(--text); box-shadow: inset 3px 0 0 var(--pink); }
+    .tab .cnt { font-size: 12px; background: var(--amber); color: #1a1200; border-radius: 999px; padding: 1px 8px; font-weight: 800; }
+    .side .spacer { flex: 1; }
+    .side .me { font-size: 12px; color: var(--dim); padding: 8px 12px; word-break: break-all; }
+
+    .main { padding: 24px 28px 60px; min-width: 0; }
+    .page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+    .page-head h2 { font: 700 24px var(--font-display); margin: 0; }
+    .page-head .tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 26px; }
+    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+    .stat .v { font: 700 28px var(--font-display); }
+    .stat .l { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .stat.warn .v { color: var(--amber); }
+    .stat.good .v { color: var(--lime); }
+    .stat.bad .v { color: var(--red); }
+
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 22px; overflow: hidden; }
+    .panel > h3 { margin: 0; padding: 14px 18px; font: 600 15px var(--font-display); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+    th { color: var(--dim); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; background: var(--bg-2); }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: rgba(255, 255, 255, .02); }
+    td .row-actions { display: flex; gap: 6px; }
+    .code { font: 700 14px var(--font-mono); color: var(--lime); letter-spacing: .05em; }
+    .hash { font: 500 12px var(--font-mono); color: var(--muted); }
+    .empty-row { text-align: center; color: var(--dim); padding: 28px; }
+
+    .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+    .gcard { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; }
+    .gcard.off { border-color: rgba(255, 77, 94, .45); }
+    .gcard .gcover { aspect-ratio: 16/8; background: #120f1c center/cover; display: grid; place-items: center; font: 800 22px var(--font-display); position: relative; }
+    .gcard .gcover .badge { position: absolute; top: 10px; left: 10px; background: rgba(11, 10, 18, .85); font: 700 12px var(--font-body); }
+    .gcard .gbody { padding: 16px 18px; display: grid; gap: 12px; flex: 1; }
+    .gcard h4 { margin: 0; font: 700 18px var(--font-display); }
+    .gcard .gid { font: 500 12px var(--font-mono); color: var(--dim); }
+    .gcard .switches { display: grid; gap: 10px; padding: 12px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line); }
+    .gcard .switches .switch { justify-content: space-between; width: 100%; font-weight: 700; font-size: 14px; }
+    .gcard .gfoot { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+    .mini { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+    .mini b { color: var(--text); }
+
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+    .filters .input { width: auto; min-width: 160px; padding: 8px 12px; }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .hint { font-size: 12px; color: var(--dim); font-weight: 500; }
+    .upload-box { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+    .progress { height: 8px; background: var(--bg-2); border-radius: 999px; overflow: hidden; }
+    .progress > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--pink), var(--cyan)); transition: width .2s; }
+    .divider { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+    .section-label { font: 600 13px var(--font-display); color: var(--cyan); margin: 4px 0 -4px; }
+
+    .panic { border-color: var(--red) !important; color: var(--red) !important; }
+
+    .mobile-tabs { display: none; }
+    @media (max-width: 860px) {
+      .app { grid-template-columns: 1fr; }
+      .side { display: none; }
+      .mobile-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg-2); position: sticky; top: 0; z-index: 10; }
+      .mobile-tabs .tab { width: auto; white-space: nowrap; }
+      .main { padding: 18px 16px 60px; }
+      .grid2, .grid3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Giriş ekranı -->
+  <div class="login" id="login-view">
+    <form class="login-box" id="login-form" autocomplete="on">
+      <div class="lock" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M6 12h4M8 10v4M15 11h.01M18 13h.01"/></svg></div>
+      <h1>fikoai · Oyunlar</h1>
+      <p class="muted" style="margin:-6px 0 4px;font-size:14px">Oyun lisans kodları ve uzaktan kapatma. fikoai hesabınla giriş yap — yalnızca yöneticiye açıktır.</p>
+      <label class="field">E-posta<input class="input" type="email" id="email" required autocomplete="username"></label>
+      <label class="field">Şifre<input class="input" type="password" id="password" required autocomplete="current-password"></label>
+      <p class="login-err" id="login-err"></p>
+      <button class="btn primary" type="submit" id="login-btn">Giriş yap</button>
+      <a href="/" class="muted" style="font-size:13px;text-align:center">← fikoai.de</a>
+    </form>
+  </div>
+
+  <!-- Panel -->
+  <div class="app hidden" id="app-view">
+    <aside class="side">
+      <div class="logo"><span class="dot"></span>fikoai · Oyunlar</div>
+      <button class="tab active" data-tab="devices">Lisans kodları <span class="cnt hidden" data-cnt="pending"></span></button>
+      <button class="tab" data-tab="games">Oyunlar</button>
+      <button class="tab" data-tab="overview">Genel bakış</button>
+      <button class="tab" data-tab="builds">Build'ler <span class="cnt hidden" data-cnt="builds_pending"></span></button>
+      <button class="tab" data-tab="log">Kayıtlar</button>
+      <div class="spacer"></div>
+      <a class="tab" href="/#spiele" target="_blank" rel="noopener">Sitede gör ↗</a>
+      <a class="tab" href="/app">fikoai uygulaması ↗</a>
+      <div class="me" id="me"></div>
+      <button class="btn sm ghost" id="logout">Çıkış yap</button>
+    </aside>
+
+    <div>
+      <nav class="mobile-tabs">
+        <button class="tab active" data-tab="devices">Kodlar <span class="cnt hidden" data-cnt="pending"></span></button>
+        <button class="tab" data-tab="games">Oyunlar</button>
+        <button class="tab" data-tab="overview">Genel</button>
+        <button class="tab" data-tab="builds">Build'ler</button>
+        <button class="tab" data-tab="log">Kayıtlar</button>
+        <button class="tab" id="logout-m">Çıkış</button>
+      </nav>
+      <main class="main" id="main"></main>
+    </div>
+  </div>
+
+  <div class="toast-host" id="toasts"></div>
+  <div class="modal-back hidden" id="modal" role="dialog" aria-modal="true">
+    <div class="modal">
+      <header><h3 id="modal-title"></h3><button class="icon-btn" data-close aria-label="Kapat">×</button></header>
+      <div class="body" id="modal-body"></div>
+      <footer id="modal-foot"></footer>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="/oyunlar-panel/app.js"></script>
+</body>
+</html>
