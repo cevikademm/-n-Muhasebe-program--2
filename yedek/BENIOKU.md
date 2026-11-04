@@ -12,3 +12,8 @@ Bu dal, fikoai.de'ye "Spiele / Oyunlar" bölümünü eklemek için açıldı (4 
 - `site-dist/oyunlar.html` + `site-dist/oyunlar-panel/` → fikoai.de/oyunlar: fikoai hesabıyla giriş, yalnızca `license_admins` (cevikademm@gmail.com). Lisans kodları, oyunlar (uzaktan aç/kapat), build'ler, kayıtlar.
 - Build yükleme denetimi: yalnızca .zip/.exe; kaynak kod, Unity proje klasörleri ve Mono build reddedilir.
 - Ana sayfadaki Spiele bölümü artık yeni projeden okuyor.
+
+## 4 Kasım (3) — /app menüsünde "Oyunlar"
+- `site-dist/oyunlar-panel/app-menu.js`, `site-dist/muhasebe-app.html`'e tek `<script>` satırıyla eklendi. Derlenmiş uygulama koduna (app-C1_zGVDr.js) dokunulmadı.
+- YÖNETİM menüsündeki "Hesap Planları" öğesini kopyalayıp "Oyunlar" (DE: "Spiele") ekler; bekleyen lisans kodu sayısını rozetle gösterir; tıklanınca /oyunlar açılır (aynı oturum).
+- Kalıcı çözüm: yerel kaynak bağlandığında LeftPanel.tsx'e gerçek menü öğesi olarak eklenmeli.
