@@ -87,6 +87,9 @@
     .panic { border-color: var(--red) !important; color: var(--red) !important; }
 
     .mobile-tabs { display: none; }
+    /* fikoai /app içinde modül olarak açıldığında */
+    .embed .side a.tab, .embed #logout, .embed #logout-m, .embed .mobile-tabs a.tab, .embed .login-box > a { display: none !important; }
+    .embed .side { height: 100%; }
     @media (max-width: 860px) {
       .app { grid-template-columns: 1fr; }
       .side { display: none; }
@@ -94,6 +97,17 @@
       .mobile-tabs .tab { width: auto; white-space: nowrap; }
       .main { padding: 18px 16px 60px; }
       .grid2, .grid3 { grid-template-columns: 1fr; }
+      /* Lisans kodları: telefonda kart görünümü, butonlar hep görünür */
+      .dev-table thead { display: none; }
+      .dev-table, .dev-table tbody { display: block; }
+      .dev-table tr { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+      .dev-table td { border: 0; padding: 0; white-space: normal; }
+      .dev-table td:nth-child(2) { color: var(--muted); font-size: 13px; text-align: right; }
+      .dev-table td:nth-child(3) { grid-column: 1 / -1; }
+      .dev-table td:nth-child(5) { color: var(--dim); font-size: 13px; text-align: right; }
+      .dev-table td.c-act { grid-column: 1 / -1; text-align: left !important; }
+      .dev-table td.c-act .row-actions { justify-content: flex-start !important; flex-wrap: wrap; }
+      .dev-table td.c-act .btn { min-height: 40px; }
     }
   </style>
 </head>

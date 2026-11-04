@@ -420,6 +420,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
 .game-body p{font-size:.9rem;color:var(--muted);flex:1}
 .game-body .chips{margin-top:14px}
 .game-cta{margin-top:18px;width:100%;justify-content:center;min-height:44px}
+.game-cta.is-disabled{opacity:.6;cursor:default;pointer-events:none}
 .games-note{max-width:720px;margin:34px auto 0;text-align:center;color:var(--muted2);font-size:.88rem}
 @media(max-width:1180px){.grid-games{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:640px){.grid-games{grid-template-columns:1fr}}
@@ -819,7 +820,7 @@ footer{border-top:1px solid var(--line);margin-top:110px}
       </div>
     </article>
   </div>
-  <p class="games-note reveal" data-i18n="games.note">Nach dem Download zeigt jedes Spiel einen persönlichen Gerätecode. Senden Sie ihn an uns — nach der Freigabe startet das Spiel automatisch.</p>
+  <p class="games-note reveal" data-i18n="games.note">Download enthält nur die spielbare Windows-Version — keinen Quellcode. Beim ersten Start zeigt jedes Spiel einen persönlichen Lizenzcode: Senden Sie ihn an uns, nach unserer Freigabe startet das Spiel automatisch.</p>
 </section>
 
 
@@ -1115,7 +1116,7 @@ tr: {
   'games.tag':'Kendi Ürünlerimiz · Oyunlar',
   'games.h2':'TikTok canlı yayınları için <span class="grad">etkileşimli oyunlar</span>',
   'games.p':'İzleyiciler oyunu hediyeleri, beğenileri ve yorumlarıyla yönetir — yayınınızı sahneye çeviren oyunları biz geliştiriyoruz.',
-  'games.note':'İndirdikten sonra her oyun size özel bir cihaz kodu gösterir. Kodu bize gönderin — onaydan sonra oyun kendiliğinden açılır.',
+  'games.note':'İndirilen dosya yalnızca oynanabilir Windows sürümüdür — kaynak kod içermez. İlk açılışta her oyun size özel bir lisans kodu gösterir: kodu bize gönderin, onayımızdan sonra oyun kendiliğinden açılır.',
   'game.1.t':'3D · Canlı etkileşim',
   'game.1.p':'Neon ışıklı bir gazino sahnesi: İzleyicilerin hediyeleri ve beğenileri misafire dönüşür; masaya oturur, piste çıkar, locaya geçer — ışık şovu, disko topu ve patron tahtıyla.',
   'game.1.c3':'Işık şovu',
@@ -1482,8 +1483,8 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
   var SB_KEY = 'sb_publishable_n_54_REfovQ_V9OLiDjcCA_tPoxYOeY';
   var H = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
   var T = {
-    de:{dev:'In Entwicklung', soon:'Bald verfügbar', live:'Jetzt verfügbar', off:'Pausiert', interest:'Interesse melden', dl:'Herunterladen', busy:'Wird vorbereitet…', err:'Download gerade nicht möglich.'},
-    tr:{dev:'Geliştiriliyor', soon:'Yakında', live:'Şimdi indirilebilir', off:'Geçici olarak kapalı', interest:'İlgileniyorum', dl:'İndir', busy:'Hazırlanıyor…', err:'İndirme şu an yapılamıyor.'}
+    de:{dev:'In Entwicklung', soon:'Bald verfügbar', live:'Jetzt verfügbar', off:'Pausiert', interest:'Download bald verfügbar', offbtn:'Derzeit pausiert', dl:'Herunterladen (Windows)', busy:'Wird vorbereitet…', err:'Download gerade nicht möglich.'},
+    tr:{dev:'Geliştiriliyor', soon:'Yakında', live:'Şimdi indirilebilir', off:'Geçici olarak kapalı', interest:'İndirme yakında', offbtn:'Şu an kapalı', dl:'İndir (Windows)', busy:'Hazırlanıyor…', err:'İndirme şu an yapılamıyor.'}
   };
   var portal = {};
   function L(){ return (typeof currentLang!=='undefined' && currentLang==='tr') ? T.tr : T.de; }
@@ -1498,8 +1499,10 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
       if(state==='live'){
         cta.textContent = t.dl; cta.className = 'btn btn-primary game-cta'; cta.setAttribute('href','#spiele'); cta.dataset.dl = g.id;
       } else {
-        cta.textContent = t.interest; cta.className = 'btn btn-ghost game-cta'; cta.setAttribute('href','#kontakt'); delete cta.dataset.dl;
+        cta.textContent = state==='off' ? t.offbtn : t.interest; cta.className = 'btn btn-ghost game-cta is-disabled';
+        cta.removeAttribute('href'); cta.setAttribute('aria-disabled','true'); delete cta.dataset.dl;
       }
+      if(state==='live'){ cta.removeAttribute('aria-disabled'); }
     });
   }
   document.addEventListener('click', function(e){
@@ -1509,7 +1512,7 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
     var t = L(), old = a.textContent; a.textContent = t.busy; a.style.pointerEvents = 'none';
     fetch(SB_URL + '/functions/v1/game-download', {method:'POST', headers:H, body:JSON.stringify({app:a.dataset.dl})})
       .then(function(r){ return r.json().then(function(j){ if(!r.ok || !j.url) throw new Error(j.error || t.err); return j; }); })
-      .then(function(j){ window.location.href = j.url; })
+      .then(function(j){ if(!/^https:\/\//.test(j.url)) throw new Error(t.err); window.location.href = j.url; })
       .catch(function(err){ alert(err.message || t.err); })
       .finally(function(){ setTimeout(function(){ a.textContent = old; a.style.pointerEvents = ''; }, 1500); });
   });

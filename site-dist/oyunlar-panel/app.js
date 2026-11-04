@@ -15,6 +15,11 @@
   const safeColor = (c) => /^#[0-9a-f]{3,8}$/i.test(c || "") ? c : "#ff2e88";
   const coverUrl = (p) => p ? `${C.SUPABASE_URL}/storage/v1/object/public/game-covers/${p.split("/").map(encodeURIComponent).join("/")}` : "";
 
+  // fikoai /app içinde modül olarak açıldığında (iframe, ?embed=1)
+  const EMBED = new URLSearchParams(location.search).has("embed") && window.parent !== window;
+  if (EMBED) document.documentElement.classList.add("embed");
+  const tellParent = (msg) => { if (EMBED) try { window.parent.postMessage(msg, location.origin); } catch (e) {} };
+
   const state = { tab: "devices", apps: [], devices: [], builds: [], log: [], stats: null, filters: { app: "", status: "", q: "" }, timer: null };
 
   // ---------- yardımcılar ----------
@@ -152,6 +157,7 @@
         throw err;
       }
       state.apps = apps.data; state.stats = stats.data; state.devices = devices.data; state.builds = builds.data; state.log = log.data || [];
+      tellParent({ type: "fikoai-oyunlar-pending", pending: state.stats?.pending || 0 });
       $$("[data-cnt]").forEach((el) => {
         const n = state.stats?.[el.dataset.cnt] || 0;
         el.textContent = n; el.classList.toggle("hidden", !n);
@@ -237,7 +243,7 @@
               <div class="switches">
                 ${switchHtml("enabled", a.id, a.enabled, "Oyun açık (kapatınca tüm cihazlarda durur)")}
                 ${switchHtml("published", a.id, a.published, "Sitede göster")}
-                ${switchHtml("auto_approve", a.id, a.auto_approve, "Yeni cihazları otomatik onayla")}
+                <div class="hint">Her yeni cihaz ilk açılışta lisans kodu gösterir ve senin onayını bekler.</div>
               </div>
               <div class="mini"><span>Dosya: <b>${a.file_path ? esc(a.file_path.split("/").pop()) + " · " + fmtSize(a.file_size) : a.external_url ? "dış bağlantı" : "yok"}</b></span></div>
               ${!a.enabled && a.message ? `<div class="mini">Kapalı mesajı: <b>${esc(a.message)}</b></div>` : ""}
@@ -461,14 +467,14 @@
   }
   function deviceTable(list, compact) {
     if (!list.length) return `<div class="empty-row">${compact ? "Bekleyen kod yok." : "Kayıt yok."}</div>`;
-    return `<div class="table-wrap"><table><thead><tr><th>Kod</th><th>Oyun</th><th>Etiket / Bilgisayar</th><th>Durum</th><th>Son görülme</th><th style="text-align:right">İşlem</th></tr></thead><tbody>
+    return `<div class="table-wrap"><table class="dev-table"><thead><tr><th>Kod</th><th>Oyun</th><th>Etiket / Bilgisayar</th><th>Durum</th><th>Son görülme</th><th style="text-align:right">İşlem</th></tr></thead><tbody>
       ${list.map((d) => `<tr>
         <td><span class="code">${esc(d.device_code)}</span>${(d.last_flags || []).length ? ` <span class="badge off" title="${esc((d.last_flags || []).join(", "))}">⚠ ${esc(d.last_flags.join(", "))}</span>` : ""}</td>
         <td>${esc(appName(d.app_id))}</td>
         <td>${esc(d.label || "—")}<div class="hash">${esc(d.machine_name || "")}${d.owner_note ? " · " + esc(d.owner_note) : ""}</div></td>
         <td>${devBadge(d)} ${online(d.last_seen) ? '<span class="badge info">çevrim içi</span>' : ""}${!compact && d.expires_at ? `<div class="hash">bitiş: ${dt(d.expires_at)}</div>` : ""}</td>
         <td title="${esc(dt(d.last_seen))} · ${d.check_count ?? 0} sorgu">${ago(d.last_seen)}</td>
-        <td style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
+        <td class="c-act" style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
           ${d.status !== "approved" ? `<button class="btn sm ok" data-act="dev-status" data-v="approved" data-id="${d.id}">Onayla</button>` : ""}
           ${d.status !== "revoked" ? `<button class="btn sm danger" data-act="dev-status" data-v="revoked" data-id="${d.id}">Kapat</button>` : ""}
           <button class="btn sm ghost" data-act="dev-edit" data-id="${d.id}">Düzenle</button>
