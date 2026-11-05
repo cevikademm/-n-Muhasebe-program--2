@@ -20,7 +20,7 @@
   if (EMBED) document.documentElement.classList.add("embed");
   const tellParent = (msg) => { if (EMBED) try { window.parent.postMessage(msg, location.origin); } catch (e) {} };
 
-  const state = { tab: "devices", apps: [], devices: [], builds: [], log: [], dlreq: [], dlcodes: [], stats: null, filters: { app: "", status: "", q: "" }, timer: null };
+  const state = { tab: "devices", apps: [], devices: [], builds: [], log: [], dlreq: [], dlcodes: [], alerts: [], hwrec: [], stats: null, filters: { app: "", status: "", q: "" }, timer: null };
 
   // ---------- yardımcılar ----------
   function toast(msg, kind = "") {
@@ -142,7 +142,8 @@
   // ---------- veri ----------
   async function refresh(full = false) {
     try {
-      const [apps, stats, devices, builds, log, dlreq, dlcodes] = await Promise.all([
+      const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
+      const [apps, stats, devices, builds, log, dlreq, dlcodes, alerts, hwrec] = await Promise.all([
         sb.from("license_apps").select("*").order("sort_order").order("name"),
         sb.rpc("portal_stats"),
         sb.from("license_devices").select("*").order("last_seen", { ascending: false }).limit(1000),
@@ -152,13 +153,15 @@
           : Promise.resolve({ data: state.log }),
         sb.from("download_requests").select("*").order("created_at", { ascending: false }).limit(500),
         sb.from("download_codes").select("*").order("created_at", { ascending: false }).limit(300),
+        sb.from("license_alerts").select("*").or(`resolved_at.is.null,last_at.gt.${since7}`).order("last_at", { ascending: false }).limit(300),
+        sb.from("license_hw_records").select("app_id,device_id,device_code,hw,hw_hash,ip,created_at").order("created_at", { ascending: false }).limit(2000),
       ]);
-      const err = [apps, stats, devices, builds, log, dlreq, dlcodes].find((r) => r.error)?.error;
+      const err = [apps, stats, devices, builds, log, dlreq, dlcodes, alerts, hwrec].find((r) => r.error)?.error;
       if (err) {
         if (/JWT|auth|yetkisiz/i.test(err.message)) return showLogin("Oturum süresi doldu, tekrar giriş yapın.");
         throw err;
       }
-      state.apps = apps.data; state.stats = stats.data; state.devices = devices.data; state.builds = builds.data; state.log = log.data || []; state.dlreq = dlreq.data || []; state.dlcodes = dlcodes.data || [];
+      state.apps = apps.data; state.stats = stats.data; state.devices = devices.data; state.builds = builds.data; state.log = log.data || []; state.dlreq = dlreq.data || []; state.dlcodes = dlcodes.data || []; state.alerts = alerts.data || []; state.hwrec = hwrec.data || [];
       tellParent({ type: "fikoai-oyunlar-pending", pending: state.stats?.pending || 0 });
       $$("[data-cnt]").forEach((el) => {
         const n = state.stats?.[el.dataset.cnt] || 0;
@@ -183,7 +186,7 @@
   function render() {
     const m = $("#main");
     const scroll = window.scrollY;
-    m.innerHTML = { overview: viewOverview, games: viewGames, devices: viewDevices, builds: viewBuilds, log: viewLog, downloads: viewDownloads }[state.tab]();
+    m.innerHTML = { overview: viewOverview, games: viewGames, devices: viewDevices, builds: viewBuilds, log: viewLog, downloads: viewDownloads, alerts: viewAlerts }[state.tab]();
     if (state.tab === "devices") bindDeviceFilters();
     window.scrollTo(0, scroll);
   }
@@ -205,6 +208,7 @@
         <div class="stat ${s.flags_24h ? "bad" : ""}"><div class="v">${s.flags_24h ?? 0}</div><div class="l">Şüpheli işaret (24 sa)</div></div>
       </div>
 
+      ${alertBox(openAlerts(), true)}
       <div class="panel"><h3>Oyunlar — uzaktan aç/kapat</h3>
         <div class="table-wrap"><table><thead><tr><th>Oyun</th><th>Durum</th><th>Cihaz</th><th>Çevrim içi</th><th>İndirme</th><th style="text-align:right">Oyun açık</th></tr></thead><tbody>
         ${state.apps.map((a) => {
@@ -436,10 +440,10 @@
     return state.devices.slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)).filter((d) =>
       (!f.app || d.app_id === f.app) &&
       (!f.status || d.status === f.status || (f.status === "online" && online(d.last_seen))) &&
-      (!q || [d.device_code, d.label, d.machine_name, d.owner_note, d.last_ip, personText(d)].some((v) => (v || "").toLowerCase().includes(q))));
+      (!q || [d.device_code, d.label, d.machine_name, d.owner_note, d.last_ip, d.tiktok_username, personText(d)].some((v) => (v || "").toLowerCase().includes(q))));
   }
   function personText(d) {
-    const r = d.last_ip && state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip);
+    const r = reqFor(d);
     return r ? [r.first_name, r.last_name, r.phone, r.email, r.tiktok].join(" ") : "";
   }
   function viewDevices() {
@@ -448,9 +452,10 @@
     return `
       <div class="page-head"><h2>Lisans kodları</h2>
         <div class="tools"><button class="btn sm ok" data-act="approve-all" ${list.some((d) => d.status === "pending") ? "" : "disabled"}>Listedeki bekleyenleri onayla</button><button class="btn sm ghost" data-act="refresh">Yenile</button></div></div>
+      ${alertBox(openAlerts(), true)}
       <div class="panel">
         <div class="filters">
-          <input class="input" id="flt-q" placeholder="Kod, etiket, bilgisayar ara…" value="${esc(f.q)}">
+          <input class="input" id="flt-q" placeholder="Kod, etiket, bilgisayar, kişi, TikTok ara…" value="${esc(f.q)}">
           <select class="input" id="flt-app"><option value="">Tüm oyunlar</option>${state.apps.map((a) => `<option value="${esc(a.id)}" ${f.app === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
           <select class="input" id="flt-status">
             ${[["", "Tüm durumlar"], ["pending", "Bekleyen"], ["approved", "Onaylı"], ["revoked", "Kapatılan"], ["online", "Çevrim içi"]].map(([v, t]) => `<option value="${v}" ${f.status === v ? "selected" : ""}>${t}</option>`).join("")}
@@ -475,25 +480,125 @@
     if (!list.length) return `<div class="empty-row">${compact ? "Bekleyen kod yok." : "Kayıt yok."}</div>`;
     return `<div class="table-wrap"><table class="dev-table"><thead><tr><th>Kod</th><th>Oyun</th><th>Etiket / Bilgisayar</th><th>Durum</th><th>Son görülme</th><th style="text-align:right">İşlem</th></tr></thead><tbody>
       ${list.map((d) => `<tr>
-        <td><span class="code">${esc(d.device_code)}</span>${(d.last_flags || []).length ? ` <span class="badge off" title="${esc((d.last_flags || []).join(", "))}">⚠ ${esc(d.last_flags.join(", "))}</span>` : ""}</td>
+        <td><span class="code">${esc(d.device_code)}</span>${devAlertBadge(d)}${(d.last_flags || []).length ? ` <span class="badge off" title="${esc((d.last_flags || []).join(", "))}">⚠ ${esc(d.last_flags.join(", "))}</span>` : ""}</td>
         <td>${esc(appName(d.app_id))}</td>
-        <td>${esc(d.label || "—")}<div class="hash">${esc(d.machine_name || "")}${d.owner_note ? " · " + esc(d.owner_note) : ""}</div>${personFor(d)}</td>
+        <td>${esc(d.label || "—")}<div class="hash">${esc(d.machine_name || "")}${d.owner_note ? " · " + esc(d.owner_note) : ""}</div>${personFor(d)}${tiktokLine(d)}${hwLine(d)}</td>
         <td>${devBadge(d)} ${online(d.last_seen) ? '<span class="badge info">çevrim içi</span>' : ""}${!compact && d.expires_at ? `<div class="hash">bitiş: ${dt(d.expires_at)}</div>` : ""}</td>
         <td title="${esc(dt(d.last_seen))} · ${d.check_count ?? 0} sorgu">${ago(d.last_seen)}</td>
         <td class="c-act" style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
           ${d.status !== "approved" ? `<button class="btn sm ok" data-act="dev-status" data-v="approved" data-id="${d.id}">Onayla</button>` : ""}
           ${d.status !== "revoked" ? `<button class="btn sm danger" data-act="dev-status" data-v="revoked" data-id="${d.id}">Kapat</button>` : ""}
+          <button class="btn sm ghost" data-act="dev-hw" data-id="${d.id}">Donanım</button>
           <button class="btn sm ghost" data-act="dev-edit" data-id="${d.id}">Düzenle</button>
         </div></td></tr>`).join("")}
       </tbody></table></div>`;
   }
 
-  // Cihazı açan kişi: aynı IP'den yapılmış son başarılı indirme (kodla + kimlikle). Kesin eşleşme değil, IP eşleşmesi.
+  // Cihazı açan kişi: oyunda girilen indirme koduyla KESİN bağ; yoksa aynı IP'den son başarılı indirme (tahmin).
+  function reqFor(d) {
+    if (d.download_request_id) { const r = state.dlreq.find((x) => x.id === d.download_request_id); if (r) return r; }
+    if (!d.last_ip) return null;
+    return state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip && x.app_id === d.app_id) || state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip) || null;
+  }
   function personFor(d) {
-    if (!d.last_ip) return "";
-    const r = state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip && x.app_id === d.app_id) || state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip);
-    if (!r) return '<div class="hash" style="color:#f59e0b">indirme kaydı yok (IP eşleşmedi)</div>';
-    return `<div class="person" title="IP eşleşmesi: ${esc(d.last_ip)}"><b>${esc(r.first_name)} ${esc(r.last_name)}</b> · ${esc(r.phone)}${r.tiktok ? " · " + esc(r.tiktok) : ""}<div class="hash">${esc(r.email)} · kod ${esc(r.code || "")}</div></div>`;
+    const r = reqFor(d);
+    const exact = !!(d.download_request_id && r && r.id === d.download_request_id);
+    if (!r) return d.download_code_id ? '<div class="hash" style="color:#34d399">indirme koduna bağlı (kişi kaydı silinmiş)</div>' : '<div class="hash" style="color:#f59e0b">indirme koduna bağlı değil</div>';
+    return `<div class="person" title="${exact ? "İndirme koduyla bağlı (kesin)" : "IP eşleşmesi (tahmin): " + esc(d.last_ip)}"><b>${esc(r.first_name)} ${esc(r.last_name)}</b> · <a href="https://wa.me/${esc(String(r.phone).replace(/[^0-9]/g, ""))}" target="_blank" rel="noopener">${esc(r.phone)}</a>
+      <div class="hash">${esc(r.email)} · kod ${esc(r.code || "")} · ${exact ? '<span style="color:#34d399">koda bağlı ✓</span>' : '<span style="color:#f59e0b">IP eşleşmesi</span>'}</div></div>`;
+  }
+  function tiktokLine(d) {
+    if (!d.tiktok_username) return '<div class="tt no">TikTok hesabı tanımlı değil — yayıncı denetimi kapalı</div>';
+    const v = d.tiktok_verified_at ? `<span title="${esc(dt(d.tiktok_verified_at))}">✓ yayında doğrulandı ${ago(d.tiktok_verified_at)}</span>` : "henüz yayında doğrulanmadı";
+    return `<div class="tt ${d.tiktok_verified_at ? "ok" : "no"}"><a href="https://www.tiktok.com/@${esc(d.tiktok_username)}" target="_blank" rel="noopener">@${esc(d.tiktok_username)}</a> · ${v}</div>`;
+  }
+  function hwRec(d) { return state.hwrec.find((h) => h.app_id === d.app_id && h.device_id === d.device_id); }
+  function hwLine(d) {
+    const rec = hwRec(d);
+    if (!rec) return '<div class="hash">donanım henüz kaydedilmedi (yeni sürümle ilk açılışta kilitlenir)</div>';
+    const i = rec.hw?.info || {};
+    const m = { same: ["#34d399", "donanım aynı"], partial: ["#fbbf24", "1 parça değişmiş"], different: ["#ef4444", "FARKLI BİLGİSAYAR"], accepted: ["#93c5fd", "yeni donanım kabul edildi"], locked: ["#34d399", "donanım kilitlendi"], unknown: ["#94a3b8", "karşılaştırılamadı"] }[d.hw_match || "locked"] || ["#94a3b8", d.hw_match];
+    return `<div class="hash">🔒 ${esc(i.board_mfr || "")} ${esc(i.board_model || "")} · seri ${esc(i.board_serial || "—")} · <span style="color:${m[0]}">${m[1]}</span></div>`;
+  }
+
+  // ---------- Güvenlik uyarıları ----------
+  const ALERT_TR = {
+    hw_mismatch: ["BAŞKA BİLGİSAYAR", "Bu lisans donanımı farklı bir bilgisayarda açılmaya çalışıldı; o bilgisayarda oyun kilitlendi."],
+    hw_partial: ["Donanım değişti", "Kilitli donanımdan bir parça farklı (oyun çalışmaya devam ediyor)."],
+    hw_missing: ["Donanım okunamadı", "Oyun bu açılışta donanım bilgisini gönderemedi."],
+    concurrent: ["Aynı anda iki yerde", "Aynı lisans kısa aralıkla farklı IP'lerden açıldı."],
+    code_reuse: ["KOD BAŞKA PC'DE", "Bu indirme kodu başka bir bilgisayara bağlı; yeni bilgisayar onaylanmadı."],
+    same_hw: ["Aynı donanım, yeni kod", "Bu bilgisayar daha önce başka bir lisans koduyla kaydolmuş (Windows yeniden kurulmuş olabilir)."],
+    tiktok_mismatch: ["TİKTOK HESABI UYUŞMADI", "Oyun lisanstaki TikTok hesabından farklı bir yayında çalıştırıldı; oyun hemen kapatıldı."],
+    tiktok_unverified: ["YAYIN DOĞRULANMADI", "Canlı olaylar geldi ama lisans sahibi hesabı 3 dakika içinde doğrulamadı; oyun kapatıldı."],
+    tiktok_uid_changed: ["TikTok kimliği değişti", "Kullanıcı adı aynı ama TikTok sayısal kimliği farklı."],
+  };
+  const SEV_ORDER = { high: 0, warn: 1, info: 2 };
+  function openAlerts() { return state.alerts.filter((a) => !a.resolved_at).sort((a, b) => (SEV_ORDER[a.severity] ?? 3) - (SEV_ORDER[b.severity] ?? 3) || new Date(b.last_at) - new Date(a.last_at)); }
+  function devAlertBadge(d) {
+    const n = state.alerts.filter((a) => !a.resolved_at && a.device_id === d.device_id && a.app_id === d.app_id && a.severity !== "info");
+    if (!n.length) return "";
+    const t = n.map((a) => (ALERT_TR[a.kind] || [a.kind])[0]).join(", ");
+    return ` <span class="badge off" title="${esc(t)}">⚠ ${esc(n.length === 1 ? t : n.length + " uyarı")}</span>`;
+  }
+  function alertDesc(a) {
+    const det = a.detail || {};
+    const parts = [];
+    if (det.diff?.length) parts.push("Farklı: " + det.diff.join(", "));
+    if (det.got?.board || det.got?.board_model) parts.push(`Gelen PC: ${esc(det.machine || "?")} · anakart ${esc(det.got.board_model || "")} ${esc(det.got.board || "")}`);
+    if (det.expected?.board) parts.push(`Kayıtlı: anakart ${esc(det.expected.board)}`);
+    if (det.ips) parts.push("IP: " + det.ips.map(esc).join(" ↔ "));
+    if (det.code) parts.push("Kod: " + esc(det.code) + (det.other_codes?.length ? " · bağlı olduğu cihaz: " + det.other_codes.map(esc).join(", ") : ""));
+    if (det.other_codes?.length && !det.code) parts.push("Diğer kod: " + det.other_codes.map(esc).join(", "));
+    if (det.expected !== undefined && typeof det.expected === "string") parts.push(`Lisans: @${esc(det.expected)}`);
+    if (det.got_host || det.got_host_id) parts.push(`TikFinity yayıncısı: ${det.got_host ? "@" + esc(det.got_host) : ""} ${esc(det.got_host_id || "")}`);
+    if (det.reason) parts.push(esc(det.reason));
+    if (det.error) parts.push(esc(det.error));
+    return parts.join(" · ");
+  }
+  function alertBox(list, compact) {
+    const shown = compact ? list.filter((a) => a.severity !== "info") : list;
+    if (!shown.length) return compact ? "" : '<div class="empty-row">Açık uyarı yok.</div>';
+    const rows = shown.slice(0, compact ? 6 : 300).map((a) => {
+      const [title, explain] = ALERT_TR[a.kind] || [a.kind, ""];
+      const d = state.devices.find((x) => x.device_id === a.device_id && x.app_id === a.app_id);
+      const hwKind = a.kind === "hw_mismatch" || a.kind === "hw_partial";
+      return `<div class="alert-row ${esc(a.severity)}"><div class="k">${a.severity === "high" ? "⛔" : a.severity === "warn" ? "⚠" : "ℹ"} ${esc(title)}</div>
+        <div class="d"><span class="code">${esc(a.device_code || "")}</span> · ${esc(appName(a.app_id))} · ${d ? esc(d.label || d.machine_name || "") : ""}${d?.tiktok_username ? " · @" + esc(d.tiktok_username) : ""}
+          <div class="hash">${esc(explain)} ${alertDesc(a)}</div>
+          <div class="hash">${ago(a.last_at)}${a.hits > 1 ? " · " + a.hits + " kez" : ""} · IP ${esc(a.ip || "—")}${a.resolved_at ? " · kapatıldı " + ago(a.resolved_at) : ""}</div></div>
+        <div class="row-actions">
+          <button class="btn sm ghost" data-act="alert-detail" data-id="${a.id}">Ayrıntı</button>
+          ${!a.resolved_at && hwKind && a.detail?.hw_hash && d ? `<button class="btn sm ghost" data-act="alert-accept-hw" data-id="${a.id}" title="Gerçekten parça değiştiyse (ör. anakart tamiri)">Yeni donanımı kabul et</button>` : ""}
+          ${!a.resolved_at && d && d.status !== "revoked" ? `<button class="btn sm danger" data-act="alert-revoke" data-id="${a.id}">Lisansı kapat</button>` : ""}
+          ${!a.resolved_at ? `<button class="btn sm ok" data-act="alert-resolve" data-id="${a.id}">Uyarıyı kapat</button>` : ""}
+        </div></div>`;
+    }).join("");
+    if (!compact) return `<div class="alert-box">${rows}</div>`;
+    return `<div class="alert-box"><h3>⛔ ${shown.length} güvenlik uyarısı <button class="btn sm ghost" data-tab="alerts">Tümü →</button></h3>${rows}</div>`;
+  }
+  function viewAlerts() {
+    const open = openAlerts(), closed = state.alerts.filter((a) => a.resolved_at);
+    return `<div class="page-head"><h2>Güvenlik uyarıları</h2><div class="tools"><button class="btn sm ghost" data-act="refresh">Yenile</button></div></div>
+      <div class="panel" style="margin-bottom:18px"><div class="filters"><b>Açık uyarılar (${open.length})</b><span class="muted" style="font-size:13px">Başka bilgisayar, kod paylaşımı, TikTok hesabı uyuşmazlığı. Oyun bu durumlarda kendini kilitler/kapatır; buradan lisansı kalıcı kapatabilirsin.</span></div>${alertBox(open, false)}</div>
+      <div class="panel"><div class="filters"><b>Son 7 günde kapatılanlar (${closed.length})</b></div>${closed.length ? alertBox(closed, false) : '<div class="empty-row">Yok.</div>'}</div>`;
+  }
+  function hwModal(d) {
+    const rec = hwRec(d);
+    const a = rec?.hw?.info || {}, b = d.hw_last?.info || {};
+    const rows = [["Anakart üretici", "board_mfr"], ["Anakart model", "board_model"], ["Anakart seri no", "board_serial", 1], ["Bilgisayar üretici / model", "pc"], ["BIOS üretici", "bios_vendor"], ["BIOS seri no", "bios_serial", 1], ["BIOS sürümü", "bios_version"],
+      ["Sistem UUID", "uuid", 1], ["İşlemci", "cpu_name"], ["İşlemci kimliği", "cpu_id"], ["Windows MachineGuid", "machine_guid", 1], ["Windows ürün no", "os_serial"], ["Diskler", "disks", 1], ["MAC adresleri", "macs"], ["Ekran kartı", "gpu"], ["RAM", "ram_mb"], ["Windows kullanıcısı", "user"]];
+    const val = (o, k) => k === "pc" ? [o.pc_mfr, o.pc_model].filter(Boolean).join(" ") : k === "disks" ? (o.disks || []).map((x) => `${x.model || "?"} (${x.serial || "seri yok"}${x.size_gb ? ", " + x.size_gb + " GB" : ""})`).join("; ") : k === "macs" ? (o.macs || []).join(", ") : k === "ram_mb" ? (o.ram_mb ? Math.round(o.ram_mb / 1024) + " GB" : "") : (o[k] ?? "");
+    const grid = rows.map(([l, k, core]) => {
+      const x = String(val(a, k) || "—"), y = rec && d.hw_last ? String(val(b, k) || "—") : "—";
+      const bad = core && rec && d.hw_last && x !== y && x !== "—" && y !== "—";
+      return `<div class="l">${esc(l)}${core ? " 🔒" : ""}</div><div>${esc(x)}</div><div class="${bad ? "bad" : ""}">${esc(y)}</div>`;
+    }).join("");
+    modal(`Donanım · ${d.device_code}`, `
+      <p class="muted" style="margin:0 0 10px;font-size:13px">Sol sütun: oyunun bu lisansla <b>ilk</b> açıldığı bilgisayarın kaydı (${rec ? dt(rec.created_at) + ", IP " + esc(rec.ip || "—") : "henüz yok"}). Bu kayıt <b>değiştirilemez ve silinemez</b> — MAC adresi ya da başka bir alan değişse de ilk değerler kalır. 🔒 işaretli alanlar karşılaştırılır; MAC karşılaştırılmaz (kolay değiştirilir).</p>
+      <div class="hw-grid"><div class="h">Alan</div><div class="h">Kilitli (ilk kayıt)</div><div class="h">Son açılış ${d.hw_last_at ? "(" + ago(d.hw_last_at) + ")" : ""}</div>${grid}</div>
+      ${(d.hw_allowed || []).length ? `<p class="hash" style="margin-top:8px">Kabul edilmiş ek donanım: ${d.hw_allowed.length}</p>` : ""}`,
+      [{ text: "Kapat" }]);
   }
 
   // ---------- İndirmeler (kod + kimlik) ----------
@@ -512,7 +617,7 @@
         <div class="filters"><b>İndirme kodları</b><span class="muted" style="font-size:13px">Kodu WhatsApp'tan gönder; kişi sitede ad, soyad, telefon, e-posta ve kodu girmeden oyunu indiremez.</span></div>
         ${codes.length ? `<div class="table-wrap"><table><thead><tr><th>Kod</th><th>Oyun</th><th>Kullanım</th><th>Bitiş</th><th>Not</th><th>Durum</th><th style="text-align:right">İşlem</th></tr></thead><tbody>
           ${codes.map((c) => `<tr><td><span class="code">${esc(c.code)}</span></td><td>${esc(c.app_id ? appName(c.app_id) : "Tüm oyunlar")}</td>
-            <td>${c.used_count}/${c.max_uses}</td><td>${c.expires_at ? dt(c.expires_at) : "—"}</td><td>${esc(c.note || "")}</td><td>${codeBadge(c)}</td>
+            <td>${c.used_count}/${c.max_uses} indirme<div class="hash">${state.devices.filter((d) => d.download_code_id === c.id).map((d) => esc(d.device_code)).join(", ") || "PC yok"} · en çok ${c.max_devices ?? 1} PC</div></td><td>${c.expires_at ? dt(c.expires_at) : "—"}</td><td>${esc(c.note || "")}</td><td>${codeBadge(c)}</td>
             <td style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
               <button class="btn sm ghost" data-act="code-copy" data-code="${esc(c.code)}">Kopyala</button>
               <button class="btn sm ghost" data-act="code-wa" data-code="${esc(c.code)}" data-app="${esc(c.app_id || "")}">WhatsApp mesajı</button>
@@ -523,7 +628,7 @@
         <div class="filters"><b>İndirme talepleri</b><span class="muted" style="font-size:13px">${reqs.filter((r) => r.status === "ok").length} başarılı · ${reqs.filter((r) => r.status === "denied").length} reddedildi</span></div>
         ${reqs.length ? `<div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Ad Soyad</th><th>Telefon</th><th>E-posta</th><th>TikTok</th><th>Oyun</th><th>Kod</th><th>IP</th><th>Sonuç</th><th></th></tr></thead><tbody>
           ${reqs.map((r) => `<tr><td title="${esc(dt(r.created_at))}">${ago(r.created_at)}</td><td><b>${esc(r.first_name)} ${esc(r.last_name)}</b></td>
-            <td><a href="https://wa.me/${esc(String(r.phone).replace(/[^0-9]/g, ""))}" target="_blank" rel="noopener">${esc(r.phone)}</a></td><td>${esc(r.email)}</td><td>${esc(r.tiktok || "—")}</td>
+            <td><a href="https://wa.me/${esc(String(r.phone).replace(/[^0-9]/g, ""))}" target="_blank" rel="noopener">${esc(r.phone)}</a></td><td>${esc(r.email)}</td><td>${r.tiktok ? `<a href="https://www.tiktok.com/@${esc(r.tiktok)}" target="_blank" rel="noopener">@${esc(r.tiktok)}</a>${r.tiktok_checked === "yes" ? ' <span style="color:#34d399" title="TikTok\'ta var">✓</span>' : r.tiktok_checked === "no" ? ' <span style="color:#ef4444">yok</span>' : ""}<div class="hash">${esc(r.tiktok_nickname || "")}</div>` : "—"}</td>
             <td>${esc(appName(r.app_id))}</td><td><span class="code">${esc(r.code || "")}</span></td><td class="hash">${esc(r.ip || "")}</td>
             <td>${r.status === "ok" ? '<span class="badge live">İndirdi</span>' : `<span class="badge off" title="${esc(r.reason || "")}">Reddedildi</span>`}</td>
             <td><button class="btn sm ghost" data-act="req-del" data-id="${r.id}" title="Kişisel veriyi sil">Sil</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty-row">Henüz indirme talebi yok.</div>'}
@@ -556,6 +661,10 @@
       <label class="field">Etiket (kime ait)<input class="input" id="d-label" value="${esc(d.label)}"></label>
       <label class="field">Not<input class="input" id="d-note" value="${esc(d.owner_note)}"></label>
       <div class="grid2">
+        <label class="field">TikTok kullanıcı adı (yayın hesabı)<input class="input" id="d-tt" value="${esc(d.tiktok_username)}" placeholder="kullanici_adi"></label>
+        <label class="field">TikTok sayısal kimlik (boş bırakılabilir)<input class="input" id="d-ttid" value="${esc(d.tiktok_user_id)}" placeholder="otomatik"></label>
+      </div>
+      <div class="grid2">
         <label class="field">Durum<select class="input" id="d-status">
           ${[["pending", "Bekliyor"], ["approved", "Onaylı"], ["revoked", "Kapatıldı"]].map(([v, t]) => `<option value="${v}" ${d.status === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
         <label class="field">Lisans bitişi (boş = süresiz)<input class="input" type="datetime-local" id="d-exp" value="${d.expires_at ? new Date(new Date(d.expires_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""}"></label>
@@ -577,6 +686,13 @@
             status: $("#d-status").value,
             expires_at: exp ? new Date(exp).toISOString() : null,
             kill_message: $("#d-kill").value.trim() || null,
+            ...(() => {
+              const tt = $("#d-tt").value.trim().replace(/^@+/, "").toLowerCase(), tid = $("#d-ttid").value.trim();
+              if (tt && !/^[a-z0-9._]{2,24}$/.test(tt)) throw new Error("TikTok kullanıcı adı geçersiz.");
+              if (tid && !/^[0-9]{3,30}$/.test(tid)) throw new Error("TikTok kimliği yalnız rakam olmalı.");
+              const changed = tt !== (d.tiktok_username || "");
+              return { tiktok_username: tt || null, tiktok_user_id: changed ? (tid || null) : (tid || d.tiktok_user_id || null), ...(changed ? { tiktok_verified_at: null } : {}) };
+            })(),
           }, "Cihaz güncellendi.");
         } },
       ]);
@@ -603,14 +719,14 @@
   }
 
   // ---------- Kayıtlar ----------
-  const EVENT_TR = { register: "Yeni cihaz", flags: "Şüpheli işaret", new_build: "Yeni build", download: "İndirme", download_denied: "İndirme reddedildi" };
+  const EVENT_TR = { register: "Yeni cihaz", flags: "Şüpheli işaret", new_build: "Yeni build", download: "İndirme", download_denied: "İndirme reddedildi", alert: "Güvenlik uyarısı", hw_locked: "Donanım kilitlendi", bind: "Koda bağlandı", tiktok_ok: "Yayın hesabı doğrulandı" };
   function logTable(rows) {
     if (!rows.length) return '<div class="empty-row">Kayıt yok.</div>';
     return `<div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Olay</th><th>Oyun</th><th>Kod</th><th>Ayrıntı</th></tr></thead><tbody>
       ${rows.map((l) => {
         const det = l.detail || {};
-        const txt = l.event === "flags" ? (det.flags || []).join(", ") : l.event === "register" ? [det.label, det.machine, det.status].filter(Boolean).join(" · ") : l.event === "new_build" ? (det.build || "").slice(0, 12) + "…" : (l.event === "download" || l.event === "download_denied") ? [det.name, det.ip].filter(Boolean).join(" · ") : JSON.stringify(det).slice(0, 80);
-        return `<tr><td title="${esc(dt(l.at))}">${ago(l.at)}</td><td>${l.event === "flags" ? '<span class="badge off">' : '<span class="badge plain">'}${esc(EVENT_TR[l.event] || l.event)}</span></td><td>${esc(appName(l.app_id))}</td><td><span class="code">${esc(l.device_code || "")}</span></td><td class="hash">${esc(txt)}</td></tr>`;
+        const txt = l.event === "flags" ? (det.flags || []).join(", ") : l.event === "register" ? [det.label, det.machine, det.status].filter(Boolean).join(" · ") : l.event === "new_build" ? (det.build || "").slice(0, 12) + "…" : (l.event === "download" || l.event === "download_denied") ? [det.name, det.ip].filter(Boolean).join(" · ") : l.event === "alert" ? ((ALERT_TR[det.kind] || [det.kind])[0] + " · " + (det.machine || "") + " · " + (det.ip || "")) : l.event === "bind" ? [det.code, det.person].filter(Boolean).join(" · ") : l.event === "tiktok_ok" ? "@" + (det.user || "") : l.event === "hw_locked" ? ["anakart " + (det.board || "?"), det.machine].filter(Boolean).join(" · ") : JSON.stringify(det).slice(0, 80);
+        return `<tr><td title="${esc(dt(l.at))}">${ago(l.at)}</td><td>${l.event === "flags" || l.event === "alert" ? '<span class="badge off">' : '<span class="badge plain">'}${esc(EVENT_TR[l.event] || l.event)}</span></td><td>${esc(appName(l.app_id))}</td><td><span class="code">${esc(l.device_code || "")}</span></td><td class="hash">${esc(txt)}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
   function viewLog() {
@@ -662,7 +778,8 @@
         return modal("İndirme kodu oluştur", `
           <label class="field">Oyun<select class="input" id="c-app"><option value="">Tüm oyunlar</option>${state.apps.map((a) => `<option value="${esc(a.id)}" ${a.id === g ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
           <label class="field">Kod<input class="input" id="c-code" value="${randomCode()}" style="text-transform:uppercase"></label>
-          <label class="field">Kaç kez kullanılabilir<input class="input" id="c-max" type="number" min="1" max="1000" value="1"></label>
+          <div class="grid2"><label class="field">Kaç kez indirilebilir<input class="input" id="c-max" type="number" min="1" max="1000" value="1"></label>
+          <label class="field">Kaç bilgisayarda çalışır<input class="input" id="c-dev" type="number" min="1" max="100" value="1"></label></div>
           <label class="field">Geçerlilik (gün, boş = süresiz)<input class="input" id="c-days" type="number" min="1" max="365" value="7"></label>
           <label class="field">Not (kime verildi)<input class="input" id="c-note" maxlength="200" placeholder="ör. Ahmet K. – WhatsApp"></label>`,
           [{ text: "Vazgeç" }, { text: "Oluştur", cls: "primary", run: async () => {
@@ -670,6 +787,7 @@
             if (!/^[A-Z0-9-]{6,32}$/.test(code)) throw new Error("Kod 6–32 karakter: harf, rakam, tire.");
             const days = parseInt($("#c-days").value, 10);
             const row = { code, app_id: $("#c-app").value || null, max_uses: Math.max(1, Math.min(1000, parseInt($("#c-max").value, 10) || 1)),
+              max_devices: Math.max(1, Math.min(100, parseInt($("#c-dev").value, 10) || 1)),
               expires_at: days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null, note: $("#c-note").value.trim() || null };
             const { error } = await sb.from("download_codes").insert(row);
             if (error) throw new Error(/duplicate|unique/i.test(error.message) ? "Bu kod zaten var." : error.message);
@@ -729,6 +847,40 @@
         return setDevice(d.id, { status: "approved" }, `${d.device_code} onaylandı.`);
       }
       if (act === "dev-edit") return editDevice(state.devices.find((x) => x.id === b.dataset.id));
+      if (act === "dev-hw") return hwModal(state.devices.find((x) => x.id === b.dataset.id));
+      if (act && act.startsWith("alert-")) {
+        const al = state.alerts.find((x) => String(x.id) === b.dataset.id);
+        if (!al) return;
+        const d = state.devices.find((x) => x.device_id === al.device_id && x.app_id === al.app_id);
+        const resolve = async (note) => {
+          const { error } = await sb.from("license_alerts").update({ resolved_at: new Date().toISOString(), resolved_note: note }).eq("id", al.id);
+          if (error) throw new Error(error.message);
+        };
+        if (act === "alert-detail") {
+          return modal(`${(ALERT_TR[al.kind] || [al.kind])[0]} · ${al.device_code || ""}`, `<p class="muted" style="margin:0 0 8px">${esc((ALERT_TR[al.kind] || ["", ""])[1])}</p>
+            <div class="hash">İlk: ${dt(al.created_at)} · son: ${dt(al.last_at)} · ${al.hits} kez · IP ${esc(al.ip || "—")}</div>
+            <pre style="white-space:pre-wrap;word-break:break-all;font-size:12px;max-height:50vh;overflow:auto;background:rgba(255,255,255,.04);padding:10px;border-radius:10px">${esc(JSON.stringify(al.detail, null, 2))}</pre>`,
+            d ? [{ text: "Donanımı göster", run: () => { hwModal(d); return true; } }, { text: "Kapat" }] : [{ text: "Kapat" }]);
+        }
+        if (act === "alert-resolve") { await resolve("yönetici kapattı"); toast("Uyarı kapatıldı.", "ok"); return refresh(); }
+        if (act === "alert-accept-hw") {
+          return modal("Yeni donanım kabul edilsin mi?", `<p style="margin:0">${esc(al.device_code)} lisansı bu donanımda da çalışacak. İlk kayıt değişmez; yalnızca bu yeni donanım izinli listeye eklenir. Bunu yalnızca kişinin parça değiştirdiğinden eminsen yap.</p>`,
+            [{ text: "Vazgeç" }, { text: "Kabul et", cls: "primary", run: async () => {
+              const allowed = [...new Set([...(d.hw_allowed || []), al.detail.hw_hash])];
+              const { error } = await sb.from("license_devices").update({ hw_allowed: allowed }).eq("id", d.id);
+              if (error) throw new Error(error.message);
+              await resolve("yeni donanım kabul edildi"); toast("Yeni donanım kabul edildi.", "ok"); refresh();
+            } }]);
+        }
+        if (act === "alert-revoke") {
+          return modal(`${al.device_code} lisansı kapatılsın mı?`, `<p style="margin:0">Bu lisans tüm bilgisayarlarda (asıl bilgisayar dahil) en geç ~30 sn içinde kilitlenir ve kapanır.</p><label class="field">Mesaj<input class="input" id="k-msg" value="Lisans kötüye kullanım nedeniyle kapatıldı."></label>`,
+            [{ text: "Vazgeç" }, { text: "Lisansı kapat", cls: "danger solid", run: async () => {
+              const { error } = await sb.from("license_devices").update({ status: "revoked", kill_message: $("#k-msg").value.trim() || null }).eq("id", d.id);
+              if (error) throw new Error(error.message);
+              await resolve("lisans kapatıldı"); toast(`${al.device_code} kapatıldı.`, "ok"); refresh();
+            } }]);
+        }
+      }
       if (act === "approve-all") {
         const ids = filteredDevices().filter((d) => d.status === "pending").map((d) => d.id);
         if (!ids.length || !confirm(`${ids.length} bekleyen cihaz onaylansın mı?`)) return;
