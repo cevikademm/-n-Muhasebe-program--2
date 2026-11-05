@@ -20,7 +20,7 @@
   if (EMBED) document.documentElement.classList.add("embed");
   const tellParent = (msg) => { if (EMBED) try { window.parent.postMessage(msg, location.origin); } catch (e) {} };
 
-  const state = { tab: "devices", apps: [], devices: [], builds: [], log: [], stats: null, filters: { app: "", status: "", q: "" }, timer: null };
+  const state = { tab: "devices", apps: [], devices: [], builds: [], log: [], dlreq: [], dlcodes: [], stats: null, filters: { app: "", status: "", q: "" }, timer: null };
 
   // ---------- yardımcılar ----------
   function toast(msg, kind = "") {
@@ -142,7 +142,7 @@
   // ---------- veri ----------
   async function refresh(full = false) {
     try {
-      const [apps, stats, devices, builds, log] = await Promise.all([
+      const [apps, stats, devices, builds, log, dlreq, dlcodes] = await Promise.all([
         sb.from("license_apps").select("*").order("sort_order").order("name"),
         sb.rpc("portal_stats"),
         sb.from("license_devices").select("*").order("last_seen", { ascending: false }).limit(1000),
@@ -150,13 +150,15 @@
         (full || state.tab === "log" || state.tab === "overview")
           ? sb.from("license_log").select("*").order("at", { ascending: false }).limit(300)
           : Promise.resolve({ data: state.log }),
+        sb.from("download_requests").select("*").order("created_at", { ascending: false }).limit(500),
+        sb.from("download_codes").select("*").order("created_at", { ascending: false }).limit(300),
       ]);
-      const err = [apps, stats, devices, builds, log].find((r) => r.error)?.error;
+      const err = [apps, stats, devices, builds, log, dlreq, dlcodes].find((r) => r.error)?.error;
       if (err) {
         if (/JWT|auth|yetkisiz/i.test(err.message)) return showLogin("Oturum süresi doldu, tekrar giriş yapın.");
         throw err;
       }
-      state.apps = apps.data; state.stats = stats.data; state.devices = devices.data; state.builds = builds.data; state.log = log.data || [];
+      state.apps = apps.data; state.stats = stats.data; state.devices = devices.data; state.builds = builds.data; state.log = log.data || []; state.dlreq = dlreq.data || []; state.dlcodes = dlcodes.data || [];
       tellParent({ type: "fikoai-oyunlar-pending", pending: state.stats?.pending || 0 });
       $$("[data-cnt]").forEach((el) => {
         const n = state.stats?.[el.dataset.cnt] || 0;
@@ -181,7 +183,7 @@
   function render() {
     const m = $("#main");
     const scroll = window.scrollY;
-    m.innerHTML = { overview: viewOverview, games: viewGames, devices: viewDevices, builds: viewBuilds, log: viewLog }[state.tab]();
+    m.innerHTML = { overview: viewOverview, games: viewGames, devices: viewDevices, builds: viewBuilds, log: viewLog, downloads: viewDownloads }[state.tab]();
     if (state.tab === "devices") bindDeviceFilters();
     window.scrollTo(0, scroll);
   }
@@ -434,7 +436,11 @@
     return state.devices.slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)).filter((d) =>
       (!f.app || d.app_id === f.app) &&
       (!f.status || d.status === f.status || (f.status === "online" && online(d.last_seen))) &&
-      (!q || [d.device_code, d.label, d.machine_name, d.owner_note, d.last_ip].some((v) => (v || "").toLowerCase().includes(q))));
+      (!q || [d.device_code, d.label, d.machine_name, d.owner_note, d.last_ip, personText(d)].some((v) => (v || "").toLowerCase().includes(q))));
+  }
+  function personText(d) {
+    const r = d.last_ip && state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip);
+    return r ? [r.first_name, r.last_name, r.phone, r.email, r.tiktok].join(" ") : "";
   }
   function viewDevices() {
     const f = state.filters;
@@ -471,7 +477,7 @@
       ${list.map((d) => `<tr>
         <td><span class="code">${esc(d.device_code)}</span>${(d.last_flags || []).length ? ` <span class="badge off" title="${esc((d.last_flags || []).join(", "))}">⚠ ${esc(d.last_flags.join(", "))}</span>` : ""}</td>
         <td>${esc(appName(d.app_id))}</td>
-        <td>${esc(d.label || "—")}<div class="hash">${esc(d.machine_name || "")}${d.owner_note ? " · " + esc(d.owner_note) : ""}</div></td>
+        <td>${esc(d.label || "—")}<div class="hash">${esc(d.machine_name || "")}${d.owner_note ? " · " + esc(d.owner_note) : ""}</div>${personFor(d)}</td>
         <td>${devBadge(d)} ${online(d.last_seen) ? '<span class="badge info">çevrim içi</span>' : ""}${!compact && d.expires_at ? `<div class="hash">bitiş: ${dt(d.expires_at)}</div>` : ""}</td>
         <td title="${esc(dt(d.last_seen))} · ${d.check_count ?? 0} sorgu">${ago(d.last_seen)}</td>
         <td class="c-act" style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
@@ -480,6 +486,57 @@
           <button class="btn sm ghost" data-act="dev-edit" data-id="${d.id}">Düzenle</button>
         </div></td></tr>`).join("")}
       </tbody></table></div>`;
+  }
+
+  // Cihazı açan kişi: aynı IP'den yapılmış son başarılı indirme (kodla + kimlikle). Kesin eşleşme değil, IP eşleşmesi.
+  function personFor(d) {
+    if (!d.last_ip) return "";
+    const r = state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip && x.app_id === d.app_id) || state.dlreq.find((x) => x.status === "ok" && x.ip === d.last_ip);
+    if (!r) return '<div class="hash" style="color:#f59e0b">indirme kaydı yok (IP eşleşmedi)</div>';
+    return `<div class="person" title="IP eşleşmesi: ${esc(d.last_ip)}"><b>${esc(r.first_name)} ${esc(r.last_name)}</b> · ${esc(r.phone)}${r.tiktok ? " · " + esc(r.tiktok) : ""}<div class="hash">${esc(r.email)} · kod ${esc(r.code || "")}</div></div>`;
+  }
+
+  // ---------- İndirmeler (kod + kimlik) ----------
+  function codeBadge(c) {
+    if (c.revoked) return '<span class="badge off">İptal</span>';
+    if (c.expires_at && new Date(c.expires_at) < new Date()) return '<span class="badge off">Süresi doldu</span>';
+    if (c.used_count >= c.max_uses) return '<span class="badge plain">Kullanıldı</span>';
+    return '<span class="badge live">Geçerli</span>';
+  }
+  function viewDownloads() {
+    const reqs = state.dlreq, codes = state.dlcodes;
+    return `
+      <div class="page-head"><h2>İndirmeler</h2>
+        <div class="tools"><button class="btn primary" data-act="new-code">+ İndirme kodu oluştur</button><button class="btn sm ghost" data-act="refresh">Yenile</button></div></div>
+      <div class="panel" style="margin-bottom:18px">
+        <div class="filters"><b>İndirme kodları</b><span class="muted" style="font-size:13px">Kodu WhatsApp'tan gönder; kişi sitede ad, soyad, telefon, e-posta ve kodu girmeden oyunu indiremez.</span></div>
+        ${codes.length ? `<div class="table-wrap"><table><thead><tr><th>Kod</th><th>Oyun</th><th>Kullanım</th><th>Bitiş</th><th>Not</th><th>Durum</th><th style="text-align:right">İşlem</th></tr></thead><tbody>
+          ${codes.map((c) => `<tr><td><span class="code">${esc(c.code)}</span></td><td>${esc(c.app_id ? appName(c.app_id) : "Tüm oyunlar")}</td>
+            <td>${c.used_count}/${c.max_uses}</td><td>${c.expires_at ? dt(c.expires_at) : "—"}</td><td>${esc(c.note || "")}</td><td>${codeBadge(c)}</td>
+            <td style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
+              <button class="btn sm ghost" data-act="code-copy" data-code="${esc(c.code)}">Kopyala</button>
+              <button class="btn sm ghost" data-act="code-wa" data-code="${esc(c.code)}" data-app="${esc(c.app_id || "")}">WhatsApp mesajı</button>
+              ${!c.revoked ? `<button class="btn sm danger" data-act="code-revoke" data-id="${c.id}">İptal</button>` : ""}
+            </div></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty-row">Henüz kod yok. "+ İndirme kodu oluştur" ile başlayın.</div>'}
+      </div>
+      <div class="panel">
+        <div class="filters"><b>İndirme talepleri</b><span class="muted" style="font-size:13px">${reqs.filter((r) => r.status === "ok").length} başarılı · ${reqs.filter((r) => r.status === "denied").length} reddedildi</span></div>
+        ${reqs.length ? `<div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Ad Soyad</th><th>Telefon</th><th>E-posta</th><th>TikTok</th><th>Oyun</th><th>Kod</th><th>IP</th><th>Sonuç</th><th></th></tr></thead><tbody>
+          ${reqs.map((r) => `<tr><td title="${esc(dt(r.created_at))}">${ago(r.created_at)}</td><td><b>${esc(r.first_name)} ${esc(r.last_name)}</b></td>
+            <td><a href="https://wa.me/${esc(String(r.phone).replace(/[^0-9]/g, ""))}" target="_blank" rel="noopener">${esc(r.phone)}</a></td><td>${esc(r.email)}</td><td>${esc(r.tiktok || "—")}</td>
+            <td>${esc(appName(r.app_id))}</td><td><span class="code">${esc(r.code || "")}</span></td><td class="hash">${esc(r.ip || "")}</td>
+            <td>${r.status === "ok" ? '<span class="badge live">İndirdi</span>' : `<span class="badge off" title="${esc(r.reason || "")}">Reddedildi</span>`}</td>
+            <td><button class="btn sm ghost" data-act="req-del" data-id="${r.id}" title="Kişisel veriyi sil">Sil</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty-row">Henüz indirme talebi yok.</div>'}
+      </div>`;
+  }
+  function randomCode() {
+    const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const b = new Uint8Array(8); crypto.getRandomValues(b);
+    const s = [...b].map((x) => A[x % A.length]).join("");
+    return s.slice(0, 4) + "-" + s.slice(4);
+  }
+  function waText(code, appId) {
+    const g = appId ? appName(appId) : "oyun";
+    return `Merhaba, ${g} için indirme kodun: ${code}\nfikoai.de → Oyunlar → İndir'e bas, bilgilerini ve kodu gir. Kod tek kullanımlıktır.`;
   }
 
   async function setDevice(id, patch, msg) {
@@ -546,13 +603,13 @@
   }
 
   // ---------- Kayıtlar ----------
-  const EVENT_TR = { register: "Yeni cihaz", flags: "Şüpheli işaret", new_build: "Yeni build", download: "İndirme" };
+  const EVENT_TR = { register: "Yeni cihaz", flags: "Şüpheli işaret", new_build: "Yeni build", download: "İndirme", download_denied: "İndirme reddedildi" };
   function logTable(rows) {
     if (!rows.length) return '<div class="empty-row">Kayıt yok.</div>';
     return `<div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Olay</th><th>Oyun</th><th>Kod</th><th>Ayrıntı</th></tr></thead><tbody>
       ${rows.map((l) => {
         const det = l.detail || {};
-        const txt = l.event === "flags" ? (det.flags || []).join(", ") : l.event === "register" ? [det.label, det.machine, det.status].filter(Boolean).join(" · ") : l.event === "new_build" ? (det.build || "").slice(0, 12) + "…" : l.event === "download" ? "" : JSON.stringify(det).slice(0, 80);
+        const txt = l.event === "flags" ? (det.flags || []).join(", ") : l.event === "register" ? [det.label, det.machine, det.status].filter(Boolean).join(" · ") : l.event === "new_build" ? (det.build || "").slice(0, 12) + "…" : (l.event === "download" || l.event === "download_denied") ? [det.name, det.ip].filter(Boolean).join(" · ") : JSON.stringify(det).slice(0, 80);
         return `<tr><td title="${esc(dt(l.at))}">${ago(l.at)}</td><td>${l.event === "flags" ? '<span class="badge off">' : '<span class="badge plain">'}${esc(EVENT_TR[l.event] || l.event)}</span></td><td>${esc(appName(l.app_id))}</td><td><span class="code">${esc(l.device_code || "")}</span></td><td class="hash">${esc(txt)}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
@@ -600,6 +657,41 @@
     const act = b.dataset.act;
     try {
       if (act === "refresh") return refresh(true);
+      if (act === "new-code") {
+        const g = state.apps.find((a) => a.id === "neon-gazino") ? "neon-gazino" : "";
+        return modal("İndirme kodu oluştur", `
+          <label class="field">Oyun<select class="input" id="c-app"><option value="">Tüm oyunlar</option>${state.apps.map((a) => `<option value="${esc(a.id)}" ${a.id === g ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
+          <label class="field">Kod<input class="input" id="c-code" value="${randomCode()}" style="text-transform:uppercase"></label>
+          <label class="field">Kaç kez kullanılabilir<input class="input" id="c-max" type="number" min="1" max="1000" value="1"></label>
+          <label class="field">Geçerlilik (gün, boş = süresiz)<input class="input" id="c-days" type="number" min="1" max="365" value="7"></label>
+          <label class="field">Not (kime verildi)<input class="input" id="c-note" maxlength="200" placeholder="ör. Ahmet K. – WhatsApp"></label>`,
+          [{ text: "Vazgeç" }, { text: "Oluştur", cls: "primary", run: async () => {
+            const code = $("#c-code").value.trim().toUpperCase();
+            if (!/^[A-Z0-9-]{6,32}$/.test(code)) throw new Error("Kod 6–32 karakter: harf, rakam, tire.");
+            const days = parseInt($("#c-days").value, 10);
+            const row = { code, app_id: $("#c-app").value || null, max_uses: Math.max(1, Math.min(1000, parseInt($("#c-max").value, 10) || 1)),
+              expires_at: days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null, note: $("#c-note").value.trim() || null };
+            const { error } = await sb.from("download_codes").insert(row);
+            if (error) throw new Error(/duplicate|unique/i.test(error.message) ? "Bu kod zaten var." : error.message);
+            try { await navigator.clipboard.writeText(waText(code, row.app_id)); toast("Kod oluşturuldu, WhatsApp mesajı panoya kopyalandı", "ok"); } catch (e) { toast("Kod oluşturuldu: " + code, "ok"); }
+            refresh();
+          } }]);
+      }
+      if (act === "code-copy") { await navigator.clipboard.writeText(b.dataset.code); return toast("Kopyalandı: " + b.dataset.code, "ok"); }
+      if (act === "code-wa") { await navigator.clipboard.writeText(waText(b.dataset.code, b.dataset.app)); return toast("WhatsApp mesajı panoya kopyalandı", "ok"); }
+      if (act === "code-revoke") {
+        const { error } = await sb.from("download_codes").update({ revoked: true }).eq("id", b.dataset.id);
+        if (error) throw new Error(error.message);
+        toast("Kod iptal edildi", "ok"); return refresh();
+      }
+      if (act === "req-del") {
+        return modal("Kayıt silinsin mi?", "<p style='margin:0'>Bu indirme talebindeki kişisel bilgiler kalıcı olarak silinir (silme talebi geldiğinde kullanın).</p>",
+          [{ text: "Vazgeç" }, { text: "Sil", cls: "danger", run: async () => {
+            const { error } = await sb.from("download_requests").delete().eq("id", b.dataset.id);
+            if (error) throw new Error(error.message);
+            toast("Silindi", "ok"); refresh();
+          } }]);
+      }
       if (act === "panic") {
         const live = state.apps.filter((a) => a.enabled);
         if (!live.length) return toast("Zaten tüm oyunlar kapalı.");

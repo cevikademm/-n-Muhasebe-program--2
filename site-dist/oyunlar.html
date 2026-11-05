@@ -109,6 +109,8 @@
       .dev-table td.c-act .row-actions { justify-content: flex-start !important; flex-wrap: wrap; }
       .dev-table td.c-act .btn { min-height: 40px; }
     }
+    .person { margin-top: 4px; font-size: 13px; color: var(--text, #e8ecf8); }
+    .person b { color: #34d399; }
   </style>
 </head>
 <body>
@@ -131,6 +133,7 @@
     <aside class="side">
       <div class="logo"><span class="dot"></span>fikoai · Oyunlar</div>
       <button class="tab active" data-tab="devices">Lisans kodları <span class="cnt hidden" data-cnt="pending"></span></button>
+      <button class="tab" data-tab="downloads">İndirmeler</button>
       <button class="tab" data-tab="games">Oyunlar</button>
       <button class="tab" data-tab="overview">Genel bakış</button>
       <button class="tab" data-tab="builds">Build'ler <span class="cnt hidden" data-cnt="builds_pending"></span></button>
@@ -146,6 +149,7 @@
       <nav class="mobile-tabs">
         <a class="tab" href="/app">← Uygulama</a>
         <button class="tab active" data-tab="devices">Kodlar <span class="cnt hidden" data-cnt="pending"></span></button>
+        <button class="tab" data-tab="downloads">İndirmeler</button>
         <button class="tab" data-tab="games">Oyunlar</button>
         <button class="tab" data-tab="overview">Genel</button>
         <button class="tab" data-tab="builds">Build'ler</button>

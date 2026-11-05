@@ -1505,16 +1505,95 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
       if(state==='live'){ cta.removeAttribute('aria-disabled'); }
     });
   }
+  /* ---- İndirme: kod + kimlik formu (WhatsApp'tan kod istenir) ---- */
+  var WA = '4915905456301';
+  var F = {
+    tr:{title:'Oyunu indir', intro:'İndirmek için indirme kodu ve kimlik bilgilerin gerekli. Kodun yoksa WhatsApp\'tan iste; kod sana oradan gönderilir.',
+        first:'Ad', last:'Soyad', phone:'Telefon (WhatsApp)', email:'E-posta', tiktok:'TikTok kullanıcı adı (isteğe bağlı)', code:'İndirme kodu',
+        consent:'Ad, soyad, telefon, e-posta, TikTok kullanıcı adı ve IP adresimin; indirme kodunun doğrulanması, oyun lisansının yönetimi ve kötüye kullanımın önlenmesi amacıyla fikoai.de tarafından kaydedilmesini kabul ediyorum. Verilerimin silinmesini WhatsApp ya da e-posta ile isteyebilirim.',
+        go:'Doğrula ve indir', wa:'Kodum yok — WhatsApp\'tan iste', cancel:'Vazgeç', busy:'Kontrol ediliyor…', ok:'İndirme başlıyor…', need:'Önce ad, soyad ve telefonu yaz; sonra WhatsApp\'tan kod iste.',
+        waMsg:function(g,n,t,ph){ return 'Merhaba, '+g+' oyunu için indirme kodu istiyorum.\nAd Soyad: '+n+'\nTelefon: '+ph+(t?'\nTikTok: '+t:''); }},
+    de:{title:'Spiel herunterladen', intro:'Zum Herunterladen brauchst du einen Download-Code und deine Angaben. Keinen Code? Frag per WhatsApp – du bekommst ihn dort.',
+        first:'Vorname', last:'Nachname', phone:'Telefon (WhatsApp)', email:'E-Mail', tiktok:'TikTok-Benutzername (optional)', code:'Download-Code',
+        consent:'Ich willige ein, dass fikoai.de Vorname, Nachname, Telefon, E-Mail, TikTok-Benutzername und meine IP-Adresse zur Prüfung des Download-Codes, zur Lizenzverwaltung und zur Missbrauchsverhinderung speichert. Die Löschung kann ich per WhatsApp oder E-Mail verlangen.',
+        go:'Prüfen & herunterladen', wa:'Kein Code – per WhatsApp anfragen', cancel:'Abbrechen', busy:'Wird geprüft…', ok:'Download startet…', need:'Bitte zuerst Vor-, Nachname und Telefon eingeben, dann per WhatsApp anfragen.',
+        waMsg:function(g,n,t,ph){ return 'Hallo, ich möchte einen Download-Code für das Spiel '+g+'.\nName: '+n+'\nTelefon: '+ph+(t?'\nTikTok: '+t:''); }}
+  };
+  function FL(){ return (typeof currentLang!=='undefined' && currentLang==='tr') ? F.tr : F.de; }
+  function ensureStyle(){
+    if(document.getElementById('dl-style')) return;
+    var st=document.createElement('style'); st.id='dl-style';
+    st.textContent='.dl-back{position:fixed;inset:0;background:rgba(3,6,14,.78);backdrop-filter:blur(6px);display:grid;place-items:center;z-index:9999;padding:16px}'+
+      '.dl-box{width:min(520px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--panel,#0e1526);border:1px solid var(--line,rgba(148,163,216,.14));border-radius:18px;padding:22px;color:var(--txt,#e8ecf8);box-shadow:0 30px 80px rgba(0,0,0,.5)}'+
+      '.dl-box h3{margin:0 0 6px;font-size:20px}.dl-box p.i{margin:0 0 14px;color:var(--muted,#9aa5c4);font-size:14px;line-height:1.5}'+
+      '.dl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.dl-grid .full{grid-column:1/-1}'+
+      '.dl-box label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted,#9aa5c4)}'+
+      '.dl-box input[type=text],.dl-box input[type=tel],.dl-box input[type=email]{background:rgba(255,255,255,.04);border:1px solid var(--line,rgba(148,163,216,.2));border-radius:10px;padding:11px 12px;color:inherit;font:inherit;font-size:15px}'+
+      '.dl-box input:focus{outline:2px solid #7c5cff;outline-offset:1px}.dl-code{text-transform:uppercase;letter-spacing:.08em}'+
+      '.dl-consent{flex-direction:row!important;align-items:flex-start;gap:9px!important;font-size:12px!important;line-height:1.45;margin-top:4px}.dl-consent input{margin-top:3px;flex:none}'+
+      '.dl-err{color:#ff6b8a;font-size:13px;min-height:18px;margin:8px 0 0}.dl-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.dl-act .btn{flex:1 1 auto;justify-content:center}'+
+      '.dl-wa{background:#25d366!important;color:#06240f!important;border:0}.dl-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}'+
+      '@media(max-width:520px){.dl-grid{grid-template-columns:1fr}}';
+    document.head.appendChild(st);
+  }
+  function openDl(appId){
+    ensureStyle();
+    var t=FL(), g=portal[appId]||{name:appId};
+    var back=document.createElement('div'); back.className='dl-back'; back.setAttribute('role','dialog'); back.setAttribute('aria-modal','true');
+    back.innerHTML='<form class="dl-box" novalidate autocomplete="on"><h3></h3><p class="i"></p><div class="dl-grid">'+
+      '<label>'+t.first+'<input type="text" name="first_name" maxlength="60" autocomplete="given-name" required></label>'+
+      '<label>'+t.last+'<input type="text" name="last_name" maxlength="60" autocomplete="family-name" required></label>'+
+      '<label>'+t.phone+'<input type="tel" name="phone" maxlength="25" autocomplete="tel" placeholder="+90 5xx xxx xx xx" required></label>'+
+      '<label>'+t.email+'<input type="email" name="email" maxlength="120" autocomplete="email" required></label>'+
+      '<label class="full">'+t.tiktok+'<input type="text" name="tiktok" maxlength="31" placeholder="@kullanici"></label>'+
+      '<label class="full">'+t.code+'<input type="text" name="code" class="dl-code" maxlength="32" autocomplete="off" placeholder="XXXX-XXXX" required></label>'+
+      '<input class="dl-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">'+
+      '<label class="full dl-consent"><input type="checkbox" name="consent" required><span></span></label></div>'+
+      '<p class="dl-err" aria-live="polite"></p><div class="dl-act">'+
+      '<button type="submit" class="btn btn-primary dl-go"></button>'+
+      '<a class="btn dl-wa" target="_blank" rel="noopener"></a>'+
+      '<button type="button" class="btn btn-ghost dl-cancel"></button></div></form>';
+    var f=back.querySelector('form');
+    f.querySelector('h3').textContent=t.title+' — '+g.name;
+    f.querySelector('p.i').textContent=t.intro;
+    f.querySelector('.dl-consent span').textContent=t.consent;
+    f.querySelector('.dl-go').textContent=t.go;
+    f.querySelector('.dl-wa').textContent=t.wa;
+    f.querySelector('.dl-cancel').textContent=t.cancel;
+    var err=f.querySelector('.dl-err');
+    function close(){ back.remove(); document.removeEventListener('keydown',onKey); }
+    function onKey(e){ if(e.key==='Escape') close(); }
+    document.addEventListener('keydown',onKey);
+    back.addEventListener('click',function(e){ if(e.target===back) close(); });
+    f.querySelector('.dl-cancel').onclick=close;
+    var wa=f.querySelector('.dl-wa');
+    function waHref(){
+      var n=(f.first_name.value.trim()+' '+f.last_name.value.trim()).trim();
+      return 'https://wa.me/'+WA+'?text='+encodeURIComponent(t.waMsg(g.name,n,f.tiktok.value.trim(),f.phone.value.trim()));
+    }
+    wa.href=waHref();
+    f.addEventListener('input',function(){ wa.href=waHref(); });
+    wa.addEventListener('click',function(e){
+      if(!f.first_name.value.trim()||!f.last_name.value.trim()||!f.phone.value.trim()){ e.preventDefault(); err.textContent=t.need; f.first_name.focus(); }
+    });
+    f.addEventListener('submit',function(e){
+      e.preventDefault(); err.textContent='';
+      var body={app:appId, first_name:f.first_name.value, last_name:f.last_name.value, phone:f.phone.value, email:f.email.value,
+        tiktok:f.tiktok.value, code:f.code.value.trim().toUpperCase(), consent:f.consent.checked, website:f.website.value};
+      var go=f.querySelector('.dl-go'), old=go.textContent; go.disabled=true; go.textContent=t.busy;
+      fetch(SB_URL + '/functions/v1/game-download', {method:'POST', headers:H, body:JSON.stringify(body)})
+        .then(function(r){ return r.json().then(function(j){ if(!r.ok || !j.url) throw new Error(j.error || L().err); return j; }); })
+        .then(function(j){ if(!/^https:\/\/(www\.)?fikoai\.de\/dl\//.test(j.url)) throw new Error(L().err); go.textContent=t.ok; window.location.href=j.url; setTimeout(close,2500); })
+        .catch(function(x){ err.textContent=x.message || L().err; go.disabled=false; go.textContent=old; });
+    });
+    document.body.appendChild(back);
+    setTimeout(function(){ f.first_name.focus(); },30);
+  }
   document.addEventListener('click', function(e){
     var a = e.target.closest && e.target.closest('#spiele [data-dl]');
     if(!a) return;
     e.preventDefault();
-    var t = L(), old = a.textContent; a.textContent = t.busy; a.style.pointerEvents = 'none';
-    fetch(SB_URL + '/functions/v1/game-download', {method:'POST', headers:H, body:JSON.stringify({app:a.dataset.dl})})
-      .then(function(r){ return r.json().then(function(j){ if(!r.ok || !j.url) throw new Error(j.error || t.err); return j; }); })
-      .then(function(j){ if(!/^https:\/\//.test(j.url)) throw new Error(t.err); window.location.href = j.url; })
-      .catch(function(err){ alert(err.message || t.err); })
-      .finally(function(){ setTimeout(function(){ a.textContent = old; a.style.pointerEvents = ''; }, 1500); });
+    openDl(a.dataset.dl);
   });
   if(typeof setLang === 'function'){
     var _setLang = setLang;
