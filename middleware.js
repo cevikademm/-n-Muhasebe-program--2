@@ -11,7 +11,7 @@ function deny(status, msg) {
     '<style>body{font-family:system-ui,sans-serif;background:#0b0b12;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0}' +
     'div{max-width:460px;padding:28px;text-align:center}a{color:#f59e0b}</style></head><body><div><h1>İndirme bağlantısı geçersiz</h1>' +
     '<p>' + msg + '</p><p><a href="https://fikoai.de/#spiele">fikoai.de → Oyunlar</a> sayfasından indirme kodunla tekrar dene.</p></div></body></html>';
-  return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } });
+  return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'content-disposition': 'inline' } });
 }
 
 export default async function middleware(request) {
