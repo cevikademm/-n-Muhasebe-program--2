@@ -177,14 +177,21 @@
   document.addEventListener("click", (e) => {
     const t = e.target.closest("[data-tab]");
     if (!t) return;
+    if (state.tab !== t.dataset.tab) animateNext();
     state.tab = t.dataset.tab;
     $$("[data-tab]").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab));
     render();
+    $(".mobile-tabs .tab.active")?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     if (state.tab === "log") refresh();
   });
 
+  // Bir sonraki çizimde içerik yumuşakça (kayarak) girsin
+  let _anim = false;
+  function animateNext() { _anim = true; }
   function render() {
     const m = $("#main");
+    m.classList.remove("anim");
+    if (_anim) { void m.offsetWidth; m.classList.add("anim"); _anim = false; }
     const scroll = window.scrollY;
     m.innerHTML = { overview: viewOverview, games: viewGames, devices: viewDevices, builds: viewBuilds, log: viewLog, downloads: viewDownloads, alerts: viewAlerts }[state.tab]();
     if (state.tab === "devices") bindDeviceFilters();
@@ -446,52 +453,109 @@
     const r = reqFor(d);
     return r ? [r.first_name, r.last_name, r.phone, r.email, r.tiktok].join(" ") : "";
   }
+  // ---------- Lisans kodları: kart görünümü ----------
+  const STATUS_SEGS = [["", "Tümü"], ["pending", "Bekleyen"], ["approved", "Onaylı"], ["online", "Çevrim içi"], ["revoked", "Kapatılan"]];
   function viewDevices() {
     const f = state.filters;
     const list = filteredDevices();
+    // durum sekmelerindeki sayılar: oyun + arama filtresi uygulanmış, durum filtresi hariç
+    const base = (() => { const keep = f.status; f.status = ""; const r = filteredDevices(); f.status = keep; return r; })();
+    const cnt = { "": base.length, pending: 0, approved: 0, revoked: 0, online: 0 };
+    base.forEach((d) => { cnt[d.status] = (cnt[d.status] || 0) + 1; if (online(d.last_seen)) cnt.online++; });
+    const pend = list.filter((d) => d.status === "pending").length;
     return `
       <div class="page-head"><h2>Lisans kodları</h2>
-        <div class="tools"><button class="btn sm ok" data-act="approve-all" ${list.some((d) => d.status === "pending") ? "" : "disabled"}>Listedeki bekleyenleri onayla</button><button class="btn sm ghost" data-act="refresh">Yenile</button></div></div>
+        <div class="tools">
+          ${pend ? `<button class="btn sm ok" data-act="approve-all">✓ ${pend} bekleyeni onayla</button>` : ""}
+          <button class="btn sm ghost icon-text" data-act="refresh" title="Yenile">↻ Yenile</button></div></div>
       ${alertBox(openAlerts(), true)}
-      <div class="panel">
-        <div class="filters">
-          <input class="input" id="flt-q" placeholder="Kod, etiket, bilgisayar, kişi, TikTok ara…" value="${esc(f.q)}">
-          <select class="input" id="flt-app"><option value="">Tüm oyunlar</option>${state.apps.map((a) => `<option value="${esc(a.id)}" ${f.app === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
-          <select class="input" id="flt-status">
-            ${[["", "Tüm durumlar"], ["pending", "Bekleyen"], ["approved", "Onaylı"], ["revoked", "Kapatılan"], ["online", "Çevrim içi"]].map(([v, t]) => `<option value="${v}" ${f.status === v ? "selected" : ""}>${t}</option>`).join("")}
-          </select>
-          <span class="muted" style="align-self:center;font-size:13px">${list.length} cihaz</span>
-        </div>
-        ${deviceTable(list, false)}
-      </div>`;
+      <div class="dev-toolbar">
+        <div class="search"><span aria-hidden="true">⌕</span><input class="input" id="flt-q" type="search" placeholder="Kod, kişi, bilgisayar, TikTok ara…" value="${esc(f.q)}"></div>
+        <select class="input" id="flt-app"><option value="">Tüm oyunlar</option>${state.apps.map((a) => `<option value="${esc(a.id)}" ${f.app === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
+      </div>
+      <div class="seg" role="tablist">
+        ${STATUS_SEGS.map(([v, t]) => `<button class="seg-btn ${f.status === v ? "on" : ""} s-${v || "all"}" data-fs="${v}" role="tab">${t}<i>${cnt[v] ?? 0}</i></button>`).join("")}
+      </div>
+      ${deviceTable(list, false)}`;
   }
   function bindDeviceFilters() {
-    const upd = () => {
-      state.filters = { q: $("#flt-q").value, app: $("#flt-app").value, status: $("#flt-status").value };
+    const upd = (refocus) => {
+      state.filters = { ...state.filters, q: $("#flt-q").value, app: $("#flt-app").value };
       const pos = $("#flt-q").selectionStart;
       render();
-      const q = $("#flt-q"); q.focus(); q.setSelectionRange(pos, pos);
+      if (refocus) { const q = $("#flt-q"); q.focus(); q.setSelectionRange(pos, pos); }
     };
-    let t; $("#flt-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(upd, 200); });
-    $("#flt-app").addEventListener("change", upd);
-    $("#flt-status").addEventListener("change", upd);
+    let t; $("#flt-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => upd(true), 200); });
+    $("#flt-app").addEventListener("change", () => upd(false));
+    $$(".seg-btn").forEach((x) => x.addEventListener("click", () => {
+      state.filters = { ...state.filters, status: x.dataset.fs };
+      animateNext(); render();
+    }));
+  }
+  function initials(s) {
+    const p = String(s || "").trim().split(/\s+/).filter(Boolean);
+    return ((p[0]?.[0] || "?") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+  }
+  function appColor(id) { return safeColor(state.apps.find((a) => a.id === id)?.accent); }
+  function hwChip(d) {
+    const rec = hwRec(d);
+    if (!rec) return '<span class="chip">⏳ donanım kaydı yok</span>';
+    const m = { same: ["ok", "Donanım aynı"], partial: ["warn", "1 parça değişmiş"], different: ["bad", "FARKLI BİLGİSAYAR"], accepted: ["info", "Yeni donanım kabul edildi"], locked: ["ok", "Donanım kilitli"], unknown: ["", "Karşılaştırılamadı"] }[d.hw_match || "locked"] || ["", d.hw_match];
+    return `<span class="chip ${m[0]}">🔒 ${m[1]}</span>`;
+  }
+  function deviceCard(d, i) {
+    const r = reqFor(d);
+    const exact = !!(d.download_request_id && r && r.id === d.download_request_id);
+    const on = online(d.last_seen);
+    const expired = d.status === "approved" && d.expires_at && new Date(d.expires_at) < new Date();
+    const name = r ? `${r.first_name} ${r.last_name}` : (d.label || d.machine_name || "İsimsiz cihaz");
+    const sub = [r && d.label && d.label !== name ? d.label : "", d.machine_name].filter(Boolean).join(" · ");
+    const phone = r ? String(r.phone || "").replace(/[^0-9]/g, "") : "";
+    const rec = hwRec(d), hi = rec?.hw?.info || {};
+    const chips = [
+      d.tiktok_username ? `<a class="chip tt" href="https://www.tiktok.com/@${esc(d.tiktok_username)}" target="_blank" rel="noopener">♪ @${esc(d.tiktok_username)}</a>` : "",
+      d.download_code_id ? `<span class="chip ok">✓ Koda bağlı</span>` : r ? `<span class="chip warn" title="IP ${esc(d.last_ip || "")}">≈ IP eşleşmesi</span>` : `<span class="chip warn">Kodsuz</span>`,
+      hwChip(d),
+      d.expires_at ? `<span class="chip ${expired ? "bad" : ""}">⏱ ${expired ? "Süresi doldu" : "Bitiş " + new Date(d.expires_at).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" })}</span>` : "",
+      (d.last_flags || []).length ? `<span class="chip bad">⚠ ${esc(d.last_flags.join(", "))}</span>` : "",
+    ].join("");
+    const rows = [
+      ["İndirme kodu", r?.code ? `<span class="mono">${esc(r.code)}</span>` : "—"],
+      ["E-posta", r?.email ? `<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>` : "—"],
+      ["Telefon", r?.phone ? esc(r.phone) : "—"],
+      ["Bilgisayar", esc(d.machine_name || "—") + (d.os ? `<div class="hash">${esc(d.os)}</div>` : "")],
+      ["Anakart", rec ? esc(`${hi.board_mfr || ""} ${hi.board_model || ""}`.trim() || "—") + `<div class="hash">seri ${esc(hi.board_serial || "—")}</div>` : "—"],
+      ["Sürüm", esc(d.app_version || "—")],
+      ["IP", `<span class="mono">${esc(d.last_ip || "—")}</span>`],
+      ["İlk görülme", esc(dt(d.first_seen))],
+      ["Son görülme", `${esc(dt(d.last_seen))} · ${d.check_count ?? 0} sorgu`],
+      d.owner_note ? ["Not", esc(d.owner_note)] : null,
+      d.kill_message && d.status === "revoked" ? ["Kapatma mesajı", esc(d.kill_message)] : null,
+    ].filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    return `<article class="dcard st-${esc(d.status)}${expired ? " st-expired" : ""}${on ? " is-on" : ""}" style="--acc:${appColor(d.app_id)};--i:${Math.min(i, 12)}">
+      <header class="dc-top">
+        <span class="dc-game"><i></i>${esc(appName(d.app_id))}</span>
+        <span class="dc-state">${on ? '<span class="pulse" title="Çevrim içi"></span>' : ""}${devBadge(d)}</span>
+      </header>
+      <button class="dc-code" data-act="dev-copy" data-code="${esc(d.device_code)}" title="Kodu kopyala">${esc(d.device_code)}<span aria-hidden="true">⧉</span></button>${devAlertBadge(d)}
+      <div class="dc-who">
+        <div class="av">${esc(initials(name))}</div>
+        <div class="who-t"><b>${esc(name)}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>
+        ${phone ? `<a class="wa" href="https://wa.me/${esc(phone)}" target="_blank" rel="noopener" title="WhatsApp'tan yaz">WhatsApp</a>` : ""}
+      </div>
+      <div class="dc-chips">${chips}</div>
+      <details class="dc-more"><summary>Ayrıntılar <span class="when">${on ? "şu an çevrim içi" : "son görülme " + ago(d.last_seen)}</span></summary><dl>${rows}</dl></details>
+      <footer class="dc-actions">
+        ${d.status !== "approved" || expired ? `<button class="btn ok solid grow" data-act="dev-status" data-v="approved" data-id="${d.id}">✓ ${d.status === "revoked" ? "Yeniden aç" : "Onayla"}</button>` : ""}
+        ${d.status !== "revoked" ? `<button class="btn danger ${d.status === "approved" && !expired ? "grow" : ""}" data-act="dev-status" data-v="revoked" data-id="${d.id}">Kapat</button>` : ""}
+        <button class="btn ghost sq" data-act="dev-edit" data-id="${d.id}" title="Düzenle (etiket, süre, not)">✎<span>Düzenle</span></button>
+        <button class="btn ghost sq" data-act="dev-hw" data-id="${d.id}" title="Donanım ayrıntısı">🔒<span>Donanım</span></button>
+      </footer>
+    </article>`;
   }
   function deviceTable(list, compact) {
-    if (!list.length) return `<div class="empty-row">${compact ? "Bekleyen kod yok." : "Kayıt yok."}</div>`;
-    return `<div class="table-wrap"><table class="dev-table"><thead><tr><th>Kod</th><th>Oyun</th><th>Etiket / Bilgisayar</th><th>Durum</th><th>Son görülme</th><th style="text-align:right">İşlem</th></tr></thead><tbody>
-      ${list.map((d) => `<tr>
-        <td><span class="code">${esc(d.device_code)}</span>${devAlertBadge(d)}${(d.last_flags || []).length ? ` <span class="badge off" title="${esc((d.last_flags || []).join(", "))}">⚠ ${esc(d.last_flags.join(", "))}</span>` : ""}</td>
-        <td>${esc(appName(d.app_id))}</td>
-        <td>${esc(d.label || "—")}<div class="hash">${esc(d.machine_name || "")}${d.owner_note ? " · " + esc(d.owner_note) : ""}</div>${personFor(d)}${tiktokLine(d)}${hwLine(d)}</td>
-        <td>${devBadge(d)} ${online(d.last_seen) ? '<span class="badge info">çevrim içi</span>' : ""}${!compact && d.expires_at ? `<div class="hash">bitiş: ${dt(d.expires_at)}</div>` : ""}</td>
-        <td title="${esc(dt(d.last_seen))} · ${d.check_count ?? 0} sorgu">${ago(d.last_seen)}</td>
-        <td class="c-act" style="text-align:right"><div class="row-actions" style="justify-content:flex-end">
-          ${d.status !== "approved" ? `<button class="btn sm ok" data-act="dev-status" data-v="approved" data-id="${d.id}">Onayla</button>` : ""}
-          ${d.status !== "revoked" ? `<button class="btn sm danger" data-act="dev-status" data-v="revoked" data-id="${d.id}">Kapat</button>` : ""}
-          <button class="btn sm ghost" data-act="dev-hw" data-id="${d.id}">Donanım</button>
-          <button class="btn sm ghost" data-act="dev-edit" data-id="${d.id}">Düzenle</button>
-        </div></td></tr>`).join("")}
-      </tbody></table></div>`;
+    if (!list.length) return `<div class="empty-card"><div class="ico">◎</div><b>${compact ? "Bekleyen kod yok" : "Bu filtrede cihaz yok"}</b><span>${compact ? "Yeni cihazlar oyun ilk açıldığında burada görünür." : "Filtreyi değiştir ya da aramayı temizle."}</span></div>`;
+    return `<div class="dgrid">${list.map((d, i) => deviceCard(d, i)).join("")}</div>`;
   }
 
   // Cihazı açan kişi: oyunda girilen indirme koduyla KESİN bağ; yoksa aynı IP'den son başarılı indirme (tahmin).
@@ -831,6 +895,7 @@
             return true;
           } }]);
       }
+      if (act === "dev-copy") { try { await navigator.clipboard.writeText(b.dataset.code); toast("Kopyalandı: " + b.dataset.code, "ok"); } catch (e) { toast(b.dataset.code); } return; }
       if (act === "code-copy") { await navigator.clipboard.writeText(b.dataset.code); return toast("Kopyalandı: " + b.dataset.code, "ok"); }
       if (act === "code-wa") { const c = state.dlcodes.find((x) => x.code === b.dataset.code) || { code: b.dataset.code, app_id: b.dataset.app || null }; return showWa(c); }
       if (act === "code-revoke") {
