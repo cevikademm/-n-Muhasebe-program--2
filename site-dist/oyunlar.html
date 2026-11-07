@@ -133,6 +133,7 @@
     /* ===== v2 tasarım: geçişler + lisans kartları (7 Kas 2026) ===== */
     .tab { transition: background .22s ease, color .22s ease, box-shadow .22s ease, transform .15s ease; }
     .tab:active { transform: scale(.97); }
+    .mobile-tabs .home-tab { color: var(--text); background: rgba(255,255,255,.05); box-shadow: inset 0 0 0 1px var(--line); }
     .mobile-tabs { scroll-behavior: smooth; scrollbar-width: none; }
     .mobile-tabs::-webkit-scrollbar { display: none; }
     .mobile-tabs .tab { border-radius: 999px; padding: 8px 14px; }
@@ -253,6 +254,7 @@
       <button class="tab" data-tab="builds">Build'ler <span class="cnt hidden" data-cnt="builds_pending"></span></button>
       <button class="tab" data-tab="log">Kayıtlar</button>
       <div class="spacer"></div>
+      <button class="tab" data-home>⌂ Ana sayfa</button>
       <a class="tab" href="/#spiele" target="_blank" rel="noopener">Sitede gör ↗</a>
       <a class="tab" href="/app">fikoai uygulaması ↗</a>
       <div class="me" id="me"></div>
@@ -261,6 +263,7 @@
 
     <div>
       <nav class="mobile-tabs">
+        <button class="tab home-tab" data-home title="fikoai.de ana sayfasına git">⌂ Ana sayfa</button>
         <a class="tab" href="/app">← Uygulama</a>
         <button class="tab active" data-tab="devices">Kodlar <span class="cnt hidden" data-cnt="pending"></span></button>
         <button class="tab" data-tab="alerts">Uyarılar <span class="cnt red hidden" data-cnt="alerts"></span></button>
@@ -287,6 +290,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="/oyunlar-panel/app.js?v=20261107-kart"></script>
+  <script src="/oyunlar-panel/app.js?v=20261107-home"></script>
 </body>
 </html>

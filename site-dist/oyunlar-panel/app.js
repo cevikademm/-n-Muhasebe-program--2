@@ -173,6 +173,12 @@
     }
   }
 
+  // ---------- ana sayfa (panel /app içinde açılmış olsa da tüm sayfayı fikoai.de'ye götürür) ----------
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-home]")) return;
+    try { window.top.location.href = "/"; } catch (err) { location.href = "/"; }
+  });
+
   // ---------- sekmeler ----------
   document.addEventListener("click", (e) => {
     const t = e.target.closest("[data-tab]");
