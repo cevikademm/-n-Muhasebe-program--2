@@ -634,14 +634,48 @@
             <td><button class="btn sm ghost" data-act="req-del" data-id="${r.id}" title="Kişisel veriyi sil">Sil</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty-row">Henüz indirme talebi yok.</div>'}
       </div>`;
   }
+  // Uzun, okunaklı indirme kodu: FIKO-XXXX-XXXX-XXXX-XXXX (16 rastgele karakter ≈ 80 bit; karışan 0/O/1/I yok)
   function randomCode() {
-    const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const b = new Uint8Array(8); crypto.getRandomValues(b);
+    const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const b = new Uint8Array(16); crypto.getRandomValues(b);
     const s = [...b].map((x) => A[x % A.length]).join("");
-    return s.slice(0, 4) + "-" + s.slice(4);
+    return "FIKO-" + s.match(/.{4}/g).join("-");
   }
-  function waText(code, appId) {
-    const g = appId ? appName(appId) : "oyun";
-    return `Merhaba, ${g} için indirme kodun: ${code}\nfikoai.de → Oyunlar → İndir'e bas, bilgilerini ve kodu gir. Kod tek kullanımlıktır.`;
+  // Profesyonel WhatsApp mesajı (c = download_codes satırı ya da { code, app_id, expires_at, max_uses, max_devices })
+  function waText(c) {
+    const oyun = c.app_id ? appName(c.app_id) : "";
+    const bitis = c.expires_at ? new Date(c.expires_at).toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric" }) : "";
+    const uses = Number(c.max_uses) || 1, pcs = Number(c.max_devices) || 1;
+    return [
+      "Merhaba,",
+      "",
+      `*fikoai.de* olarak ${oyun ? `*${oyun}*` : "TikTok canlı yayın oyunlarımız"} için size özel indirme kodunuzu iletiyoruz. 🎮`,
+      "",
+      `🔑 *İndirme kodu:* ${c.code}`,
+      bitis ? `⏳ *Geçerlilik:* ${bitis} tarihine kadar` : "⏳ *Geçerlilik:* Süresiz",
+      `💻 *Kullanım:* ${uses === 1 ? "tek indirme" : uses + " indirme"} · ${pcs} bilgisayar`,
+      "",
+      "*Kurulum adımları*",
+      "1️⃣ https://fikoai.de/#spiele adresini açın",
+      `2️⃣ ${oyun ? oyun + " kartındaki" : "Oyunun kartındaki"} *İndir* butonuna dokunun`,
+      "3️⃣ Ad, soyad, telefon, e-posta, TikTok kullanıcı adınızı ve yukarıdaki kodu girin",
+      "4️⃣ Oyunu ilk açtığınızda ekranda bir *cihaz kodu* görünür; bu kodu bu sohbetten bize iletin, lisansınızı hemen onaylayalım",
+      "",
+      "⚠️ Bu kod size özeldir; lütfen başkasıyla paylaşmayın.",
+      "",
+      "Sorularınız için bu numaradan bize her zaman ulaşabilirsiniz. Keyifli yayınlar dileriz!",
+      "",
+      "*fikoai.de*",
+    ].join("\n");
+  }
+  // Mesajı göster: WhatsApp'ta aç + kopyala (telefonda pano izni kaybolsa da çalışır)
+  function showWa(c) {
+    const text = waText(c);
+    modal("WhatsApp mesajı", `
+      <p class="muted" style="margin:0 0 10px">Kod: <span class="code">${esc(c.code)}</span></p>
+      <textarea class="input" id="wa-text" rows="14" style="width:100%;font-size:13px;line-height:1.45">${esc(text)}</textarea>`,
+      [{ text: "Kapat" },
+       { text: "Kopyala", run: async () => { const t = $("#wa-text").value; try { await navigator.clipboard.writeText(t); toast("Mesaj kopyalandı", "ok"); } catch (e) { $("#wa-text").select(); toast("Metni seçip kopyalayın", "err"); } return true; } },
+       { text: "WhatsApp'ta aç", cls: "primary", run: async () => { window.open("https://wa.me/?text=" + encodeURIComponent($("#wa-text").value), "_blank", "noopener"); return true; } }]);
   }
 
   async function setDevice(id, patch, msg) {
@@ -791,12 +825,14 @@
               expires_at: days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null, note: $("#c-note").value.trim() || null };
             const { error } = await sb.from("download_codes").insert(row);
             if (error) throw new Error(/duplicate|unique/i.test(error.message) ? "Bu kod zaten var." : error.message);
-            try { await navigator.clipboard.writeText(waText(code, row.app_id)); toast("Kod oluşturuldu, WhatsApp mesajı panoya kopyalandı", "ok"); } catch (e) { toast("Kod oluşturuldu: " + code, "ok"); }
+            toast("Kod oluşturuldu ve kaydedildi: " + code, "ok");
             refresh();
+            setTimeout(() => showWa(row), 50);
+            return true;
           } }]);
       }
       if (act === "code-copy") { await navigator.clipboard.writeText(b.dataset.code); return toast("Kopyalandı: " + b.dataset.code, "ok"); }
-      if (act === "code-wa") { await navigator.clipboard.writeText(waText(b.dataset.code, b.dataset.app)); return toast("WhatsApp mesajı panoya kopyalandı", "ok"); }
+      if (act === "code-wa") { const c = state.dlcodes.find((x) => x.code === b.dataset.code) || { code: b.dataset.code, app_id: b.dataset.app || null }; return showWa(c); }
       if (act === "code-revoke") {
         const { error } = await sb.from("download_codes").update({ revoked: true }).eq("id", b.dataset.id);
         if (error) throw new Error(error.message);
