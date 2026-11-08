@@ -457,7 +457,7 @@
   }
   function personText(d) {
     const r = reqFor(d);
-    return r ? [r.first_name, r.last_name, r.phone, r.email, r.tiktok].join(" ") : "";
+    return r ? [r.first_name, r.last_name, r.phone, r.email, r.tiktok, r.tckn, r.vkn, r.billing_address].join(" ") : "";
   }
   // ---------- Lisans kodları: kart görünümü ----------
   const STATUS_SEGS = [["", "Tümü"], ["pending", "Bekleyen"], ["approved", "Onaylı"], ["online", "Çevrim içi"], ["revoked", "Kapatılan"]];
@@ -575,7 +575,7 @@
     const exact = !!(d.download_request_id && r && r.id === d.download_request_id);
     if (!r) return d.download_code_id ? '<div class="hash" style="color:#34d399">indirme koduna bağlı (kişi kaydı silinmiş)</div>' : '<div class="hash" style="color:#f59e0b">indirme koduna bağlı değil</div>';
     return `<div class="person" title="${exact ? "İndirme koduyla bağlı (kesin)" : "IP eşleşmesi (tahmin): " + esc(d.last_ip)}"><b>${esc(r.first_name)} ${esc(r.last_name)}</b> · <a href="https://wa.me/${esc(String(r.phone).replace(/[^0-9]/g, ""))}" target="_blank" rel="noopener">${esc(r.phone)}</a>
-      <div class="hash">${esc(r.email)} · kod ${esc(r.code || "")} · ${exact ? '<span style="color:#34d399">koda bağlı ✓</span>' : '<span style="color:#f59e0b">IP eşleşmesi</span>'}</div></div>`;
+      <div class="hash">${esc(r.email)}${r.tckn ? " · TCKN " + esc(r.tckn) : ""}${r.vkn ? " · VKN " + esc(r.vkn) : ""} · kod ${esc(r.code || "")} · ${exact ? '<span style="color:#34d399">koda bağlı ✓</span>' : '<span style="color:#f59e0b">IP eşleşmesi</span>'}</div></div>`;
   }
   function tiktokLine(d) {
     if (!d.tiktok_username) return '<div class="tt no">TikTok hesabı tanımlı değil — yayıncı denetimi kapalı</div>';
@@ -696,13 +696,21 @@
       </div>
       <div class="panel">
         <div class="filters"><b>İndirme talepleri</b><span class="muted" style="font-size:13px">${reqs.filter((r) => r.status === "ok").length} başarılı · ${reqs.filter((r) => r.status === "denied").length} reddedildi</span></div>
-        ${reqs.length ? `<div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Ad Soyad</th><th>Telefon</th><th>E-posta</th><th>TikTok</th><th>Oyun</th><th>Kod</th><th>IP</th><th>Sonuç</th><th></th></tr></thead><tbody>
+        ${reqs.length ? `<div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Ad Soyad</th><th>Telefon</th><th>E-posta</th><th>TikTok</th><th>Fatura bilgileri</th><th>Oyun</th><th>Kod</th><th>IP</th><th>Sonuç</th><th></th></tr></thead><tbody>
           ${reqs.map((r) => `<tr><td title="${esc(dt(r.created_at))}">${ago(r.created_at)}</td><td><b>${esc(r.first_name)} ${esc(r.last_name)}</b></td>
             <td><a href="https://wa.me/${esc(String(r.phone).replace(/[^0-9]/g, ""))}" target="_blank" rel="noopener">${esc(r.phone)}</a></td><td>${esc(r.email)}</td><td>${r.tiktok ? `<a href="https://www.tiktok.com/@${esc(r.tiktok)}" target="_blank" rel="noopener">@${esc(r.tiktok)}</a>${r.tiktok_checked === "yes" ? ' <span style="color:#34d399" title="TikTok\'ta var">✓</span>' : r.tiktok_checked === "no" ? ' <span style="color:#ef4444">yok</span>' : ""}<div class="hash">${esc(r.tiktok_nickname || "")}</div>` : "—"}</td>
+            <td>${billingCell(r)}</td>
             <td>${esc(appName(r.app_id))}</td><td><span class="code">${esc(r.code || "")}</span></td><td class="hash">${esc(r.ip || "")}</td>
             <td>${r.status === "ok" ? '<span class="badge live">İndirdi</span>' : `<span class="badge off" title="${esc(r.reason || "")}">Reddedildi</span>`}</td>
             <td><button class="btn sm ghost" data-act="req-del" data-id="${r.id}" title="Kişisel veriyi sil">Sil</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty-row">Henüz indirme talebi yok.</div>'}
       </div>`;
+  }
+  function billingCell(r) {
+    if (!r.billing_address && !r.tckn && !r.vkn) return '<span class="hash">— (eski kayıt)</span>';
+    const ids = [r.tckn ? `TCKN <span class="code">${esc(r.tckn)}</span>` : "", r.vkn ? `VKN <span class="code">${esc(r.vkn)}</span>` : ""].filter(Boolean).join(" · ");
+    const txt = [`${r.first_name} ${r.last_name}`, r.billing_address || "", r.tckn ? "TCKN: " + r.tckn : "", r.vkn ? "VKN: " + r.vkn : ""].filter(Boolean).join("\n");
+    return `<div style="min-width:180px;max-width:260px"><div>${ids || "—"}</div><div class="hash" style="white-space:pre-line">${esc(r.billing_address || "")}</div>
+      <button class="btn sm ghost" style="margin-top:4px" data-act="bill-copy" data-text="${esc(txt)}">Fatura bilgisini kopyala</button></div>`;
   }
   // Uzun, okunaklı indirme kodu: FIKO-XXXX-XXXX-XXXX-XXXX (16 rastgele karakter ≈ 80 bit; karışan 0/O/1/I yok)
   function randomCode() {
@@ -902,6 +910,7 @@
           } }]);
       }
       if (act === "dev-copy") { try { await navigator.clipboard.writeText(b.dataset.code); toast("Kopyalandı: " + b.dataset.code, "ok"); } catch (e) { toast(b.dataset.code); } return; }
+      if (act === "bill-copy") { await navigator.clipboard.writeText(b.dataset.text); return toast("Fatura bilgisi kopyalandı", "ok"); }
       if (act === "code-copy") { await navigator.clipboard.writeText(b.dataset.code); return toast("Kopyalandı: " + b.dataset.code, "ok"); }
       if (act === "code-wa") { const c = state.dlcodes.find((x) => x.code === b.dataset.code) || { code: b.dataset.code, app_id: b.dataset.app || null }; return showWa(c); }
       if (act === "code-revoke") {

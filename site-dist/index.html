@@ -1543,15 +1543,20 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
   var F = {
     tr:{title:'Oyunu indir', intro:'İndirmek için indirme kodu ve kimlik bilgilerin gerekli. Kodun yoksa WhatsApp\'tan iste; kod sana oradan gönderilir.',
         first:'Ad', last:'Soyad', phone:'Telefon (WhatsApp)', email:'E-posta', tiktok:'TikTok kullanıcı adı (zorunlu — yayın yaptığın hesap)', ttHint:'Oyun yalnızca bu TikTok hesabıyla yayında çalışır. Hesap TikTok\'ta kontrol edilir.', ttBad:'TikTok kullanıcı adını doğru yaz (örn. @kullanici_adi).', code:'İndirme kodu',
-        consent:'Ad, soyad, telefon, e-posta, TikTok kullanıcı adı, IP adresim ve oyunun kurulduğu bilgisayarın donanım kimliklerinin (anakart, BIOS, disk seri numaraları, MAC adresi); indirme kodunun doğrulanması, lisansın tek bilgisayara bağlanması ve kötüye kullanımın önlenmesi amacıyla fikoai.de tarafından kaydedilmesini kabul ediyorum. Verilerimin silinmesini WhatsApp ya da e-posta ile isteyebilirim.',
+        bill:'Fatura bilgileri', billHint:'Fatura bu bilgilerle kesilir. Bireysel ise TCKN, şirket ise VKN yaz (en az biri zorunlu).', addr:'Fatura adresi', addrPh:'Mahalle, cadde/sokak, no, ilçe / il', tckn:'TCKN (T.C. Kimlik No)', vkn:'VKN (Vergi Kimlik No)', addrBad:'Fatura adresini eksiksiz yaz.', idNeed:'Fatura için TCKN ya da VKN\'den en az birini yaz.', tcknBad:'TCKN geçersiz. 11 haneli T.C. kimlik numaranı kontrol et.', vknBad:'VKN 10 haneli olmalı.', tcPh:'11 hane (bireysel)', vkPh:'10 hane (şirket)',
+        consent:'Ad, soyad, telefon, e-posta, TikTok kullanıcı adı, fatura adresi, TCKN/VKN, IP adresim ve oyunun kurulduğu bilgisayarın donanım kimliklerinin (anakart, BIOS, disk seri numaraları, MAC adresi); indirme kodunun doğrulanması, lisansın tek bilgisayara bağlanması, fatura düzenlenmesi ve kötüye kullanımın önlenmesi amacıyla fikoai.de tarafından kaydedilmesini kabul ediyorum. Verilerimin silinmesini WhatsApp ya da e-posta ile isteyebilirim.',
         go:'Doğrula ve indir', wa:'Kodum yok — WhatsApp\'tan iste', cancel:'Vazgeç', busy:'Kontrol ediliyor…', ok:'İndirme başlıyor…', need:'Önce ad, soyad, telefon ve TikTok kullanıcı adını yaz; sonra WhatsApp\'tan kod iste.',
         waMsg:function(g,n,t,ph){ return 'Merhaba, '+g+' oyunu için indirme kodu istiyorum.\nAd Soyad: '+n+'\nTelefon: '+ph+'\nTikTok: '+t; }},
     de:{title:'Spiel herunterladen', intro:'Zum Herunterladen brauchst du einen Download-Code und deine Angaben. Keinen Code? Frag per WhatsApp – du bekommst ihn dort.',
         first:'Vorname', last:'Nachname', phone:'Telefon (WhatsApp)', email:'E-Mail', tiktok:'TikTok-Benutzername (Pflicht — dein Streaming-Konto)', ttHint:'Das Spiel läuft im LIVE nur mit diesem TikTok-Konto. Das Konto wird bei TikTok geprüft.', ttBad:'Bitte gib deinen TikTok-Benutzernamen korrekt ein (z. B. @benutzername).', code:'Download-Code',
-        consent:'Ich willige ein, dass fikoai.de Vorname, Nachname, Telefon, E-Mail, TikTok-Benutzername, meine IP-Adresse sowie Hardware-Kennungen des PCs, auf dem das Spiel läuft (Mainboard-, BIOS-, Festplatten-Seriennummer, MAC-Adresse), zur Prüfung des Download-Codes, zur Bindung der Lizenz an einen PC und zur Missbrauchsverhinderung speichert. Die Löschung kann ich per WhatsApp oder E-Mail verlangen.',
+        bill:'Rechnungsdaten', billHint:'Die Rechnung wird mit diesen Daten erstellt. Privat: TCKN, Firma: Steuernummer (VKN / USt-IdNr.) – mindestens eines ist Pflicht.', addr:'Rechnungsadresse', addrPh:'Straße, Hausnr., PLZ, Ort', tckn:'TCKN (türk. Identitätsnr.)', vkn:'VKN / USt-IdNr.', addrBad:'Bitte die vollständige Rechnungsadresse eingeben.', idNeed:'Bitte TCKN oder Steuernummer (VKN) angeben.', tcknBad:'TCKN ist ungültig (11 Ziffern).', vknBad:'Steuernummer ungültig (10-stellige VKN oder EU-USt-IdNr.).', tcPh:'11 Ziffern (privat)', vkPh:'Firma',
+        consent:'Ich willige ein, dass fikoai.de Vorname, Nachname, Telefon, E-Mail, TikTok-Benutzername, Rechnungsadresse, TCKN/VKN, meine IP-Adresse sowie Hardware-Kennungen des PCs, auf dem das Spiel läuft (Mainboard-, BIOS-, Festplatten-Seriennummer, MAC-Adresse), zur Prüfung des Download-Codes, zur Bindung der Lizenz an einen PC, zur Rechnungsstellung und zur Missbrauchsverhinderung speichert. Die Löschung kann ich per WhatsApp oder E-Mail verlangen.',
         go:'Prüfen & herunterladen', wa:'Kein Code – per WhatsApp anfragen', cancel:'Abbrechen', busy:'Wird geprüft…', ok:'Download startet…', need:'Bitte zuerst Vor-, Nachname, Telefon und TikTok-Benutzernamen eingeben, dann per WhatsApp anfragen.',
         waMsg:function(g,n,t,ph){ return 'Hallo, ich möchte einen Download-Code für das Spiel '+g+'.\nName: '+n+'\nTelefon: '+ph+'\nTikTok: '+t; }}
   };
+  function tcOk(s){ if(!/^[1-9][0-9]{10}$/.test(s)) return false; var d=s.split('').map(Number);
+    var o=d[0]+d[2]+d[4]+d[6]+d[8], e=d[1]+d[3]+d[5]+d[7]; if((((o*7-e)%10)+10)%10!==d[9]) return false;
+    var t=0; for(var i=0;i<10;i++) t+=d[i]; return t%10===d[10]; }
   function FL(){ return (typeof currentLang!=='undefined' && currentLang==='tr') ? F.tr : F.de; }
   function ensureStyle(){
     if(document.getElementById('dl-style')) return;
@@ -1559,12 +1564,13 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
     st.textContent='.dl-back{position:fixed;inset:0;background:rgba(3,6,14,.78);backdrop-filter:blur(6px);display:grid;place-items:center;z-index:9999;padding:16px}'+
       '.dl-box{width:min(520px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--panel,#0e1526);border:1px solid var(--line,rgba(148,163,216,.14));border-radius:18px;padding:22px;color:var(--txt,#e8ecf8);box-shadow:0 30px 80px rgba(0,0,0,.5)}'+
       '.dl-box h3{margin:0 0 6px;font-size:20px}.dl-box p.i{margin:0 0 14px;color:var(--muted,#9aa5c4);font-size:14px;line-height:1.5}'+
-      '.dl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.dl-grid .full{grid-column:1/-1}'+
+      '.dl-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.dl-grid>*{min-width:0}.dl-box input:not([type=checkbox]),.dl-box textarea{width:100%;box-sizing:border-box;min-width:0}.dl-grid .full{grid-column:1/-1}'+
       '.dl-box label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted,#9aa5c4)}'+
-      '.dl-box input[type=text],.dl-box input[type=tel],.dl-box input[type=email]{background:rgba(255,255,255,.04);border:1px solid var(--line,rgba(148,163,216,.2));border-radius:10px;padding:11px 12px;color:inherit;font:inherit;font-size:15px}'+
+      '.dl-box input[type=text],.dl-box input[type=tel],.dl-box input[type=email],.dl-box textarea{background:rgba(255,255,255,.04);border:1px solid var(--line,rgba(148,163,216,.2));border-radius:10px;padding:11px 12px;color:inherit;font:inherit;font-size:15px}'+
       '.dl-box input:focus{outline:2px solid #7c5cff;outline-offset:1px}.dl-code{text-transform:uppercase;letter-spacing:.08em}'+
       '.dl-consent{flex-direction:row!important;align-items:flex-start;gap:9px!important;font-size:12px!important;line-height:1.45;margin-top:4px}.dl-consent input{margin-top:3px;flex:none}'+
       '.dl-err{color:#ff6b8a;font-size:13px;min-height:18px;margin:8px 0 0}.dl-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.dl-act .btn{flex:1 1 auto;justify-content:center}'+
+      '.dl-box textarea{resize:vertical;min-height:62px;line-height:1.4}.dl-sec{grid-column:1/-1;margin:8px 0 -2px;padding-top:12px;border-top:1px solid var(--line,rgba(148,163,216,.14));font-size:14px;font-weight:700;color:var(--txt,#e8ecf8)}.dl-sec small{display:block;font-weight:400;font-size:11.5px;color:var(--muted,#9aa5c4);margin-top:3px;line-height:1.4}.dl-bad{outline:2px solid #ff6b8a!important}'+
       '.dl-hint{font-size:11.5px;opacity:.8;line-height:1.4}.dl-wa{background:#25d366!important;color:#06240f!important;border:0}.dl-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}'+
       '@media(max-width:520px){.dl-grid{grid-template-columns:1fr}}';
     document.head.appendChild(st);
@@ -1579,6 +1585,11 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
       '<label>'+t.phone+'<input type="tel" name="phone" maxlength="25" autocomplete="tel" placeholder="+90 5xx xxx xx xx" required></label>'+
       '<label>'+t.email+'<input type="email" name="email" maxlength="120" autocomplete="email" required></label>'+
       '<label class="full">'+t.tiktok+'<input type="text" name="tiktok" maxlength="25" placeholder="@kullanici" autocomplete="off" autocapitalize="off" spellcheck="false" required><small class="dl-hint"></small></label>'+
+      '<div class="dl-sec">'+t.bill+'<small>'+t.billHint+'</small></div>'+
+      '<label class="full">'+t.addr+'<textarea name="address" maxlength="300" rows="2" autocomplete="street-address" required placeholder="'+t.addrPh+'"></textarea></label>'+
+      '<label>'+t.tckn+'<input type="text" name="tckn" inputmode="numeric" maxlength="11" autocomplete="off" placeholder="'+t.tcPh+'"></label>'+
+      '<label>'+t.vkn+'<input type="text" name="vkn" maxlength="15" autocomplete="off" placeholder="'+t.vkPh+'"></label>'+
+      '<div class="dl-sec"></div>'+
       '<label class="full">'+t.code+'<input type="text" name="code" class="dl-code" maxlength="32" autocomplete="off" placeholder="FIKO-XXXX-XXXX-XXXX-XXXX" required></label>'+
       '<input class="dl-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">'+
       '<label class="full dl-consent"><input type="checkbox" name="consent" required><span></span></label></div>'+
@@ -1606,15 +1617,22 @@ document.getElementById('contactForm').addEventListener('submit', async e=>{
       return 'https://wa.me/'+WA+'?text='+encodeURIComponent(t.waMsg(g.name,n,f.tiktok.value.trim(),f.phone.value.trim()));
     }
     wa.href=waHref();
-    f.addEventListener('input',function(){ wa.href=waHref(); });
+    f.addEventListener('input',function(e){ if(e.target===f.tckn) f.tckn.value=f.tckn.value.replace(/[^0-9]/g,''); if(e.target.classList) e.target.classList.remove('dl-bad'); wa.href=waHref(); });
     wa.addEventListener('click',function(e){
       if(!f.first_name.value.trim()||!f.last_name.value.trim()||!f.phone.value.trim()||!TT.test(f.tiktok.value.trim())){ e.preventDefault(); err.textContent=t.need; f.first_name.focus(); }
     });
     f.addEventListener('submit',function(e){
       e.preventDefault(); err.textContent='';
       if(!TT.test(f.tiktok.value.trim())){ err.textContent=t.ttBad; f.tiktok.focus(); return; }
+      [f.address,f.tckn,f.vkn].forEach(function(x){ x.classList.remove('dl-bad'); });
+      var ad=f.address.value.trim(), tc=f.tckn.value.replace(/\s+/g,''), vk=f.vkn.value.replace(/[\s.-]+/g,'').toUpperCase();
+      function bad(el,msg){ el.classList.add('dl-bad'); err.textContent=msg; el.focus(); }
+      if(ad.length<10){ bad(f.address,t.addrBad); return; }
+      if(!tc && !vk){ bad(f.tckn,t.idNeed); return; }
+      if(tc && !tcOk(tc)){ bad(f.tckn,t.tcknBad); return; }
+      if(vk && !/^[0-9]{10}$/.test(vk) && !/^[A-Z]{2}[0-9A-Z]{8,13}$/.test(vk)){ bad(f.vkn,t.vknBad); return; }
       var body={lang:(typeof currentLang!=='undefined'&&currentLang==='tr')?'tr':'de', app:appId, first_name:f.first_name.value, last_name:f.last_name.value, phone:f.phone.value, email:f.email.value,
-        tiktok:f.tiktok.value, code:f.code.value.trim().toUpperCase(), consent:f.consent.checked, website:f.website.value};
+        tiktok:f.tiktok.value, address:ad, tckn:tc, vkn:vk, code:f.code.value.trim().toUpperCase(), consent:f.consent.checked, website:f.website.value};
       var go=f.querySelector('.dl-go'), old=go.textContent; go.disabled=true; go.textContent=t.busy;
       fetch(SB_URL + '/functions/v1/game-download', {method:'POST', headers:H, body:JSON.stringify(body)})
         .then(function(r){ return r.json().then(function(j){ if(!r.ok || !j.url) throw new Error(j.error || L().err); return j; }); })
