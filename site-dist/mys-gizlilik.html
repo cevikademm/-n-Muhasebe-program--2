@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gizlilik Politikası – Mali Yönetim Sistemi Asistanı</title>
+<style>
+  body { margin: 0; background: #f4f6f9; color: #0f172a; font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 36px 32px; }
+  h1 { font-size: 28px; line-height: 1.25; margin: 0 0 6px; }
+  .sub { color: #64748b; margin: 0 0 28px; }
+  h2 { font-size: 19px; margin: 30px 0 8px; }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  .box { background: #e7f6ec; color: #14532d; border-radius: 10px; padding: 14px 16px; margin: 18px 0; }
+  footer { text-align: center; color: #64748b; font-size: 14px; margin-top: 24px; }
+  a { color: #1d4ed8; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Gizlilik Politikası</h1>
+    <p class="sub">Mali Yönetim Sistemi Asistanı (Chrome uzantısı) · Son güncelleme: 19 Kasım 2026</p>
+
+    <div class="box"><b>Özet:</b> Uzantı, girdiğiniz verileri yalnızca kendi tarayıcınızda işler. Hiçbir veri bir sunucuya gönderilmez, toplanmaz, satılmaz ve üçüncü kişilerle paylaşılmaz.</div>
+
+    <h2>1. Uzantı ne yapar?</h2>
+    <p>Mali Yönetim Sistemi Asistanı, Harcama Yönetim Sistemi (HYS) ödeme emri ekranlarındaki veri girişini otomatikleştiren bir Chrome uzantısıdır. Kullanıcının yüklediği Excel listesindeki bilgileri ilgili form alanlarına yazar ve kullanıcının bir kez gösterdiği form doldurma adımlarını tekrarlar.</p>
+
+    <h2>2. Hangi veriler işlenir?</h2>
+    <ul>
+      <li><b>Excel listesindeki bilgiler:</b> TC kimlik numarası, IBAN ve tutar. Bu bilgileri kullanıcı kendisi yükler.</li>
+      <li><b>Form alanı eşleştirmeleri ve kayıtlı adımlar:</b> Kullanıcının uzantıya öğrettiği alanlar ve "Kendi İşlemim" modülünde kaydettiği tıklama ve yazma adımları.</li>
+      <li><b>Ayarlar:</b> Tutar biçimi, IBAN yazım şekli gibi tercihler.</li>
+    </ul>
+
+    <h2>3. Veriler nerede ve ne kadar süre saklanır?</h2>
+    <ul>
+      <li><b>Excel verileri (TC, IBAN, tutar)</b> yalnızca tarayıcının geçici oturum belleğinde (<code>chrome.storage.session</code>) tutulur. Tarayıcı kapandığında ya da panelde "Temizle" düğmesine basıldığında silinir. Diske kalıcı olarak yazılmaz.</li>
+      <li><b>Alan eşleştirmeleri, kayıtlı adımlar ve ayarlar</b> tarayıcınızın yerel depolamasında (<code>chrome.storage.local</code>) tutulur. Uzantı kaldırıldığında bu bilgiler de silinir.</li>
+    </ul>
+
+    <h2>4. Veriler paylaşılır mı?</h2>
+    <p>Hayır. Uzantı hiçbir veriyi geliştiriciye, bir sunucuya ya da üçüncü bir tarafa göndermez. Uzantıda analiz, izleme, reklam veya çerez aracı bulunmaz. Uzantının çalışması için gereken bütün kod, uzantı paketinin içindedir. Dışarıdan kod yüklenmez.</p>
+
+    <h2>5. Verilerin kullanım amacı</h2>
+    <p>İşlenen veriler yalnızca kullanıcının başlattığı form doldurma işlemi için kullanılır. Bu veriler satılmaz, reklam amacıyla kullanılmaz ve kredi değerlendirmesi ya da borç verme amacıyla kullanılmaz.</p>
+
+    <h2>6. İzinler</h2>
+    <ul>
+      <li><b>sidePanel:</b> Uzantının arayüzünü Chrome yan panelinde göstermek için kullanılır.</li>
+      <li><b>storage:</b> Yukarıda belirtilen verileri tarayıcının içinde saklamak için kullanılır.</li>
+      <li><b>tabs ve scripting:</b> Açık sekmenin HYS ekranı olduğunu algılamak ve form alanlarını doldurmak için kullanılır.</li>
+      <li><b>Sayfa erişimi:</b> Kullanıcının çalıştığı formu doldurmak için gereklidir. Uzantı, kullanıcı panelden bir işlem başlatmadıkça hiçbir sayfada değişiklik yapmaz.</li>
+    </ul>
+
+    <h2>7. Kullanıcı sorumluluğu</h2>
+    <p>Uzantı, belgeyi hiçbir zaman kendiliğinden kaydetmez veya onaylamaz. Doldurulan bilgilerin son kontrolü ve kaydedilmesi her zaman kullanıcıya aittir. Kişisel verilerin işlenmesinde kullanıcının bağlı olduğu kurumun mevzuatı ve 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) hükümleri geçerlidir.</p>
+
+    <h2>8. Verilerinizi silme</h2>
+    <p>Excel verilerini panelde "Temizle" düğmesiyle istediğiniz zaman silebilirsiniz. Tüm verileri silmek için uzantıyı Chrome'dan kaldırmanız yeterlidir.</p>
+
+    <h2>9. Değişiklikler</h2>
+    <p>Bu politika güncellenirse yeni sürüm bu sayfada yayımlanır ve sayfanın üstündeki tarih değiştirilir.</p>
+
+    <h2>10. İletişim</h2>
+    <p>Sorularınız için <a href="https://fikoai.de">fikoai.de</a> adresindeki iletişim kanallarını kullanabilirsiniz.</p>
+  </div>
+  <footer>Mali Yönetim Sistemi Asistanı · Yapımcı: Hv.Mly.Asb.Bçvş. Adem ÇEVİK · fikoai.de</footer>
+</main>
+</body>
+</html>
