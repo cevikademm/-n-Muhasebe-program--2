@@ -21,14 +21,6 @@
       "destination": "/muhasebe-app.html"
     },
     {
-      "source": "/mys-gizlilik",
-      "destination": "/mys-gizlilik.html"
-    },
-    {
-      "source": "/mys-privacy",
-      "destination": "/mys-gizlilik.html"
-    },
-    {
       "source": "/(.*)",
       "destination": "/"
     }
